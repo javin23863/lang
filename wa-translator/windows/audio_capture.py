@@ -22,7 +22,6 @@ Each callback receives (pcm_float32, num_samples, sample_rate=16000).
 """
 
 import threading
-import queue
 import numpy as np
 import soundcard as sc
 

@@ -1,22 +1,18 @@
 #!/usr/bin/env python3
 """
-translation_server.py — Local WebSocket translation server (Windows host).
+translation_server.py — WebSocket translation server (Windows host).
 
-Architecture (iTour-style link sharing):
-  Person A runs this on their Windows machine.
-  Person A shares the ngrok URL via WhatsApp.
-  Person B opens the URL on their phone -> web page connects via WebSocket.
-  Both people's audio is sent to this server, transcribed (Moonshine ASR),
-  translated (CTranslate2 MT), and bilingual captions are pushed back to
-  both clients in real time.
+iTour-style link sharing:
+  Person A runs this server on Windows. Person B opens a link in their
+  browser. Both people's audio flows here, gets transcribed (Moonshine ASR),
+  translated (CTranslate2 MT), and bilingual captions are pushed to all
+  clients.
 
-  The Windows host (Person A) can also capture local audio via WASAPI
-  loopback + mic for the local side, while Person B uses the browser's
-  getUserMedia for their mic.
+  Person A's audio arrives via the /api/host_audio HTTP endpoint (fed by
+  translator_app.py's WASAPI capture). Person B's audio arrives via
+  WebSocket binary frames (browser getUserMedia).
 
-Flow:
-  Browser (Person B) <—WebSocket—> This server <—Local audio—> Person A
-  ASR + MT all run on-device here (free, no paid APIs).
+  All ASR+MT runs on-device here. No paid APIs, no backend.
 """
 
 import os
@@ -26,66 +22,88 @@ import time
 import asyncio
 import threading
 import numpy as np
-from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 import uvicorn
 
-# Local imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mt_ct2 import CTranslate2MT, filter_caption, PAIR_STATUS
 
 app = FastAPI(title="WhatsApp Call Translator")
 
-# --- Shared state ---
-# WebSocket connections: each client gets an id
-clients = {}  # client_id -> {"ws": WebSocket, "name": str, "lang": str}
+# ── Shared state ──────────────────────────────────────────────────────
+clients: dict[int, dict] = {}    # client_id -> {ws, name, is_host}
 next_client_id = 1
-mt_engine = None  # CTranslate2MT, initialized on startup
-pair = "en-zh"  # default, changed via UI
+pair = "en-zh"
+mt_engine: CTranslate2MT | None = None
+mt_lock = threading.Lock()
 
+# Per-stream ASR audio buffers: stream_id -> list of numpy float32 chunks
+asr_buffers: dict[str, list[np.ndarray]] = {}
 
-# --- HTML page served to Person B ---
-TRANSLATOR_PAGE = """<!DOCTYPE html>
+ASR_SAMPLE_RATE = 16000
+MIN_ASR_SAMPLES = 1600  # 100ms minimum to bother transcribing
+
+def feed_asr(stream_id: str, pcm: np.ndarray):
+    """Accumulate audio chunks for a stream (non-blocking, just append)."""
+    if stream_id not in asr_buffers:
+        asr_buffers[stream_id] = []
+    asr_buffers[stream_id].append(pcm.copy())
+
+def flush_asr(stream_id: str):
+    """Run ASR on accumulated audio, then MT, then broadcast caption.
+    Spawns a background thread so the caller returns immediately.
+    """
+    chunks = asr_buffers.pop(stream_id, None)
+    if chunks is None or len(chunks) == 0:
+        return
+    audio = np.concatenate(chunks)
+    if len(audio) < MIN_ASR_SAMPLES:
+        return
+    threading.Thread(target=_run_asr_mt, args=(stream_id, audio), daemon=True).start()
+TRANSLATOR_PAGE = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>WhatsApp Call Translator</title>
 <style>
-* { margin:0; padding:0; box-sizing:border-box; }
-body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-       background:#1a1a2e; color:#fff; min-height:100vh; display:flex;
-       flex-direction:column; align-items:center; }
-.header { background:#075E54; color:#fff; padding:16px 20px; width:100%;
-          text-align:center; font-size:18px; font-weight:bold; position:sticky; top:0; z-index:10; }
-.header .sub { font-size:12px; font-weight:normal; opacity:0.8; }
-#captions { flex:1; width:100%; max-width:600px; padding:16px; overflow-y:auto;
-           display:flex; flex-direction:column; gap:8px; }
-.msg { padding:10px 14px; border-radius:12px; max-width:85%; word-wrap:break-word; }
-.msg.remote { background:#202C33; align-self:flex-start; }
-.msg.local { background:#005C4B; align-self:flex-end; }
-.msg .orig { font-size:15px; line-height:1.4; }
-.msg .trans { font-size:14px; line-height:1.4; color:#7DD3FC; margin-top:4px; }
-.msg .who { font-size:10px; color:#8696A0; margin-bottom:2px; }
-.controls { padding:16px; width:100%; max-width:600px; display:flex; gap:10px; }
-#micBtn { flex:1; padding:14px; border:none; border-radius:12px; font-size:16px;
-          font-weight:bold; cursor:pointer; transition:0.2s; }
-#micBtn.on { background:#f44336; color:#fff; }
-#micBtn.off { background:#075E54; color:#fff; }
-#status { text-align:center; font-size:12px; color:#8696A0; padding:4px; }
-.lang-bar { padding:8px 16px; display:flex; gap:6px; overflow-x:auto; }
-.lang-bar button { padding:6px 12px; border:1px solid #333; border-radius:16px;
-                    background:#1a1a2e; color:#ccc; cursor:pointer; font-size:12px; white-space:nowrap; }
-.lang-bar button.active { background:#075E54; color:#fff; border-color:#075E54; }
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+     background:#0b141a;color:#e9edef;min-height:100vh;display:flex;
+     flex-direction:column;align-items:center}
+.header{background:#075E54;padding:14px 20px;width:100%;text-align:center;
+        font-size:17px;font-weight:600;position:sticky;top:0;z-index:10}
+.header .sub{font-size:11px;font-weight:400;opacity:.8;margin-top:2px}
+#captions{flex:1;width:100%;max-width:600px;padding:12px 16px;overflow-y:auto;
+          display:flex;flex-direction:column;gap:6px;padding-bottom:100px}
+.msg{padding:8px 12px;border-radius:8px;max-width:85%;word-wrap:break-word}
+.msg.remote{background:#202c33;align-self:flex-start;border-radius:0 8px 8px 8px}
+.msg.local{background:#005c4b;align-self:flex-end;border-radius:8px 0 8px 8px}
+.msg .who{font-size:10px;color:#8696a0;margin-bottom:3px}
+.msg .orig{font-size:15px;line-height:1.45}
+.msg .trans{font-size:14px;line-height:1.45;color:#53bdeb;margin-top:3px}
+.msg .pending{font-size:13px;color:#8696a0;font-style:italic}
+.controls{position:fixed;bottom:0;left:0;right:0;padding:12px 16px;
+          background:#111b21;display:flex;gap:8px;justify-content:center}
+#micBtn{flex:0 1 400px;padding:16px;border:none;border-radius:24px;
+        font-size:15px;font-weight:600;cursor:pointer;transition:.15s;
+        -webkit-user-select:none;user-select:none;touch-action:none}
+#micBtn.off{background:#075E54;color:#fff}
+#micBtn.on{background:#d32f2f;color:#fff}
+#status{text-align:center;font-size:11px;color:#8696a0;padding:4px}
+.lang-bar{padding:6px 16px;display:flex;gap:6px;overflow-x:auto;
+          -webkit-overflow-scrolling:touch}
+.lang-bar button{padding:5px 12px;border:1px solid #2a3942;border-radius:16px;
+                  background:#111b21;color:#8696a0;cursor:pointer;font-size:12px;
+                  white-space:nowrap;flex-shrink:0}
+.lang-bar button.active{background:#075E54;color:#fff;border-color:#075E54}
 </style>
 </head>
 <body>
-<div class="header">
-  WhatsApp Call Translator
-  <div class="sub">Connected to host · Tap mic to talk</div>
+<div class="header">WhatsApp Call Translator
+  <div class="sub">Connected · Tap mic to talk</div>
 </div>
 <div class="lang-bar" id="langBar"></div>
 <div id="captions"></div>
@@ -94,111 +112,178 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif
   <button id="micBtn" class="off">🎤 Hold to Talk</button>
 </div>
 <script>
-let ws;
-let micCtx, proc, stream;
-let recording = false;
+let ws, micCtx, proc, stream, recording = false;
 let pair = 'en-zh';
 
-// WebSocket connection
-const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-ws = new WebSocket(proto + '://' + location.host + '/ws');
-ws.onopen = () => { document.getElementById('status').textContent = 'Connected ✓'; };
-ws.onclose = () => { document.getElementById('status').textContent = 'Disconnected — tap to retry';
-  setTimeout(() => location.reload(), 2000); };
-ws.onerror = () => { document.getElementById('status').textContent = 'Connection error'; };
-ws.onmessage = (ev) => {
-  const data = JSON.parse(ev.data);
-  if (data.type === 'caption') {
-    addCaption(data.who, data.original, data.translated);
-  } else if (data.type === 'pair') {
-    pair = data.pair;
-    updateLangBar();
-  } else if (data.type === 'lang_list') {
-    renderLangBar(data.pairs);
-  }
-};
+// ── WebSocket ───────────────────────────────────────────────────
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(proto + '://' + location.host + '/ws');
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = () => { document.getElementById('status').textContent = 'Connected ✓'; };
+  ws.onclose = () => {
+    document.getElementById('status').textContent = 'Disconnected — reconnecting...';
+    setTimeout(connect, 2000);
+  };
+  ws.onerror = () => { document.getElementById('status').textContent = 'Connection error'; };
+  ws.onmessage = (ev) => {
+    const data = JSON.parse(ev.data);
+    if (data.type === 'caption') addCaption(data.who, data.original, data.translated);
+    else if (data.type === 'pending') addPending(data.who);
+    else if (data.type === 'pair') { pair = data.pair; highlightLang(); }
+    else if (data.type === 'lang_list') renderLangBar(data.pairs);
+  };
+}
+connect();
 
 function addCaption(who, original, translated) {
+  const captions = document.getElementById('captions');
+  // Remove any pending message from this speaker
+  const pending = captions.querySelector('.msg.pending-msg[data-who="' + who + '"]');
+  if (pending) pending.remove();
   const div = document.createElement('div');
   div.className = 'msg ' + (who === 'me' ? 'local' : 'remote');
   div.innerHTML = '<div class="who">' + (who === 'me' ? 'You' : 'Other') + '</div>'
     + '<div class="orig">' + esc(original) + '</div>'
     + (translated ? '<div class="trans">' + esc(translated) + '</div>' : '');
-  document.getElementById('captions').appendChild(div);
-  div.scrollIntoView({behavior:'smooth'});
+  captions.appendChild(div);
+  div.scrollIntoView({behavior: 'smooth'});
 }
 
-function esc(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+function addPending(who) {
+  const captions = document.getElementById('captions');
+  const div = document.createElement('div');
+  div.className = 'msg ' + (who === 'me' ? 'local' : 'remote') + ' pending-msg';
+  div.setAttribute('data-who', who);
+  div.innerHTML = '<div class="who">' + (who === 'me' ? 'You' : 'Other') + '</div>'
+    + '<div class="pending">listening...</div>';
+  captions.appendChild(div);
+  div.scrollIntoView({behavior: 'smooth'});
+}
 
-// Language bar
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// ── Language bar ─────────────────────────────────────────────────
 function renderLangBar(pairs) {
   const bar = document.getElementById('langBar');
   bar.innerHTML = '';
   pairs.forEach(p => {
     const btn = document.createElement('button');
     btn.textContent = p;
+    btn.dataset.pair = p;
     if (p === pair) btn.classList.add('active');
     btn.onclick = () => {
       pair = p;
-      ws.send(JSON.stringify({type:'set_pair', pair:p}));
-      document.querySelectorAll('.lang-bar button').forEach(b=>b.classList.remove('active'));
-      btn.classList.add('active');
+      ws.send(JSON.stringify({type: 'set_pair', pair: p}));
+      highlightLang();
     };
     bar.appendChild(btn);
   });
 }
 
-// Mic capture + streaming via WebSocket
+function highlightLang() {
+  document.querySelectorAll('.lang-bar button').forEach(b => {
+    b.classList.toggle('active', b.dataset.pair === pair);
+  });
+}
+
+// ── Mic capture + streaming ──────────────────────────────────────
 const micBtn = document.getElementById('micBtn');
 micBtn.addEventListener('pointerdown', startRec);
 micBtn.addEventListener('pointerup', stopRec);
-micBtn.addEventListener('pointerleave', stopRec);
+micBtn.addEventListener('pointercancel', stopRec);
 
 async function startRec() {
   if (recording) return;
   recording = true;
-  micBtn.classList.remove('off'); micBtn.classList.add('on');
+  micBtn.className = 'on';
   micBtn.textContent = '🔴 Recording...';
-  stream = await navigator.mediaDevices.getUserMedia({audio:{channelCount:1, sampleRate:16000, echoCancellation:true, noiseSuppression:true}});
-  micCtx = new (window.AudioContext || window.webkitAudioContext)({sampleRate:16000});
-  const src = micCtx.createMediaStreamSource(stream);
-  proc = micCtx.createScriptProcessor(1600, 1, 1); // 100ms chunks at 16kHz
-  src.connect(proc);
-  proc.connect(micCtx.destination);
-  proc.onaudioprocess = (e) => {
-    if (!recording) return;
-    const d = e.inputBuffer.getChannelData(0);
-    // Send as base64 float32
-    const buf = new ArrayBuffer(d.byteLength);
-    new Float32Array(buf).set(d);
-    ws.send(buf);
-  };
+  ws.send(JSON.stringify({type: 'speech_start'}));
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: {channelCount: 1, sampleRate: 16000,
+              echoCancellation: true, noiseSuppression: true}});
+    micCtx = new (window.AudioContext || window.webkitAudioContext)({sampleRate: 16000});
+    const src = micCtx.createMediaStreamSource(stream);
+    proc = micCtx.createScriptProcessor(1600, 1, 1); // 100ms @ 16kHz
+    src.connect(proc);
+    proc.connect(micCtx.destination);
+    proc.onaudioprocess = (e) => {
+      if (!recording) return;
+      const d = e.inputBuffer.getChannelData(0);
+      ws.send(d.buffer);  // raw float32 PCM
+    };
+  } catch (err) {
+    console.error('Mic error:', err);
+    document.getElementById('status').textContent = 'Mic error: ' + err.message;
+    stopRec();
+  }
 }
 
 function stopRec() {
   if (!recording) return;
   recording = false;
-  micBtn.classList.remove('on'); micBtn.classList.add('off');
+  micBtn.className = 'off';
   micBtn.textContent = '🎤 Hold to Talk';
-  if (proc) proc.disconnect();
-  if (stream) stream.getTracks().forEach(t => t.stop());
-  if (micCtx) micCtx.close();
-  ws.send(JSON.stringify({type:'end_speech'}));
+  if (proc) { proc.disconnect(); proc = null; }
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  if (micCtx) { micCtx.close(); micCtx = null; }
+  ws.send(JSON.stringify({type: 'speech_end'}));
 }
 </script>
 </body>
 </html>"""
 
 
+# ── Routes ────────────────────────────────────────────────────────────
+
 @app.get("/")
 async def index():
     return HTMLResponse(TRANSLATOR_PAGE)
 
-
 @app.get("/health")
 async def health():
-    return {"status": "ok", "clients": len(clients), "pair": pair}
+    return {"status": "ok", "clients": len(clients), "pair": pair,
+            "mt_ready": mt_engine is not None}
 
+@app.post("/api/set_pair")
+async def set_pair(request: Request):
+    global pair
+    data = await request.json()
+    pair = data.get("pair", pair)
+    await broadcast({"type": "pair", "pair": pair})
+    return {"ok": True, "pair": pair}
+
+@app.post("/api/host_audio")
+async def host_audio(request: Request):
+    """Receive Person A's audio chunks from translator_app.py (raw float32)."""
+    body = await request.body()
+    if len(body) < 4:
+        return JSONResponse({"error": "too short"}, status_code=400)
+    pcm = np.frombuffer(body, dtype=np.float32)
+    feed_asr("host", pcm)
+    return {"ok": True, "n": len(pcm)}
+
+@app.post("/api/host_speech_end")
+async def host_speech_end():
+    """Signal that Person A stopped speaking (flush ASR buffer).
+
+    Returns immediately — ASR runs in a background thread.
+    """
+    flush_asr("host")
+    return {"ok": True}
+
+@app.post("/api/init_mt")
+async def init_mt(request: Request):
+    """Initialize MT engine with a language pair."""
+    global mt_engine, pair
+    data = await request.json()
+    pair = data.get("pair", pair)
+    if mt_engine:
+        mt_engine.stop()
+    mt_engine = CTranslate2MT(pair=pair)
+    mt_engine.start()
+    return {"ok": True, "pair": pair}
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
@@ -206,11 +291,11 @@ async def ws_endpoint(ws: WebSocket):
     await ws.accept()
     cid = next_client_id
     next_client_id += 1
-    clients[cid] = {"ws": ws, "name": f"Guest{cid}", "is_me": cid == 1}
-    who = "me" if cid == 1 else "remote"
-    print(f"[server] client {cid} connected ({who})")
+    is_host = (cid == 1 and len(clients) == 0)
+    clients[cid] = {"ws": ws, "is_host": is_host}
+    who = "me" if is_host else "remote"
+    print(f"[server] client {cid} connected (is_host={is_host})")
 
-    # Send current pair + available pairs
     await ws.send_json({"type": "pair", "pair": pair})
     await ws.send_json({"type": "lang_list", "pairs": list(PAIR_STATUS.keys())})
 
@@ -218,35 +303,126 @@ async def ws_endpoint(ws: WebSocket):
         while True:
             msg = await ws.receive()
             if msg["type"] == "websocket.receive":
-                if "bytes" in msg:
-                    # Audio data (float32 PCM, 100ms chunks at 16kHz)
-                    audio = np.frombuffer(msg["bytes"], dtype=np.float32)
-                    # For now: in mock mode, we don't run ASR on browser audio
-                    # (ASR needs Moonshine model downloaded)
-                    pass
-                elif "text" in msg:
+                if "bytes" in msg and msg["bytes"] is not None:
+                    # Browser audio (Person B)
+                    pcm = np.frombuffer(msg["bytes"], dtype=np.float32)
+                    feed_asr(f"guest_{cid}", pcm)
+                elif "text" in msg and msg["text"] is not None:
                     data = json.loads(msg["text"])
                     if data.get("type") == "set_pair":
                         pair = data["pair"]
-                        print(f"[server] pair changed to {pair}")
-                        # Broadcast to all clients
-                        for c in clients.values():
-                            await c["ws"].send_json({"type": "pair", "pair": pair})
-                    elif data.get("type") == "end_speech":
-                        pass
+                        await broadcast({"type": "pair", "pair": pair})
+                    elif data.get("type") == "speech_start":
+                        who_label = "me" if is_host else "remote"
+                        await broadcast({"type": "pending", "who": who_label})
+                    elif data.get("type") == "speech_end":
+                        flush_asr(f"guest_{cid}")
     except WebSocketDisconnect:
         pass
     finally:
-        if cid in clients:
-            del clients[cid]
+        clients.pop(cid, None)
         print(f"[server] client {cid} disconnected")
 
 
+# ── ASR pipeline ──────────────────────────────────────────────────────
+
+# Moonshine loaded lazily (slow import + model load)
+_transcriber = None
+_model_path = None
+_model_arch = None
+
+def _get_transcriber():
+    global _transcriber, _model_path, _model_arch
+    if _transcriber is not None:
+        return _transcriber
+    from moonshine_voice import Transcriber
+    from moonshine_voice.download import get_model_for_language
+    from moonshine_voice.moonshine_api import ModelArch
+    print("[asr] loading Moonshine small-streaming model...")
+    _model_path, _model_arch = get_model_for_language('en', ModelArch.SMALL_STREAMING)
+    _transcriber = Transcriber(model_path=_model_path, model_arch=_model_arch)
+    print(f"[asr] model loaded: {_model_path}")
+    return _transcriber
+
+
+# ── ASR worker (runs in background thread on flush) ───────────────────
+
+def _run_asr_mt(stream_id: str, audio: np.ndarray):
+    """Transcribe → translate → broadcast. Runs in a worker thread."""
+    try:
+        transcriber = _get_transcriber()
+        t0 = time.perf_counter()
+        result = transcriber.transcribe_without_streaming(audio, ASR_SAMPLE_RATE)
+        asr_ms = (time.perf_counter() - t0) * 1000
+
+        # Concatenate all line texts
+        text = " ".join(line.text for line in result.lines).strip()
+        if not text:
+            return
+
+        print(f"[asr] {stream_id} ({asr_ms:.0f}ms): {text[:80]}")
+
+        # Determine who: host=me, guest=remote
+        who = "me" if stream_id == "host" else "remote"
+
+        # Run MT
+        translated = ""
+        if mt_engine:
+            with mt_lock:
+                translated, reason = mt_engine.translate(text, stream_id=stream_id)
+            if translated:
+                print(f"[mt] {stream_id}: {translated[:80]}")
+        else:
+            print("[mt] engine not ready, sending original only")
+
+        # Broadcast caption
+        caption = {"type": "caption", "who": who,
+                    "original": text, "translated": translated}
+        broadcast_from_thread(caption)
+
+    except Exception as e:
+        print(f"[asr] error in _run_asr_mt: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+# ── Broadcast helper ──────────────────────────────────────────────────
+
+# The server's event loop (set in startup so worker threads can schedule coros)
+_server_loop: asyncio.AbstractEventLoop | None = None
+
+async def broadcast(message: dict):
+    """Send a JSON message to all connected WebSocket clients."""
+    msg_str = json.dumps(message)
+    dead = []
+    for cid, c in clients.items():
+        try:
+            await c["ws"].send_text(msg_str)
+        except Exception:
+            dead.append(cid)
+    for cid in dead:
+        clients.pop(cid, None)
+
+def broadcast_from_thread(message: dict):
+    """Thread-safe broadcast: schedule on the server's event loop."""
+    if _server_loop is not None:
+        asyncio.run_coroutine_threadsafe(broadcast(message), _server_loop)
+    else:
+        print("[server] WARNING: no event loop for broadcast")
+
+
+# ── Startup ───────────────────────────────────────────────────────────
+
+@app.on_event("startup")
+async def startup():
+    global _server_loop
+    _server_loop = asyncio.get_event_loop()
+    print("[server] startup — serving on http://0.0.0.0:8765")
+    print("[server] share this URL (via ngrok) with the other person")
+
 def run_server(host="0.0.0.0", port=8765):
     print(f"[server] starting on http://{host}:{port}")
-    print(f"[server] share this URL (via ngrok) with the other person")
     uvicorn.run(app, host=host, port=port, log_level="info")
-
 
 if __name__ == "__main__":
     run_server()

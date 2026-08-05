@@ -97,7 +97,11 @@ PAIR_STATUS = {
 
 
 class CTranslate2MT:
-    """CTranslate2 int8 OPUS-MT translator with caption filter."""
+    """CTranslate2 int8 OPUS-MT translator with caption filter.
+
+    Maintains separate dedup state per stream (host vs guest) so the same
+    phrase spoken by two different people isn't filtered as a duplicate.
+    """
 
     def __init__(self, pair="en-zh", model_dir=None):
         self.pair = pair
@@ -105,7 +109,7 @@ class CTranslate2MT:
         self._translator = None
         self._sp_src = None
         self._sp_tgt = None
-        self._prev_text = ""
+        self._prev_text = {}  # stream_id -> previous text (per-stream dedup)
         self._lock = threading.Lock()
         self._started = False
 
@@ -153,14 +157,19 @@ class CTranslate2MT:
         self._started = True
         print(f"[mt] CTranslate2 started ({self.pair}, int8)")
 
-    def translate(self, text):
-        """Filter, then translate. Returns (translated_text, reason)."""
+    def translate(self, text, stream_id="default"):
+        """Filter, then translate. Returns (translated_text, reason).
+
+        Uses per-stream dedup state so the same phrase spoken by two
+        different people isn't filtered as a duplicate.
+        """
         if not self._started:
             return "", "not_started"
-        filtered, reason = filter_caption(self._prev_text, text)
+        prev = self._prev_text.get(stream_id, "")
+        filtered, reason = filter_caption(prev, text)
         if not filtered:
             return "", reason
-        self._prev_text = filtered
+        self._prev_text[stream_id] = filtered
         with self._lock:
             tokens = self._sp_src.encode(filtered)
             tokens = [self._sp_src.id_to_piece([x]) for x in tokens]
