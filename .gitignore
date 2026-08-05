@@ -1,0 +1,21 @@
+# Vendored / heavy binaries (re-downloadable, not source)
+wa-translator/whisper.cpp/
+wa-translator/mt_models/
+wa-translator/two_stream
+wa-translator/single_stream
+wa-translator/caption_filter_test
+
+# Python
+__pycache__/
+*.pyc
+/venv-translate/
+
+# Cached model weights (per-user, large)
+*.bin
+*.ort
+*.mlmodelc/
+*.mlpackage/
+
+# Local logs / test audio
+/tmp/local_stream.wav
+/tmp/remote_stream.wav
