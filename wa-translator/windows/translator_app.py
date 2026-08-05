@@ -20,14 +20,10 @@ that all happens inside translation_server.py. This app just:
 
 import sys
 import os
-import io
 import threading
 import time
 import tkinter as tk
 import subprocess
-import json
-import struct
-import numpy as np
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

@@ -150,10 +150,9 @@ class CTranslate2MT:
         self._sp_tgt = spm.SentencePieceProcessor(
             model_file=os.path.join(d, "target.spm"))
         self._translator = ct2.Translator(d, compute_type="int8", intra_threads=4)
-        # Warmup
-        dummy = self._sp_src.encode("hello")
-        dummy = [self._sp_src.id_to_piece([x]) for x in dummy]
-        self._translator.translate_batch([dummy], beam_size=1)
+        # Warmup — translate_batch expects List[List[str]] (string tokens)
+        dummy_tokens = self._sp_src.encode_as_pieces("hello")
+        self._translator.translate_batch([dummy_tokens], beam_size=1)
         self._started = True
         print(f"[mt] CTranslate2 started ({self.pair}, int8)")
 
@@ -171,11 +170,9 @@ class CTranslate2MT:
             return "", reason
         self._prev_text[stream_id] = filtered
         with self._lock:
-            tokens = self._sp_src.encode(filtered)
-            tokens = [self._sp_src.id_to_piece([x]) for x in tokens]
+            tokens = self._sp_src.encode_as_pieces(filtered)
             results = self._translator.translate_batch([tokens], beam_size=1)
-            out_ids = [self._sp_tgt.piece_to_id(t) for t in results[0].hypotheses[0]]
-            out_text = self._sp_tgt.decode(out_ids)
+            out_text = self._sp_tgt.decode(results[0].hypotheses[0])
         return out_text, "ok"
 
     def stop(self):
