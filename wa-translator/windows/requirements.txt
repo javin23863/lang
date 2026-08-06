@@ -11,6 +11,10 @@ uvicorn[standard]==0.52.1
 numpy==2.4.6
 huggingface-hub==1.26.0
 
+# uvicorn[standard] pulls this in, but probe_stream.py and browser_check.py
+# import it directly — pinned so the checks do not depend on a transitive.
+websockets==17.0.1
+
 # CUDA: the ctranslate2 wheel bundles cudnn64_9.dll but not cublas64_12.dll.
 # Without this the first GPU decode dies with "Library cublas64_12.dll is not
 # found or cannot be loaded". cuda_dlls.py puts it on the DLL search path.

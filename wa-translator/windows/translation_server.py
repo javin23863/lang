@@ -8,7 +8,7 @@ peer-to-peer over WebRTC (this server only relays the signalling); a second,
 transcribed (faster-whisper large-v3-turbo) and translated (CTranslate2
 OPUS-MT), then pushed back to the room as captions.
 
-Captions are emitted twice per utterance and then some: a partial every ~500ms
+Captions are emitted repeatedly per utterance: a partial every PARTIAL_EVERY_S
 while you are still speaking, and a final once you stop. Every caption carries
 the speaker's id — each client decides for itself which bubbles are its own.
 Handing out a server-side "me" label, as this file used to, showed both people
@@ -49,9 +49,9 @@ DEFAULT_PORT = 8791
 SAMPLE_RATE = 16000
 PARTIAL_EVERY_S = 0.4      # cadence of in-flight captions; ASR takes ~0.25s,
                            # so the worker still drains faster than this fills
-MIN_PARTIAL_S = 0.8        # below ~0.8s of speech whisper mostly returns filler
-                           # that the confidence gate then throws away — decoding
-                           # it just burns a GPU slot the next partial wanted
+MIN_PARTIAL_S = 0.8        # below this, whisper returns confident filler
+                           # ("Gracias." for 0.6s of Spanish) rather than nothing
+                           # — see the regression check in asr_whisper._demo
 END_SILENCE_MS = 500       # trailing quiet that ends an utterance
 MAX_UTTERANCE_S = 15.0     # force a final; whisper degrades on long audio
 IDLE_DROP_S = 3.0          # discard a buffer holding nothing but silence
@@ -63,6 +63,12 @@ IDLE_DROP_S = 3.0          # discard a buffer holding nothing but silence
 # covers anything that gets through a different server config.
 MAX_FRAME_BYTES = 32000    # 1 second of int16 @ 16kHz
 WS_MAX_SIZE = 65536
+
+# Anyone holding the link can join, same as a video-call link. That is the
+# intended trust model, but it should not also mean unbounded: each participant
+# adds a continuous ASR stream competing for one GPU, so a handful of joiners
+# would starve the conversation the room exists for.
+MAX_PARTICIPANTS = 4
 
 app = FastAPI(title="Live Translator Room")
 
@@ -341,9 +347,16 @@ async def health():
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
     await ws.accept()
+    if len(participants) >= MAX_PARTICIPANTS:
+        print(f"[server] refusing join: room already has {len(participants)}")
+        await ws.send_text(json.dumps({
+            "type": "room_full", "limit": MAX_PARTICIPANTS}))
+        await ws.close(code=1013)  # try again later
+        return
     p = Participant(id=_new_id(), ws=ws)
     participants[p.id] = p
-    print(f"[server] participant {p.id} connected")
+    print(f"[server] participant {p.id} connected "
+          f"({len(participants)}/{MAX_PARTICIPANTS})")
 
     try:
         while True:

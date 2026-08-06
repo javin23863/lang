@@ -81,7 +81,7 @@ let ws, myId = null, myLang = (navigator.language || 'en').slice(0, 2);
 if (!(myLang in LANG_NAMES)) myLang = 'en';
 
 let mediaStream = null, audioCtx = null, workletNode = null;
-let micOn = false, camOn = true;
+let micOn = false, camOn = true, roomFull = false;
 const peers = new Map();   // id -> {pc, lang, polite, makingOffer, ignoreOffer}
 const bubbles = new Map(); // "speakerId:seq" -> element
 
@@ -100,7 +100,11 @@ function connect() {
     setStatus('Connected');
     send({type: 'join', lang: myLang, name: LANG_NAMES[myLang]});
   };
-  ws.onclose = () => { setStatus('Reconnecting…', true); setTimeout(connect, 1500); };
+  ws.onclose = () => {
+    if (roomFull) return;   // retrying a full room just hammers the server
+    setStatus('Reconnecting…', true);
+    setTimeout(connect, 1500);
+  };
   ws.onmessage = (ev) => handle(JSON.parse(ev.data));
 }
 
@@ -110,6 +114,15 @@ function send(obj) {
 
 async function handle(m) {
   if (m.type === 'welcome') {
+    // A dropped WebSocket reconnects and rejoins, and the server issues a new
+    // id. Every existing peer connection was negotiated against the old one —
+    // including who is polite — and the peers themselves are now known by new
+    // ids too, so the old ones can never be signalled again. Start clean.
+    if (myId !== null && myId !== m.id) {
+      peers.forEach(p => p.pc.close());
+      peers.clear();
+      showVideoNote('Reconnecting to the other person…');
+    }
     myId = m.id;
     renderLangs(m.langs);
     // myId decides who is polite, so no peer may be built before it is known.
@@ -125,6 +138,12 @@ async function handle(m) {
     await onSignal(m.from, m.data);
   } else if (m.type === 'caption') {
     renderCaption(m);
+  } else if (m.type === 'room_full') {
+    // Say which wall was hit. Otherwise the socket just closes and the page
+    // retries forever, looking like the server is down.
+    roomFull = true;
+    setStatus('Room is full (' + m.limit + ' people) — ask someone to leave', true);
+    showVideoNote('Room is full (' + m.limit + ' people).');
   }
 }
 

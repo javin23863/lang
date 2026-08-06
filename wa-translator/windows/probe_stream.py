@@ -168,6 +168,39 @@ async def _send_frame_of(n_bytes, label):
     return True
 
 
+async def check_room_capacity():
+    """One more than MAX_PARTICIPANTS must be told the room is full, not just
+    dropped — a bare close looks identical to the server being down."""
+    from translation_server import MAX_PARTICIPANTS
+    held, told = [], None
+    try:
+        for i in range(MAX_PARTICIPANTS + 1):
+            ws = await websockets.connect(URL, max_size=None)
+            await ws.send(json.dumps({"type": "join", "lang": "en", "name": f"p{i}"}))
+            held.append(ws)
+            try:
+                async with asyncio.timeout(2):
+                    async for raw in ws:
+                        m = json.loads(raw)
+                        if m.get("type") == "room_full":
+                            told = m
+                            break
+                        if m.get("type") == "welcome":
+                            break
+            except (TimeoutError, websockets.exceptions.ConnectionClosed):
+                pass
+        if told:
+            print(f"  ok: joiner {MAX_PARTICIPANTS + 1} was told the room is full "
+                  f"(limit {told.get('limit')})")
+            return True
+        print(f"  FAIL: {MAX_PARTICIPANTS + 1} participants were all admitted")
+        return False
+    finally:
+        for ws in held:
+            await ws.close()
+        await asyncio.sleep(0.5)   # let the server drop them before the next check
+
+
 async def check_oversized_frames_are_refused():
     """The room is served over a public tunnel, so a client is not trusted.
 
@@ -179,6 +212,8 @@ async def check_oversized_frames_are_refused():
     ok = await _send_frame_of(MAX_FRAME_BYTES * 2, "app-level limit")
     await asyncio.sleep(0.3)
     ok &= await _send_frame_of(WS_MAX_SIZE * 4, "transport limit")
+
+    ok &= await check_room_capacity()
 
     # And a legitimate 100ms frame must still be accepted, or the guard is
     # simply refusing everything.
