@@ -31,7 +31,8 @@ sys.stderr.reconfigure(line_buffering=True)
 # it and whichever the OS picks answers the request — the room appears to start
 # fine and then serves someone else's 404s.
 PORT = translation_server.DEFAULT_PORT
-URL_RE = re.compile(rb"https://[-a-z0-9]+\.trycloudflare\.com")
+CF_URL_RE = re.compile(rb"https://[-a-z0-9]+\.trycloudflare\.com")
+LHR_URL_RE = re.compile(rb"https://[-a-z0-9]+\.lhr\.life")
 
 
 def port_is_taken(port):
@@ -52,36 +53,132 @@ def port_is_taken(port):
         return False
 
 
-def start_tunnel(port=PORT, timeout=30):
-    """Launch cloudflared and return (process, public_url)."""
+def _url_answers(url, timeout=20):
+    """Can this machine reach the tunnel hostname yet?
+
+    The server is not up at this point, so any HTTP response — including a 502
+    from the edge — counts: what is being tested is whether the name is live.
+    """
+    import urllib.error
+    import urllib.request
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            urllib.request.urlopen(url, timeout=5)
+            return True
+        except urllib.error.HTTPError:
+            return True
+        except Exception:
+            time.sleep(2)
+    return False
+
+
+def _resolves_publicly(url):
+    """Second opinion from a public resolver.
+
+    This machine's ISP resolver does not return records for freshly-created
+    trycloudflare and lhr.life hostnames, while 8.8.8.8 returns them
+    immediately. Treating the local lookup as the verdict killed three working
+    tunnels: a name this host cannot resolve may be perfectly reachable from the
+    phone on the other end of the link.
+    """
+    host = url.split("://", 1)[-1].split("/", 1)[0]
+    try:
+        out = subprocess.run(["nslookup", host, "8.8.8.8"],
+                             capture_output=True, timeout=15, text=True).stdout
+    except Exception:
+        return None                      # no second opinion available
+    tail = out.split(host, 1)[-1] if host in out else out
+    return "Address" in tail or "answer" in out.lower()
+
+
+# Two providers, because quick tunnels are best-effort on both. cloudflared has
+# been the more reliable of the pair here, and localhost.run needs no install —
+# ssh ships with Git for Windows.
+PROVIDERS = [
+    ("cloudflared", ["cloudflared", "tunnel", "--url", "http://localhost:{port}"],
+     CF_URL_RE, "stderr"),
+    ("localhost.run", ["ssh", "-o", "StrictHostKeyChecking=accept-new",
+                       "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3",
+                       "-R", "80:localhost:{port}", "nokey@localhost.run"],
+     LHR_URL_RE, "stdout"),
+]
+
+
+def _try_provider(name, argv, url_re, stream_name, port, timeout):
+    """Start one tunnel provider; return (proc, url) or (None, None)."""
+    argv = [a.format(port=port) for a in argv]
     try:
         proc = subprocess.Popen(
-            ["cloudflared", "tunnel", "--url", f"http://localhost:{port}"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            argv,
+            stdout=subprocess.PIPE if stream_name == "stdout" else subprocess.DEVNULL,
+            stderr=subprocess.PIPE)
     except FileNotFoundError:
-        print("[tunnel] cloudflared not on PATH — running local only")
+        print(f"[tunnel] {name}: not installed, skipping")
         return None, None
 
+    stream = proc.stdout if stream_name == "stdout" else proc.stderr
     url = None
     deadline = time.time() + timeout
     while time.time() < deadline:
-        line = proc.stderr.readline()
+        line = stream.readline()
         if not line:
             break
-        m = URL_RE.search(line)
+        m = url_re.search(line)
         if m:
             url = m.group(0).decode()
             break
+
     if url is None:
-        print("[tunnel] cloudflared gave no URL in time; killing it")
+        print(f"[tunnel] {name}: no URL within {timeout}s")
         proc.terminate()
         return None, None
 
-    # Keep draining stderr, else cloudflared blocks on a full pipe once its
-    # log buffer fills — which strands the tunnel mid-call.
-    threading.Thread(target=lambda: [None for _ in iter(proc.stderr.readline, b"")],
-                     daemon=True).start()
+    # These services print the hostname before it is resolvable, so give it a
+    # moment. Do not treat a local lookup failure as proof the tunnel is dead —
+    # this machine's ISP resolver misses fresh tunnel hostnames that 8.8.8.8
+    # returns straight away, and killing on that signal throws away working
+    # tunnels. Warn, keep it, and say who to blame.
+    if not _url_answers(url):
+        public = _resolves_publicly(url)
+        if public:
+            print(f"[tunnel] {name}: {url} does not resolve from this machine, but "
+                  f"8.8.8.8 sees it — your DNS is behind, the link should still "
+                  f"work for the other person.")
+        elif public is None:
+            print(f"[tunnel] {name}: {url} not reachable from here yet and no "
+                  f"second opinion available — try the link before trusting this.")
+        else:
+            print(f"[tunnel] {name}: {url} does not resolve anywhere yet. It may "
+                  f"still come up; if the link fails, restart.")
+
+    # Keep reading the pipe, else the provider blocks once its buffer fills and
+    # the tunnel strands mid-call. Surface what matters rather than discarding
+    # it: a tunnel can die or re-register minutes after printing its first URL.
+    def drain():
+        for line in iter(stream.readline, b""):
+            text = line.decode(errors="replace").rstrip()
+            found = url_re.search(line)
+            if found and found.group(0).decode() != url:
+                print(f"[tunnel] URL CHANGED to {found.group(0).decode()} — "
+                      f"the shared link is dead")
+            elif any(w in text for w in ("ERR", "error", "failed", "Unauthorized")):
+                print(f"[tunnel] {name}: {text}")
+        print(f"[tunnel] {name} exited — the share link is dead")
+
+    threading.Thread(target=drain, daemon=True).start()
+    print(f"[tunnel] {name}: up")
     return proc, url
+
+
+def start_tunnel(port=PORT, timeout=30):
+    """Bring up a public HTTPS tunnel, trying each provider in turn."""
+    for name, argv, url_re, stream_name in PROVIDERS:
+        proc, url = _try_provider(name, argv, url_re, stream_name, port, timeout)
+        if url:
+            return proc, url
+    print("[tunnel] no provider produced a working URL — running local only")
+    return None, None
 
 
 def main():

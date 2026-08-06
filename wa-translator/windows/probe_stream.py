@@ -201,6 +201,43 @@ async def check_room_capacity():
         await asyncio.sleep(0.5)   # let the server drop them before the next check
 
 
+async def check_idle_sockets_hold_no_slot():
+    """Sockets that never join must not consume room capacity.
+
+    Opening a socket against a public link and saying nothing costs an attacker
+    nothing. Counting connections rather than joins let MAX_PARTICIPANTS idle
+    sockets hold the room shut against everyone real.
+    """
+    from translation_server import MAX_PARTICIPANTS, PRE_JOIN_TIMEOUT_S
+    idle = []
+    try:
+        for _ in range(MAX_PARTICIPANTS):
+            idle.append(await websockets.connect(URL, max_size=None))
+        await asyncio.sleep(1)
+
+        async with websockets.connect(URL, max_size=None) as real:
+            await real.send(json.dumps({"type": "join", "lang": "en", "name": "real"}))
+            try:
+                async with asyncio.timeout(5):
+                    async for raw in real:
+                        m = json.loads(raw)
+                        if m.get("type") == "welcome":
+                            print(f"  ok: a real join succeeds past {MAX_PARTICIPANTS} "
+                                  f"idle sockets")
+                            return True
+                        if m.get("type") == "room_full":
+                            print("  FAIL: idle sockets that never joined filled the room")
+                            return False
+            except (TimeoutError, websockets.exceptions.ConnectionClosed):
+                pass
+        print("  FAIL: a real join got no welcome while idle sockets were open")
+        return False
+    finally:
+        for ws in idle:
+            await ws.close()
+        await asyncio.sleep(0.5)
+
+
 async def check_oversized_frames_are_refused():
     """The room is served over a public tunnel, so a client is not trusted.
 
@@ -214,6 +251,8 @@ async def check_oversized_frames_are_refused():
     ok &= await _send_frame_of(WS_MAX_SIZE * 4, "transport limit")
 
     ok &= await check_room_capacity()
+    await asyncio.sleep(0.3)
+    ok &= await check_idle_sockets_hold_no_slot()
 
     # And a legitimate 100ms frame must still be accepted, or the guard is
     # simply refusing everything.

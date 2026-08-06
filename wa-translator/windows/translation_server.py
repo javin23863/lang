@@ -69,6 +69,7 @@ WS_MAX_SIZE = 65536
 # adds a continuous ASR stream competing for one GPU, so a handful of joiners
 # would starve the conversation the room exists for.
 MAX_PARTICIPANTS = 4
+PRE_JOIN_TIMEOUT_S = 10    # a socket that opens and says nothing is not a guest
 
 app = FastAPI(title="Live Translator Room")
 
@@ -347,22 +348,46 @@ async def health():
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
     await ws.accept()
-    if len(participants) >= MAX_PARTICIPANTS:
-        print(f"[server] refusing join: room already has {len(participants)}")
-        await ws.send_text(json.dumps({
-            "type": "room_full", "limit": MAX_PARTICIPANTS}))
-        await ws.close(code=1013)  # try again later
-        return
     p = Participant(id=_new_id(), ws=ws)
-    participants[p.id] = p
-    print(f"[server] participant {p.id} connected "
-          f"({len(participants)}/{MAX_PARTICIPANTS})")
+    # A socket occupies a slot only once it has joined. Counting connections
+    # instead let four sockets that never send `join` — trivial to open against
+    # a public link — hold the room shut against everyone real. Nothing before
+    # the join is registered anywhere, and anything that stalls before joining
+    # is dropped on the deadline below.
+    joined = False
 
     try:
         while True:
-            msg = await ws.receive()
+            if joined:
+                msg = await ws.receive()
+            else:
+                msg = await asyncio.wait_for(ws.receive(), PRE_JOIN_TIMEOUT_S)
             if msg["type"] == "websocket.disconnect":
                 break
+            if not joined:
+                # Only a join is meaningful before joining; audio from an
+                # unjoined socket has no language and no one to translate for.
+                if msg.get("text") is None:
+                    continue
+                data = json.loads(msg["text"])
+                if data.get("type") != "join":
+                    continue
+                # Check and insert with no await between them: the event loop is
+                # single-threaded, so this pair is atomic and the limit cannot be
+                # raced past by simultaneous joiners.
+                if len(participants) >= MAX_PARTICIPANTS:
+                    print(f"[server] refusing join: room has {len(participants)}")
+                    await ws.send_text(json.dumps(
+                        {"type": "room_full", "limit": MAX_PARTICIPANTS}))
+                    await ws.close(code=1013)  # try again later
+                    return
+                participants[p.id] = p
+                joined = True
+                print(f"[server] participant {p.id} joined "
+                      f"({len(participants)}/{MAX_PARTICIPANTS})")
+                await _on_control(p, data)
+                continue
+
             if msg.get("bytes") is not None:
                 raw = msg["bytes"]
                 # Check before converting: the float32 copy is twice the size,
@@ -378,15 +403,22 @@ async def ws_endpoint(ws: WebSocket):
                 ingest(p, pcm)
             elif msg.get("text") is not None:
                 await _on_control(p, json.loads(msg["text"]))
+    except asyncio.TimeoutError:
+        print(f"[server] socket {p.id} never joined in {PRE_JOIN_TIMEOUT_S}s; closing")
+        try:
+            await ws.close(code=1008)   # policy violation
+        except Exception:
+            pass
     except WebSocketDisconnect:
         pass
     except (RuntimeError, ValueError, KeyError) as e:
         print(f"[server] participant {p.id} error: {type(e).__name__}: {e}")
     finally:
-        participants.pop(p.id, None)
-        jobs.drop_speaker(p.id)
-        await broadcast({"type": "peer_leave", "id": p.id})
-        print(f"[server] participant {p.id} disconnected")
+        if joined:
+            participants.pop(p.id, None)
+            jobs.drop_speaker(p.id)
+            await broadcast({"type": "peer_leave", "id": p.id})
+            print(f"[server] participant {p.id} disconnected")
 
 
 async def _on_control(p: Participant, data: dict):
