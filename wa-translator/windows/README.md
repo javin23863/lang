@@ -1,59 +1,83 @@
-# wa-translator/windows — Windows Desktop Translator (v6)
+# Live bilingual video room (Windows host)
 
-WhatsApp Call Translator — iTour-style link sharing. Person A runs this on
-Windows, shares a link via WhatsApp, Person B opens it on their phone. Both
-see bilingual captions in real time. All ASR + MT runs on-device (free).
+Two people, one link, a browser each. Camera and call audio go peer-to-peer over
+WebRTC; a 16 kHz copy of each microphone comes to this machine, where whisper
+transcribes it and OPUS-MT translates it into the other person's language.
+Captions appear while you are still talking.
 
-## Quick start
-```bash
-cd wa-translator/windows
+Everything runs locally. No paid APIs.
 
-# Install deps (one-time)
-pip install fastapi uvicorn websockets soundcard pycaw comtypes \
-    moonshine-voice sentencepiece ctranslate2 onnxruntime \
-    sounddevice pywin32 Pillow mss numpy
+## Run it
 
-# Run the host app
-python translator_app.py
+```powershell
+cd wa-translator\windows
+..\..\.venv\Scripts\python.exe run_room.py          # prints a public https link
+..\..\.venv\Scripts\python.exe run_room.py --local  # localhost only
 ```
 
-Then:
-1. Select a language pair (en-zh, en-de, en-es, ...)
-2. Click **Start**
-3. Click **Start ngrok** to get a public URL
-4. Send the URL to the other person via WhatsApp
-5. They open it on their phone → talk → captions appear on both sides
+Both people open the link, tap **Start**, and pick the language they speak.
+`<link>/test` is a mic and camera diagnostic if something looks wrong.
 
-## Files
-| File | Purpose |
+First run downloads ~2 GB of models (whisper large-v3-turbo, two OPUS-MT
+directions) into `~/.cache`. After that it works offline.
+
+## What runs where
+
+| File | Job |
 |---|---|
-| `translator_app.py` | Host GUI (Tkinter): start/stop, link sharing, overlay |
-| `translation_server.py` | FastAPI+WebSocket server; serves web page to Person B |
-| `audio_capture.py` | WASAPI loopback (speaker) + mic capture, 16kHz mono f32 |
-| `moonshine_asr.py` | Moonshine small-streaming ASR (two streams, one transcriber) |
-| `mt_ct2.py` | CTranslate2 int8 OPUS-MT + caption filter (loop/dedup/length) |
-| `overlay_window.py` | Win32 topmost click-through caption overlay (GDI text) |
+| `run_room.py` | starts the server + a cloudflared quick tunnel, prints the link |
+| `translation_server.py` | the room: participants, WebRTC signalling relay, audio ingest, caption fan-out |
+| `endpointer.py` | Silero VAD — where an utterance starts, how much of it is speech, when it ends |
+| `asr_whisper.py` | faster-whisper `large-v3-turbo`, CUDA fp16, explicit per-speaker language |
+| `mt_ct2.py` | CTranslate2 OPUS-MT, one engine per direction, plus the caption filter |
+| `cuda_dlls.py` | puts the pip CUDA runtime on the DLL search path |
+| `static/room.html` | the room UI: video PiP, live caption bubbles, language picker |
+| `static/pcm-worklet.js` | mic → 16 kHz mono int16 on the audio thread |
 
-## Architecture
-```
-Person A (Windows)              Person B (phone, anywhere)
-┌───────────────────┐          ┌───────────────────┐
-│ translator_app    │◄─WASAPI──│  Browser web page   │
-│  audio_capture    │          │  getUserMedia mic   │
-│  Moonshine ASR    │◄─WebSocket─│  Captions display  │
-│  CTranslate2 MT   │  (ngrok)  └───────────────────┘
-│  Overlay window   │
-│  translation_server│
-└───────────────────┘
-  All ASR+MT on-device (free)
+Requires a CUDA GPU for usable latency. Without one both models fall back to CPU
+and captions will lag badly — the code runs, the experience does not.
+
+## Checks
+
+```powershell
+..\..\.venv\Scripts\python.exe endpointer.py     # VAD gate and endpointing
+..\..\.venv\Scripts\python.exe asr_whisper.py    # ASR, incl. the hallucination regression
+..\..\.venv\Scripts\python.exe mt_ct2.py         # both directions, loop detection
+..\..\.venv\Scripts\python.exe test_room.py      # room plumbing, 10 tests
+..\wa-translator\caption_filter_test.py          # portable caption filter, 14 tests
+
+# end to end, against a running server — this is the one that can fail on "too slow"
+..\..\.venv\Scripts\python.exe probe_stream.py
 ```
 
-## Status
-- ✅ Translation server (FastAPI + WebSocket) — verified
-- ✅ Audio capture (WASAPI loopback + mic) — verified on this hardware
-- ✅ Overlay window (Win32 topmost, GDI text) — verified
-- ✅ Caption filter (loop/dedup/length) — verified
-- ✅ Web page (getUserMedia, Hold-to-Talk, captions, lang picker) — verified
-- ⏳ Moonshine ASR model download (~250 MB) — code ready, model not downloaded
-- ⏳ CTranslate2 MT model download (~1 GB) — code ready, model not downloaded
-- ⏳ ngrok tunnel + real remote browser test — ngrok installed, not tested E2E
+`probe_stream.py` voids its own run if it could not feed audio at real-time
+speed, because a drifting probe reports the app as slow when the app is fine.
+
+### Measured (RTX 3080 Laptop, 8 GB)
+
+| | en → es | es → en |
+|---|---|---|
+| first live caption, after speech starts | 1.99 s | 1.66 s |
+| final caption, after the audio ends | +0.09 s | +0.12 s |
+| ASR decode, per call | ~250 ms | ~250 ms |
+| MT, per caption | ~30 ms | ~30 ms |
+
+The ~1.7–2.0 s to the first caption is mostly a deliberate wait: below ~0.8 s of
+speech whisper answers with confident filler (`"Gracias."`), so the server does
+not ask. Decode and translation are ~0.3 s of it.
+
+### Test audio
+
+`../test-audio/{en,es}.wav` are 16 kHz fixtures. They were generated once with
+Moonshine's TTS (`moonshine-voice`, `kokoro` voices) — that package is not a
+dependency of this app, so regenerate them from any 16 kHz mono recording if
+they go missing. The Spanish clip is what the hallucination regression is pinned
+to.
+
+## Retired
+
+These are the earlier WhatsApp-call-overlay design and are no longer on the path:
+`translator_app.py` (tkinter host), `audio_capture.py` (WASAPI loopback),
+`overlay_window.py` (topmost caption window), `moonshine_asr.py`. They still
+work for capturing a call playing on this PC; they cannot do a two-person room
+with video, which is what the app is now.

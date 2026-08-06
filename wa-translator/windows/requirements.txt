@@ -1,0 +1,22 @@
+# uv venv --python 3.11 .venv
+# uv pip install --python .venv\Scripts\python.exe -r wa-translator\windows\requirements.txt
+#
+# Verified on Windows 11 + RTX 3080 Laptop, Python 3.11.15.
+
+faster-whisper==1.2.1
+ctranslate2==4.8.0
+sentencepiece==0.2.2
+fastapi==0.141.1
+uvicorn[standard]==0.52.1
+numpy==2.4.6
+huggingface-hub==1.26.0
+
+# CUDA: the ctranslate2 wheel bundles cudnn64_9.dll but not cublas64_12.dll.
+# Without this the first GPU decode dies with "Library cublas64_12.dll is not
+# found or cannot be loaded". cuda_dlls.py puts it on the DLL search path.
+nvidia-cublas-cu12==12.9.2.10
+
+# Only needed the first time a language direction is used, to convert the
+# HuggingFace OPUS-MT weights to CTranslate2. Never loaded at call time.
+transformers==5.14.1
+torch==2.13.0+cpu       # install with: uv pip install torch --torch-backend cpu

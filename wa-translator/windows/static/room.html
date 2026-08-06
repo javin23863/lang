@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Live Translator Room</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+     background:#0b141a;color:#e9edef;display:flex;flex-direction:column;
+     overflow:hidden}
+
+/* ── video ───────────────────────────────────────────────── */
+#stage{position:relative;background:#000;flex:0 0 auto;height:34vh;min-height:180px}
+#remoteVideo{width:100%;height:100%;object-fit:cover;background:#000}
+#selfWrap{position:absolute;right:10px;bottom:10px;width:27%;max-width:130px;
+          aspect-ratio:3/4;border-radius:10px;overflow:hidden;
+          border:2px solid rgba(255,255,255,.25);background:#111b21;
+          box-shadow:0 3px 12px rgba(0,0,0,.5)}
+#selfVideo{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+#videoNote{position:absolute;inset:0;display:flex;align-items:center;
+           justify-content:center;text-align:center;padding:16px;font-size:13px;
+           color:#8696a0;background:#0b141a}
+#videoNote.hidden{display:none}
+
+/* ── captions ────────────────────────────────────────────── */
+#captions{flex:1;overflow-y:auto;padding:12px 14px 8px;display:flex;
+          flex-direction:column;gap:8px}
+.msg{padding:8px 12px;border-radius:10px;max-width:88%;word-wrap:break-word;
+     animation:fade .12s ease-out}
+@keyframes fade{from{opacity:.4}to{opacity:1}}
+.msg.mine{background:#005c4b;align-self:flex-end;border-radius:10px 2px 10px 10px}
+.msg.theirs{background:#202c33;align-self:flex-start;border-radius:2px 10px 10px 10px}
+.msg .who{font-size:10px;color:#8696a0;margin-bottom:3px;letter-spacing:.04em}
+.msg .lead{font-size:17px;line-height:1.35}
+.msg .sub{font-size:13px;line-height:1.35;color:#8696a0;margin-top:3px}
+.msg.live{opacity:.75}
+.msg.live .lead::after{content:'▌';animation:blink 1s steps(2) infinite;color:#53bdeb}
+@keyframes blink{50%{opacity:0}}
+
+/* ── controls ────────────────────────────────────────────── */
+#bar{flex:0 0 auto;background:#111b21;padding:8px 12px calc(8px + env(safe-area-inset-bottom));
+     display:flex;gap:8px;align-items:center;border-top:1px solid #202c33}
+button{border:none;border-radius:20px;font-size:14px;font-weight:600;
+       cursor:pointer;padding:11px 16px;font-family:inherit}
+#micBtn{flex:1;background:#075E54;color:#fff}
+#micBtn.on{background:#d32f2f}
+#micBtn .dot{display:inline-block;width:9px;height:9px;border-radius:50%;
+             background:#fff;margin-right:7px;animation:blink 1s infinite}
+.icon{background:#202c33;color:#e9edef;padding:11px 13px}
+.icon.off{background:#202c33;color:#8696a0;text-decoration:line-through}
+#langSel{background:#202c33;color:#e9edef;border:none;border-radius:20px;
+         padding:11px 10px;font-size:14px;font-family:inherit}
+#status{position:absolute;top:0;left:0;right:0;padding:5px;text-align:center;
+        font-size:11px;color:#e9edef;background:rgba(0,0,0,.55);z-index:5}
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <video id="remoteVideo" autoplay playsinline></video>
+  <div id="videoNote">Waiting for the other person to join…</div>
+  <div id="selfWrap"><video id="selfVideo" autoplay playsinline muted></video></div>
+  <div id="status">Connecting…</div>
+</div>
+
+<div id="captions"></div>
+
+<div id="bar">
+  <button id="micBtn">🎤 Start</button>
+  <button id="camBtn" class="icon">📷</button>
+  <select id="langSel" title="The language you speak"></select>
+</div>
+
+<script>
+const LANG_NAMES = {en: 'English', es: 'Español'};
+const $ = (id) => document.getElementById(id);
+
+let ws, myId = null, myLang = (navigator.language || 'en').slice(0, 2);
+if (!(myLang in LANG_NAMES)) myLang = 'en';
+
+let mediaStream = null, audioCtx = null, workletNode = null;
+let micOn = false, camOn = true;
+const peers = new Map();   // id -> {pc, lang, polite, makingOffer, ignoreOffer}
+const bubbles = new Map(); // "speakerId:seq" -> element
+
+function setStatus(text, sticky) {
+  const el = $('status');
+  el.textContent = text;
+  el.style.display = text ? 'block' : 'none';
+  if (!sticky && text) setTimeout(() => { if (el.textContent === text) el.style.display = 'none'; }, 3000);
+}
+
+// ── WebSocket ─────────────────────────────────────────────
+function connect() {
+  ws = new WebSocket((location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws');
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = () => {
+    setStatus('Connected');
+    send({type: 'join', lang: myLang, name: LANG_NAMES[myLang]});
+  };
+  ws.onclose = () => { setStatus('Reconnecting…', true); setTimeout(connect, 1500); };
+  ws.onmessage = (ev) => handle(JSON.parse(ev.data));
+}
+
+function send(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+}
+
+async function handle(m) {
+  if (m.type === 'welcome') {
+    myId = m.id;
+    renderLangs(m.langs);
+    // myId decides who is polite, so no peer may be built before it is known.
+    for (const peer of m.peers) startPeer(peer.id);
+  } else if (m.type === 'peer_join') {
+    setStatus(LANG_NAMES[m.lang] + ' speaker joined');
+    startPeer(m.id);
+  } else if (m.type === 'peer_leave') {
+    const p = peers.get(m.id);
+    if (p) { p.pc.close(); peers.delete(m.id); }
+    if (peers.size === 0) showVideoNote('The other person left.');
+  } else if (m.type === 'signal') {
+    await onSignal(m.from, m.data);
+  } else if (m.type === 'caption') {
+    renderCaption(m);
+  }
+}
+
+// ── Captions ──────────────────────────────────────────────
+function renderCaption(m) {
+  const key = m.speaker + ':' + m.seq;
+  let el = bubbles.get(key);
+
+  if (m.final && !m.original) {           // nothing intelligible — drop the bubble
+    if (el) el.remove();
+    bubbles.delete(key);
+    return;
+  }
+  if (!m.original) return;
+
+  const mine = m.speaker === myId;
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'msg ' + (mine ? 'mine' : 'theirs');
+    el.innerHTML = '<div class="who"></div><div class="lead"></div><div class="sub"></div>';
+    $('captions').appendChild(el);
+    bubbles.set(key, el);
+  }
+
+  // You read the translation; the speaker reads their own words. Whichever is
+  // in your language is the big line.
+  const translated = m.translations[myLang] || '';
+  const lead = (!mine && translated) ? translated : m.original;
+  const sub = (!mine && translated) ? m.original : (mine ? translated : '');
+
+  el.classList.toggle('live', !m.final);
+  el.querySelector('.who').textContent =
+    (mine ? 'You' : LANG_NAMES[m.speaker_lang] || m.speaker_lang) +
+    (m.final ? '' : ' · live');
+  el.querySelector('.lead').textContent = lead;
+  el.querySelector('.sub').textContent = sub;
+  $('captions').scrollTop = $('captions').scrollHeight;
+}
+
+// ── Media ─────────────────────────────────────────────────
+// Cache the promise, not the resolved stream. startPeer, the mic button and the
+// camera button can all ask for media at once; guarding on `mediaStream` lets
+// each of them open its own capture, and then the tracks published to the peer
+// belong to a different stream than the one mute toggles.
+let mediaPromise = null;
+
+function getMedia() {
+  if (!mediaPromise) {
+    mediaPromise = navigator.mediaDevices.getUserMedia({
+      video: {facingMode: 'user', width: {ideal: 640}, height: {ideal: 480}},
+      audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true}
+    }).then(stream => {
+      mediaStream = stream;
+      $('selfVideo').srcObject = stream;
+      // The camera may be wanted before the mic is. The audio track exists from
+      // here on and gets published to the peer as soon as one connects, so it
+      // starts disabled and only setMicEnabled turns it on.
+      setMicEnabled(micOn);
+      return stream;
+    }).catch(err => {
+      mediaPromise = null;   // let the user retry after granting permission
+      throw err;
+    });
+  }
+  return mediaPromise;
+}
+
+// Single owner of mic state. Every consumer of the microphone is toggled here:
+// the track published to the peer AND the worklet feeding captions. They were
+// separate before, so the button muted the captions while the other person
+// could still hear the room.
+function setMicEnabled(on) {
+  micOn = on;
+  if (mediaStream) mediaStream.getAudioTracks().forEach(t => { t.enabled = on; });
+  if (workletNode) workletNode.port.postMessage({on});
+  $('micBtn').className = on ? 'on' : '';
+  $('micBtn').innerHTML = on
+    ? '<span class="dot"></span>Listening — tap to mute'
+    : '🎤 Start';
+}
+
+async function startCapture() {
+  const stream = await getMedia();
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    await audioCtx.audioWorklet.addModule('/static/pcm-worklet.js');
+    workletNode = new AudioWorkletNode(audioCtx, 'pcm-worklet');
+    workletNode.port.onmessage = (e) => {
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(e.data);
+    };
+    audioCtx.createMediaStreamSource(stream).connect(workletNode);
+    // Not connected to destination: this branch exists to be captured, not
+    // heard. The other person's voice arrives over WebRTC instead.
+  }
+  if (audioCtx.state === 'suspended') await audioCtx.resume();
+}
+
+$('micBtn').onclick = async () => {
+  try {
+    if (micOn) {
+      setMicEnabled(false);
+      setStatus('Muted — the other person cannot hear you');
+      return;
+    }
+    $('micBtn').textContent = 'Starting…';
+    await startCapture();
+    for (const p of peers.values()) addTracks(p.pc);
+    setMicEnabled(true);
+    setStatus('Mic on — speak ' + LANG_NAMES[myLang]);
+  } catch (err) {
+    setMicEnabled(false);
+    setStatus('Mic blocked: ' + err.name, true);
+  }
+};
+
+$('camBtn').onclick = async () => {
+  await getMedia();
+  camOn = !camOn;
+  mediaStream.getVideoTracks().forEach(t => t.enabled = camOn);
+  $('camBtn').className = 'icon' + (camOn ? '' : ' off');
+};
+
+function renderLangs(langs) {
+  const sel = $('langSel');
+  sel.innerHTML = '';
+  langs.forEach(l => {
+    const o = document.createElement('option');
+    o.value = l; o.textContent = LANG_NAMES[l] || l;
+    if (l === myLang) o.selected = true;
+    sel.appendChild(o);
+  });
+  sel.onchange = () => { myLang = sel.value; send({type: 'set_lang', lang: myLang}); };
+}
+
+// ── WebRTC (perfect negotiation; lower id is polite) ──────
+function showVideoNote(text) {
+  $('videoNote').textContent = text;
+  $('videoNote').classList.remove('hidden');
+}
+
+function addTracks(pc) {
+  if (!mediaStream) return;
+  const existing = pc.getSenders().map(s => s.track);
+  mediaStream.getTracks().forEach(t => { if (!existing.includes(t)) pc.addTrack(t, mediaStream); });
+}
+
+// Synchronous and idempotent on purpose. This used to await getMedia() before
+// registering in `peers`, so a signal arriving during that await found no entry
+// and built a second RTCPeerConnection for the same peer: the SDP was applied to
+// one and the ICE candidates were emitted by the other, and one side of the call
+// never sent a single candidate. Nothing may await before peers.set().
+function startPeer(peerId) {
+  const existing = peers.get(peerId);
+  if (existing) return existing;
+
+  const pc = new RTCPeerConnection({
+    iceServers: [{urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302']}]
+  });
+  const state = {pc, polite: myId > peerId, makingOffer: false, ignoreOffer: false};
+  peers.set(peerId, state);
+
+  // Media may not be granted yet. Adding tracks later fires negotiationneeded
+  // on its own, which is what drives the offer — on both sides, with the
+  // polite/impolite rule below resolving the collision.
+  getMedia().then(() => addTracks(pc)).catch(() => {});
+
+  pc.ontrack = (e) => {
+    $('remoteVideo').srcObject = e.streams[0];
+    $('videoNote').classList.add('hidden');
+  };
+  pc.onicecandidate = (e) => {
+    if (e.candidate) send({type: 'signal', to: peerId, data: {candidate: e.candidate}});
+  };
+  pc.onnegotiationneeded = async () => {
+    try {
+      state.makingOffer = true;
+      await pc.setLocalDescription();
+      send({type: 'signal', to: peerId, data: {description: pc.localDescription}});
+    } finally { state.makingOffer = false; }
+  };
+  pc.oniceconnectionstatechange = () => {
+    if (pc.iceConnectionState === 'failed') {
+      // No TURN server here, so a symmetric NAT on either side kills video.
+      // Say so — a black rectangle reads as a bug in the app.
+      showVideoNote('Video could not connect through your networks. Captions are still live.');
+    }
+  };
+  setTimeout(() => {
+    if (pc.iceConnectionState !== 'connected' && pc.iceConnectionState !== 'completed') {
+      showVideoNote('Still trying to connect video… captions are already live.');
+    }
+  }, 10000);
+
+  return state;
+}
+
+async function onSignal(from, data) {
+  const state = startPeer(from);   // idempotent; returns the existing peer
+  const pc = state.pc;
+
+  if (data.description) {
+    const offerCollision = data.description.type === 'offer' &&
+      (state.makingOffer || pc.signalingState !== 'stable');
+    state.ignoreOffer = !state.polite && offerCollision;
+    if (state.ignoreOffer) return;
+    await pc.setRemoteDescription(data.description);
+    if (data.description.type === 'offer') {
+      await pc.setLocalDescription();
+      send({type: 'signal', to: from, data: {description: pc.localDescription}});
+    }
+  } else if (data.candidate) {
+    try { await pc.addIceCandidate(data.candidate); }
+    catch (e) { if (!state.ignoreOffer) throw e; }
+  }
+}
+
+connect();
+</script>
+</body>
+</html>

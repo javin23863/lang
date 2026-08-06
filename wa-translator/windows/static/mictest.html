@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mic + Camera Test</title>
+<style>body{font-family:sans-serif;padding:20px;background:#111;color:#eee}
+button{padding:12px 24px;font-size:16px;cursor:pointer}
+#log{margin-top:20px;white-space:pre-wrap;font-family:monospace;font-size:12px}</style>
+</head><body>
+<h2>Mic + Camera Diagnostic</h2>
+<button onclick="runTest()">Run Test</button>
+<div id="log"></div>
+<script>
+function log(msg) { document.getElementById('log').textContent += msg + '\n'; }
+
+async function runTest() {
+  document.getElementById('log').textContent = '';
+  log('=== Browser ===');
+  log('UA: ' + navigator.userAgent);
+  log('secure context: ' + window.isSecureContext + '   (false blocks mic and camera)');
+  log('mediaDevices: ' + !!navigator.mediaDevices);
+  log('AudioWorklet: ' + !!(window.AudioContext && AudioContext.prototype.audioWorklet !== undefined));
+  log('RTCPeerConnection: ' + !!window.RTCPeerConnection);
+  log('WebSocket: ' + !!window.WebSocket);
+
+  log('\n=== Permissions ===');
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({audio: true, video: true});
+    stream.getTracks().forEach(t => log(t.kind + ': ' + t.label));
+  } catch (err) {
+    log('FAIL: ' + err.name + ' — ' + err.message);
+    log('\nTEST RESULT: FAIL');
+    return;
+  }
+
+  log('\n=== AudioWorklet capture ===');
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    log('context sample rate: ' + ctx.sampleRate);
+    await ctx.audioWorklet.addModule('/static/pcm-worklet.js');
+    const node = new AudioWorkletNode(ctx, 'pcm-worklet');
+    let frames = 0, peak = 0;
+    node.port.onmessage = (e) => {
+      const pcm = new Int16Array(e.data);
+      for (const s of pcm) peak = Math.max(peak, Math.abs(s));
+      if (++frames === 20) {
+        log('20 frames of ' + pcm.length + ' samples received');
+        log('peak amplitude: ' + peak + ' / 32768' + (peak < 100 ? '  <- mic is silent, check input device' : ''));
+        node.port.postMessage({on: false});
+        stream.getTracks().forEach(t => t.stop());
+        ctx.close();
+        log('\nTEST RESULT: ' + (peak < 100 ? 'AUDIO TOO QUIET' : 'PASS'));
+      }
+    };
+    ctx.createMediaStreamSource(stream).connect(node);
+    node.port.postMessage({on: true});
+    log('waiting for 2s of audio — say something...');
+  } catch (err) {
+    log('FAIL: ' + err.name + ' — ' + err.message);
+    log('\nTEST RESULT: FAIL');
+  }
+}
+</script>
+</body></html>

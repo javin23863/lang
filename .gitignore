@@ -9,6 +9,7 @@ wa-translator/caption_filter_test
 __pycache__/
 *.pyc
 /venv-translate/
+/.venv/
 
 # Cached model weights (per-user, large)
 *.bin
