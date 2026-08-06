@@ -39,6 +39,13 @@ from endpointer import Endpointer
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(HERE, "static")
 
+# Single source of truth for the port. Deliberately not 8765: another app on
+# this machine listens there, and Windows lets a second process bind an
+# already-bound port rather than refusing, so both servers sit on it and
+# whichever the OS picks answers — the room starts fine and serves someone
+# else's 404s.
+DEFAULT_PORT = 8791
+
 SAMPLE_RATE = 16000
 PARTIAL_EVERY_S = 0.4      # cadence of in-flight captions; ASR takes ~0.25s,
                            # so the worker still drains faster than this fills
@@ -48,6 +55,14 @@ MIN_PARTIAL_S = 0.8        # below ~0.8s of speech whisper mostly returns filler
 END_SILENCE_MS = 500       # trailing quiet that ends an utterance
 MAX_UTTERANCE_S = 15.0     # force a final; whisper degrades on long audio
 IDLE_DROP_S = 3.0          # discard a buffer holding nothing but silence
+
+# The room is reachable over a public tunnel, so a client is not trusted. The
+# browser sends 100ms frames (3200 bytes); anything an order of magnitude past
+# that is not this app. Enforced twice on purpose: ws_max_size stops the
+# framework from ever buffering a huge message, and the check in the handler
+# covers anything that gets through a different server config.
+MAX_FRAME_BYTES = 32000    # 1 second of int16 @ 16kHz
+WS_MAX_SIZE = 65536
 
 app = FastAPI(title="Live Translator Room")
 
@@ -336,8 +351,17 @@ async def ws_endpoint(ws: WebSocket):
             if msg["type"] == "websocket.disconnect":
                 break
             if msg.get("bytes") is not None:
+                raw = msg["bytes"]
+                # Check before converting: the float32 copy is twice the size,
+                # and ingest() would append it straight onto the endpointer
+                # buffer, so an oversized frame is cheapest to refuse here.
+                if len(raw) > MAX_FRAME_BYTES:
+                    print(f"[server] participant {p.id} sent a {len(raw)}B audio "
+                          f"frame (max {MAX_FRAME_BYTES}); closing")
+                    await ws.close(code=1009)  # message too big
+                    break
                 # int16 mono @16kHz from the browser's AudioWorklet
-                pcm = np.frombuffer(msg["bytes"], dtype=np.int16).astype(np.float32) / 32768.0
+                pcm = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
                 ingest(p, pcm)
             elif msg.get("text") is not None:
                 await _on_control(p, json.loads(msg["text"]))
@@ -374,7 +398,16 @@ async def _on_control(p: Participant, data: dict):
         # WebRTC offer/answer/ICE, relayed verbatim. The server neither parses
         # nor stores SDP — video and call audio never touch this process.
         to = data.get("to")
-        await send_to(to, {"type": "signal", "from": p.id, "data": data.get("data")})
+        payload = data.get("data") or {}
+        # "Video won't connect" is the failure this app will be asked about most,
+        # and from the outside it is indistinguishable from a NAT problem. One
+        # line per relayed message says whether ICE candidates flowed at all.
+        kindname = ((payload.get("description") or {}).get("type")
+                    if payload.get("description") else
+                    "ice" if payload.get("candidate") else "?")
+        print(f"[signal] {p.id} -> {to}: {kindname}"
+              + ("" if to in participants else "  (NO SUCH PARTICIPANT)"))
+        await send_to(to, {"type": "signal", "from": p.id, "data": payload})
 
     elif kind == "speech_end":
         # Explicit flush (used by the offline probe); normal calls rely on VAD.
@@ -392,11 +425,12 @@ async def startup():
     _server_loop = asyncio.get_running_loop()
     threading.Thread(target=_load_models, daemon=True).start()
     threading.Thread(target=_worker, daemon=True).start()
-    print("[server] listening on http://0.0.0.0:8765 (models loading in background)")
+    print(f"[server] listening on http://0.0.0.0:{DEFAULT_PORT} (models loading in background)")
 
 
-def run_server(host="0.0.0.0", port=8765):
-    uvicorn.run(app, host=host, port=port, log_level="warning")
+def run_server(host="0.0.0.0", port=DEFAULT_PORT):
+    uvicorn.run(app, host=host, port=port, log_level="warning",
+                ws_max_size=WS_MAX_SIZE)
 
 
 if __name__ == "__main__":

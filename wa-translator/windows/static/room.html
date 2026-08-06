@@ -112,11 +112,11 @@ async function handle(m) {
   if (m.type === 'welcome') {
     myId = m.id;
     renderLangs(m.langs);
-    // Whoever is already here gets called by the newcomer.
-    for (const peer of m.peers) await startPeer(peer.id, true);
+    // myId decides who is polite, so no peer may be built before it is known.
+    for (const peer of m.peers) startPeer(peer.id);
   } else if (m.type === 'peer_join') {
     setStatus(LANG_NAMES[m.lang] + ' speaker joined');
-    if (!peers.has(m.id)) await startPeer(m.id, false);
+    startPeer(m.id);
   } else if (m.type === 'peer_leave') {
     const p = peers.get(m.id);
     if (p) { p.pc.close(); peers.delete(m.id); }
@@ -165,14 +165,45 @@ function renderCaption(m) {
 }
 
 // ── Media ─────────────────────────────────────────────────
-async function getMedia() {
-  if (mediaStream) return mediaStream;
-  mediaStream = await navigator.mediaDevices.getUserMedia({
-    video: {facingMode: 'user', width: {ideal: 640}, height: {ideal: 480}},
-    audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true}
-  });
-  $('selfVideo').srcObject = mediaStream;
-  return mediaStream;
+// Cache the promise, not the resolved stream. startPeer, the mic button and the
+// camera button can all ask for media at once; guarding on `mediaStream` lets
+// each of them open its own capture, and then the tracks published to the peer
+// belong to a different stream than the one mute toggles.
+let mediaPromise = null;
+
+function getMedia() {
+  if (!mediaPromise) {
+    mediaPromise = navigator.mediaDevices.getUserMedia({
+      video: {facingMode: 'user', width: {ideal: 640}, height: {ideal: 480}},
+      audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true}
+    }).then(stream => {
+      mediaStream = stream;
+      $('selfVideo').srcObject = stream;
+      // The camera may be wanted before the mic is. The audio track exists from
+      // here on and gets published to the peer as soon as one connects, so it
+      // starts disabled and only setMicEnabled turns it on.
+      setMicEnabled(micOn);
+      return stream;
+    }).catch(err => {
+      mediaPromise = null;   // let the user retry after granting permission
+      throw err;
+    });
+  }
+  return mediaPromise;
+}
+
+// Single owner of mic state. Every consumer of the microphone is toggled here:
+// the track published to the peer AND the worklet feeding captions. They were
+// separate before, so the button muted the captions while the other person
+// could still hear the room.
+function setMicEnabled(on) {
+  micOn = on;
+  if (mediaStream) mediaStream.getAudioTracks().forEach(t => { t.enabled = on; });
+  if (workletNode) workletNode.port.postMessage({on});
+  $('micBtn').className = on ? 'on' : '';
+  $('micBtn').innerHTML = on
+    ? '<span class="dot"></span>Listening — tap to mute'
+    : '🎤 Start';
 }
 
 async function startCapture() {
@@ -189,27 +220,22 @@ async function startCapture() {
     // heard. The other person's voice arrives over WebRTC instead.
   }
   if (audioCtx.state === 'suspended') await audioCtx.resume();
-  workletNode.port.postMessage({on: true});
 }
 
 $('micBtn').onclick = async () => {
   try {
     if (micOn) {
-      workletNode && workletNode.port.postMessage({on: false});
-      micOn = false;
-      $('micBtn').className = '';
-      $('micBtn').textContent = '🎤 Start';
+      setMicEnabled(false);
+      setStatus('Muted — the other person cannot hear you');
       return;
     }
     $('micBtn').textContent = 'Starting…';
     await startCapture();
     for (const p of peers.values()) addTracks(p.pc);
-    micOn = true;
-    $('micBtn').className = 'on';
-    $('micBtn').innerHTML = '<span class="dot"></span>Listening — tap to mute';
+    setMicEnabled(true);
     setStatus('Mic on — speak ' + LANG_NAMES[myLang]);
   } catch (err) {
-    $('micBtn').textContent = '🎤 Start';
+    setMicEnabled(false);
     setStatus('Mic blocked: ' + err.name, true);
   }
 };
@@ -245,14 +271,25 @@ function addTracks(pc) {
   mediaStream.getTracks().forEach(t => { if (!existing.includes(t)) pc.addTrack(t, mediaStream); });
 }
 
-async function startPeer(peerId, weCall) {
-  await getMedia().catch(() => {});
+// Synchronous and idempotent on purpose. This used to await getMedia() before
+// registering in `peers`, so a signal arriving during that await found no entry
+// and built a second RTCPeerConnection for the same peer: the SDP was applied to
+// one and the ICE candidates were emitted by the other, and one side of the call
+// never sent a single candidate. Nothing may await before peers.set().
+function startPeer(peerId) {
+  const existing = peers.get(peerId);
+  if (existing) return existing;
+
   const pc = new RTCPeerConnection({
     iceServers: [{urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302']}]
   });
   const state = {pc, polite: myId > peerId, makingOffer: false, ignoreOffer: false};
   peers.set(peerId, state);
-  addTracks(pc);
+
+  // Media may not be granted yet. Adding tracks later fires negotiationneeded
+  // on its own, which is what drives the offer — on both sides, with the
+  // polite/impolite rule below resolving the collision.
+  getMedia().then(() => addTracks(pc)).catch(() => {});
 
   pc.ontrack = (e) => {
     $('remoteVideo').srcObject = e.streams[0];
@@ -281,13 +318,11 @@ async function startPeer(peerId, weCall) {
     }
   }, 10000);
 
-  if (weCall) pc.onnegotiationneeded();
   return state;
 }
 
 async function onSignal(from, data) {
-  let state = peers.get(from);
-  if (!state) state = await startPeer(from, false);
+  const state = startPeer(from);   // idempotent; returns the existing peer
   const pc = state.pc;
 
   if (data.description) {

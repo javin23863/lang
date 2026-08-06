@@ -25,10 +25,11 @@ import websockets
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from endpointer import speech_probs, SPEECH_THRESHOLD, WINDOW
+from translation_server import DEFAULT_PORT
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIXTURES = os.path.join(HERE, "..", "test-audio")
-URL = os.environ.get("ROOM_WS", "ws://localhost:8765/ws")
+URL = os.environ.get("ROOM_WS", f"ws://localhost:{DEFAULT_PORT}/ws")
 SAMPLE_RATE = 16000
 FRAME = 1600  # 100ms
 
@@ -147,7 +148,61 @@ async def run_clip(path, speaker_lang, listener_lang):
             "translation": final[1]["translations"].get(listener_lang) if final else ""}
 
 
+async def _send_frame_of(n_bytes, label):
+    """Send one binary frame of n_bytes and report whether the server hung up."""
+    try:
+        async with websockets.connect(URL, max_size=None) as ws:
+            await ws.send(json.dumps({"type": "join", "lang": "en", "name": "abuse"}))
+            await ws.send(b"\x00" * n_bytes)
+            try:
+                async with asyncio.timeout(5):
+                    async for _ in ws:
+                        pass
+            except TimeoutError:
+                print(f"  FAIL: {label} ({n_bytes}B) was accepted and the socket stayed open")
+                return False
+    except websockets.exceptions.ConnectionClosed as e:
+        print(f"  ok: {label} ({n_bytes}B) closed the connection, code {e.code}")
+        return True
+    print(f"  ok: {label} ({n_bytes}B) closed the connection")
+    return True
+
+
+async def check_oversized_frames_are_refused():
+    """The room is served over a public tunnel, so a client is not trusted.
+
+    Both layers are exercised, because a defense nobody tests is a defense
+    nobody knows is dead: the app-level check in the /ws handler, and the
+    transport-level ws_max_size that stops uvicorn buffering the message at all.
+    """
+    from translation_server import MAX_FRAME_BYTES, WS_MAX_SIZE
+    ok = await _send_frame_of(MAX_FRAME_BYTES * 2, "app-level limit")
+    await asyncio.sleep(0.3)
+    ok &= await _send_frame_of(WS_MAX_SIZE * 4, "transport limit")
+
+    # And a legitimate 100ms frame must still be accepted, or the guard is
+    # simply refusing everything.
+    try:
+        async with websockets.connect(URL, max_size=None) as ws:
+            await ws.send(json.dumps({"type": "join", "lang": "en", "name": "normal"}))
+            await ws.send(b"\x00" * 3200)
+            await asyncio.sleep(1.0)
+            alive = ws.state.name == "OPEN"
+        print(("  ok: " if alive else "  FAIL: ") + "a normal 3200B frame is still accepted")
+        ok &= alive
+    except Exception as e:
+        print(f"  FAIL: normal frame rejected: {e}")
+        ok = False
+    return ok
+
+
 async def main():
+    print("=== abuse checks ===")
+    if not await check_oversized_frames_are_refused():
+        print("guard checks failed — not reporting latency for this run")
+        return
+    await asyncio.sleep(0.5)
+
     if len(sys.argv) > 1:
         path = sys.argv[1]
         lang = sys.argv[2] if len(sys.argv) > 2 else "en"

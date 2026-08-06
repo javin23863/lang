@@ -10,7 +10,7 @@ just handing out a LAN address.
 """
 
 import argparse
-import functools
+
 import re
 import subprocess
 import sys
@@ -19,12 +19,37 @@ import time
 
 import translation_server
 
-# The link is the entire point of this script; buffered stdout hides it when the
-# launcher is run from anything but an interactive console.
-print = functools.partial(print, flush=True)  # noqa: A001
+# Line-buffer the whole process, not just this module's print. Redirected to a
+# file, Python block-buffers stdout: the share link never appears, and neither
+# does anything translation_server logs — including the signal trace you need
+# when someone reports that video will not connect.
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
 
-PORT = 8765
+# Not 8765: another app on this machine listens there. Windows lets a second
+# process bind an already-bound port instead of refusing, so both servers sit on
+# it and whichever the OS picks answers the request — the room appears to start
+# fine and then serves someone else's 404s.
+PORT = translation_server.DEFAULT_PORT
 URL_RE = re.compile(rb"https://[-a-z0-9]+\.trycloudflare\.com")
+
+
+def port_is_taken(port):
+    """True when something already answers HTTP on this port.
+
+    Checked because binding is not proof of ownership here: uvicorn will start
+    happily alongside another listener, and the failure then looks like a bug in
+    the room rather than a port collision.
+    """
+    import urllib.error
+    import urllib.request
+    try:
+        urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=2)
+        return True
+    except urllib.error.HTTPError:
+        return True          # answered, just not with 200 — still occupied
+    except Exception:
+        return False
 
 
 def start_tunnel(port=PORT, timeout=30):
@@ -64,6 +89,12 @@ def main():
     ap.add_argument("--local", action="store_true", help="no public tunnel")
     ap.add_argument("--port", type=int, default=PORT)
     args = ap.parse_args()
+
+    if port_is_taken(args.port):
+        print(f"[room] port {args.port} is already answering HTTP — another server "
+              f"owns it.\n[room] Windows will let this process bind it anyway and "
+              f"then serve the wrong app.\n[room] Stop that server or pass --port.")
+        return 1
 
     tunnel = None
     if not args.local:
