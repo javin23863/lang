@@ -1,47 +1,53 @@
-# wa-translator — what's actually built
+# wa-translator
 
-> Status after Sprint 0 Gates 1, 1b, 1c. Everything here is runnable on this Linux box. iOS/Windows hardware gates are staged but not runnable here.
+**The app lives in [`windows/`](windows/README.md).** Everything else in this
+directory is the Sprint-0 benchmark work that chose its models — kept because it
+is the evidence behind the design, not because it runs in production.
 
-## Runnable now (Linux)
-- `two_stream_latency.cpp` + `two_stream` — whisper.cpp two-stream ASR benchmark. Gate 1.
-- `single_stream.cpp` + `single_stream` — whisper.cpp single-stream. Gate 1 baseline.
-- `mt_latency_ct2.py` — CTranslate2 int8 OPUS-MT benchmark. Gate 1b.
-- `mt_latency_benchmark.py` — raw torch MarianMT (10x slower, comparison).
-- `moonshine_bench.py` — Moonshine small/medium-streaming ASR benchmark. Gate 1c.
-- `moonshine_two_stream.py` — Moonshine one-transcriber-two-streams test. Gate 1c addendum (the v2 killer, retested).
-- `caption_filter_test.py` + `caption_filter_test.cpp` — 14/14 pass in both Python and C++. Real repetition-loop data from Gates 1/1b/1c.
+## The app
 
-## Portable (C++ header, ships to iOS + Windows)
-- `caption_filter.h` — single-header, no deps. Loop detector (n-gram freq, non-adjacent), blank-token, dedup (Levenshtein), length cap. 14/14 tests pass.
+`windows/` — bilingual video room: WebRTC video peer-to-peer, faster-whisper ASR
+and CTranslate2 OPUS-MT on the host, live captions both directions. See
+[`windows/README.md`](windows/README.md) to run it.
 
-## Staged, not runnable here (need Mac+iPhone / Windows)
-- `ios-spike/SampleHandler.swift`, `ios-spike/WASpikeApp.swift` — ReplayKit capture spike. Gate 2.
-- `windows/capture/WASAPILoopback.cpp` — WASAPI loopback capture skeleton. Windows capture is solved (unlike iOS Gate 2 risk).
-- `windows/overlay/TopmostCaptionWindow.cpp` — topmost layered overlay skeleton. Windows overlay is easier than iOS PiP.
+## Benchmarks that chose the models
 
-## Cached (not committed, large)
-- `whisper.cpp/models/ggml-{tiny,base,small}.bin` — whisper models.
-- `~/.cache/moonshine_voice/...` — Moonshine ONNX models (medium-streaming, small-streaming).
-- `mt_models/ct2-{en-es,en-de,en-zh}-int8/` — CTranslate2 OPUS-MT models.
+Runnable, no GPU needed, none of it imported by the app:
 
-## How to run the runnable ones
-```bash
-# whisper.cpp benchmarks
-./two_stream /tmp/local_stream.wav /tmp/remote_stream.wav whisper.cpp/models/ggml-base.bin
-./single_stream /tmp/remote_stream.wav whisper.cpp/models/ggml-tiny.bin
+- `two_stream_latency.cpp`, `single_stream.cpp` — whisper.cpp two-stream and
+  single-stream ASR latency. Gate 1.
+- `mt_latency_ct2.py` — CTranslate2 int8 OPUS-MT. Gate 1b. **Its recorded
+  numbers are void:** the loops it attributed to the en-es model were a missing
+  `</s>` on the source tokens, found and fixed in the v7 rewrite. The
+  measurement stands; the conclusion drawn from it did not.
+- `mt_latency_benchmark.py` — raw torch MarianMT, ~10x slower, the comparison
+  that justified CTranslate2.
+- `moonshine_bench.py`, `moonshine_two_stream.py` — Moonshine ASR. Gate 1c.
+  Moonshine lost to faster-whisper for this app because its catalog has no
+  streaming Spanish model, only a non-streaming `BASE`.
 
-# MT benchmark (first run downloads + converts models, ~1-2 GB)
-python3 mt_latency_ct2.py
+## Portable caption filter
 
-# Moonshine ASR benchmark (first run downloads models, ~250 MB)
-python3 moonshine_bench.py
-python3 moonshine_two_stream.py
+- `caption_filter.h` — single-header C++, no dependencies. Loop detector
+  (n-gram frequency, non-adjacent), blank-token, dedup (Levenshtein), length
+  cap.
+- `caption_filter_test.cpp` / `caption_filter_test.py` — 14/14 in both
+  languages, against real repetition-loop output captured during the gates.
 
-# Caption filter (no deps)
-./caption_filter_test
-python3 caption_filter_test.py
-```
+The Python port in `windows/mt_ct2.py` is the copy the app actually uses; the
+two are kept behaviourally identical by the shared test cases.
 
-## Specs (top-level, committed)
-- `SPEC.md` (v1), `SPEC-v2.md`, `SPEC-v3.md`, `SPEC-v4.md`, `SPEC-v5.md` (current)
-- `wa-translator/SPIKE-FINDINGS.md` (Gate 1 ASR), `SPIKE-FINDINGS-MT.md` (Gate 1b MT), `SPIKE-FINDINGS-MOONSHINE.md` (Gate 1c ASR)
+## Test fixtures
+
+`test-audio/{en,es}.wav` — 16 kHz mono, generated once with Moonshine's TTS.
+The Spanish clip is what the whisper hallucination regression is pinned to; see
+`windows/README.md` for how to regenerate them.
+
+## Superseded
+
+`ios-spike/` — ReplayKit capture spike for the original iOS design (Gate 2,
+never built out). The Windows WASAPI-loopback and topmost-overlay skeletons that
+used to sit beside it were deleted in the v7 rewrite: they belonged to a
+local-overlay architecture the browser room replaced, and the host app that
+drove them called server endpoints that no longer exist. Recover from git
+history if the "translate a call playing on this PC" idea comes back.

@@ -118,11 +118,11 @@ PAIRS = {
 # Languages the room offers. Both directions between any two must exist above.
 ROOM_LANGS = ("en", "es")
 
-# Gate 1b's per-pair latency numbers were measured before the encode_as_pieces
-# tokenization fix (005c20f) and against the old small en-es model, so they no
-# longer describe this code. scripts/probe_stream.py re-measures; until it runs,
-# nothing here claims a number.
-PAIR_STATUS = {p: ("unmeasured", "re-measure with scripts/probe_stream.py") for p in PAIRS}
+# Gate 1b's per-pair latency table used to live here. Its numbers were measured
+# before the encode_as_pieces fix and before the missing </s> was found, so they
+# described neither this code nor the models — and nothing read them except the
+# retired tkinter host. probe_stream.py measures the pairs that are actually in
+# use; a table of stale numbers is worse than no table.
 
 
 def _device():

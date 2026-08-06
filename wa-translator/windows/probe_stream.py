@@ -168,6 +168,102 @@ async def _send_frame_of(n_bytes, label):
     return True
 
 
+async def check_room_capacity():
+    """One more than MAX_PARTICIPANTS must be told the room is full, not just
+    dropped — a bare close looks identical to the server being down."""
+    from translation_server import MAX_PARTICIPANTS
+    held, told = [], None
+    try:
+        for i in range(MAX_PARTICIPANTS + 1):
+            ws = await websockets.connect(URL, max_size=None)
+            await ws.send(json.dumps({"type": "join", "lang": "en", "name": f"p{i}"}))
+            held.append(ws)
+            try:
+                async with asyncio.timeout(2):
+                    async for raw in ws:
+                        m = json.loads(raw)
+                        if m.get("type") == "room_full":
+                            told = m
+                            break
+                        if m.get("type") == "welcome":
+                            break
+            except (TimeoutError, websockets.exceptions.ConnectionClosed):
+                pass
+        if told:
+            print(f"  ok: joiner {MAX_PARTICIPANTS + 1} was told the room is full "
+                  f"(limit {told.get('limit')})")
+            return True
+        print(f"  FAIL: {MAX_PARTICIPANTS + 1} participants were all admitted")
+        return False
+    finally:
+        for ws in held:
+            await ws.close()
+        await asyncio.sleep(0.5)   # let the server drop them before the next check
+
+
+async def check_idle_sockets_hold_no_slot():
+    """Sockets that never join must not consume room capacity.
+
+    Opening a socket against a public link and saying nothing costs an attacker
+    nothing. Counting connections rather than joins let MAX_PARTICIPANTS idle
+    sockets hold the room shut against everyone real.
+    """
+    from translation_server import MAX_PARTICIPANTS, PRE_JOIN_TIMEOUT_S
+    idle = []
+    try:
+        for _ in range(MAX_PARTICIPANTS):
+            idle.append(await websockets.connect(URL, max_size=None))
+        await asyncio.sleep(1)
+
+        async with websockets.connect(URL, max_size=None) as real:
+            await real.send(json.dumps({"type": "join", "lang": "en", "name": "real"}))
+            try:
+                async with asyncio.timeout(5):
+                    async for raw in real:
+                        m = json.loads(raw)
+                        if m.get("type") == "welcome":
+                            print(f"  ok: a real join succeeds past {MAX_PARTICIPANTS} "
+                                  f"idle sockets")
+                            return True
+                        if m.get("type") == "room_full":
+                            print("  FAIL: idle sockets that never joined filled the room")
+                            return False
+            except (TimeoutError, websockets.exceptions.ConnectionClosed):
+                pass
+        print("  FAIL: a real join got no welcome while idle sockets were open")
+        return False
+    finally:
+        for ws in idle:
+            await ws.close()
+        await asyncio.sleep(0.5)
+
+
+async def check_chatty_unjoined_socket_is_closed():
+    """Pre-join traffic must not renew the join deadline.
+
+    With a per-receive timeout, a client keeps an unjoined socket alive forever
+    simply by sending something ignorable more often than the timeout. The
+    deadline has to be absolute, so this sends junk every second and expects to
+    be hung up on anyway.
+    """
+    from translation_server import PRE_JOIN_TIMEOUT_S
+    budget = PRE_JOIN_TIMEOUT_S * 2 + 5
+    t0 = time.perf_counter()
+    try:
+        async with websockets.connect(URL, max_size=None) as ws:
+            while time.perf_counter() - t0 < budget:
+                await ws.send(json.dumps({"type": "not_a_join"}))
+                await asyncio.sleep(1)
+    except websockets.exceptions.ConnectionClosed:
+        held = time.perf_counter() - t0
+        print(f"  ok: a chatty unjoined socket was closed after {held:.0f}s "
+              f"(deadline {PRE_JOIN_TIMEOUT_S}s)")
+        return True
+    print(f"  FAIL: an unjoined socket stayed open {budget}s by sending junk — "
+          f"the join deadline is being reset per message")
+    return False
+
+
 async def check_oversized_frames_are_refused():
     """The room is served over a public tunnel, so a client is not trusted.
 
@@ -179,6 +275,12 @@ async def check_oversized_frames_are_refused():
     ok = await _send_frame_of(MAX_FRAME_BYTES * 2, "app-level limit")
     await asyncio.sleep(0.3)
     ok &= await _send_frame_of(WS_MAX_SIZE * 4, "transport limit")
+
+    ok &= await check_room_capacity()
+    await asyncio.sleep(0.3)
+    ok &= await check_idle_sockets_hold_no_slot()
+    await asyncio.sleep(0.3)
+    ok &= await check_chatty_unjoined_socket_is_closed()
 
     # And a legitimate 100ms frame must still be accepted, or the guard is
     # simply refusing everything.
