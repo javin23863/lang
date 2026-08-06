@@ -355,13 +355,21 @@ async def ws_endpoint(ws: WebSocket):
     # the join is registered anywhere, and anything that stalls before joining
     # is dropped on the deadline below.
     joined = False
+    # An absolute deadline, not a per-receive timeout. Timing out each receive
+    # restarts the clock on every message, so a client could hold an unjoined
+    # socket open forever by sending ignored traffic faster than the timeout.
+    # The budget is for joining, not for staying quiet between messages.
+    join_deadline = time.monotonic() + PRE_JOIN_TIMEOUT_S
 
     try:
         while True:
             if joined:
                 msg = await ws.receive()
             else:
-                msg = await asyncio.wait_for(ws.receive(), PRE_JOIN_TIMEOUT_S)
+                remaining = join_deadline - time.monotonic()
+                if remaining <= 0:
+                    raise asyncio.TimeoutError
+                msg = await asyncio.wait_for(ws.receive(), remaining)
             if msg["type"] == "websocket.disconnect":
                 break
             if not joined:

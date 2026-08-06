@@ -238,6 +238,32 @@ async def check_idle_sockets_hold_no_slot():
         await asyncio.sleep(0.5)
 
 
+async def check_chatty_unjoined_socket_is_closed():
+    """Pre-join traffic must not renew the join deadline.
+
+    With a per-receive timeout, a client keeps an unjoined socket alive forever
+    simply by sending something ignorable more often than the timeout. The
+    deadline has to be absolute, so this sends junk every second and expects to
+    be hung up on anyway.
+    """
+    from translation_server import PRE_JOIN_TIMEOUT_S
+    budget = PRE_JOIN_TIMEOUT_S * 2 + 5
+    t0 = time.perf_counter()
+    try:
+        async with websockets.connect(URL, max_size=None) as ws:
+            while time.perf_counter() - t0 < budget:
+                await ws.send(json.dumps({"type": "not_a_join"}))
+                await asyncio.sleep(1)
+    except websockets.exceptions.ConnectionClosed:
+        held = time.perf_counter() - t0
+        print(f"  ok: a chatty unjoined socket was closed after {held:.0f}s "
+              f"(deadline {PRE_JOIN_TIMEOUT_S}s)")
+        return True
+    print(f"  FAIL: an unjoined socket stayed open {budget}s by sending junk — "
+          f"the join deadline is being reset per message")
+    return False
+
+
 async def check_oversized_frames_are_refused():
     """The room is served over a public tunnel, so a client is not trusted.
 
@@ -253,6 +279,8 @@ async def check_oversized_frames_are_refused():
     ok &= await check_room_capacity()
     await asyncio.sleep(0.3)
     ok &= await check_idle_sockets_hold_no_slot()
+    await asyncio.sleep(0.3)
+    ok &= await check_chatty_unjoined_socket_is_closed()
 
     # And a legitimate 100ms frame must still be accepted, or the guard is
     # simply refusing everything.
