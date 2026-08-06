@@ -10,6 +10,7 @@ just handing out a LAN address.
 """
 
 import argparse
+import functools
 import re
 import subprocess
 import sys
@@ -17,6 +18,10 @@ import threading
 import time
 
 import translation_server
+
+# The link is the entire point of this script; buffered stdout hides it when the
+# launcher is run from anything but an interactive console.
+print = functools.partial(print, flush=True)  # noqa: A001
 
 PORT = 8765
 URL_RE = re.compile(rb"https://[-a-z0-9]+\.trycloudflare\.com")
