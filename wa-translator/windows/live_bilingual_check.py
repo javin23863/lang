@@ -536,6 +536,8 @@ async def run(screenshot: Path | None) -> None:
             for tab in tabs.values():
                 await tab.call("Runtime.enable")
                 await tab.call("Page.enable")
+                await _wait_js(tab,
+                    "document.readyState === 'complete' && $('captions') && $('roleGate')")
                 await tab.js(OBSERVER)
             await asyncio.gather(*(network.start() for network in networks.values()))
 

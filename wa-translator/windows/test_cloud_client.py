@@ -107,6 +107,8 @@ class CloudClientContractTests(unittest.TestCase):
         self.assertIn("AudioWorkletNode", source)
         self.assertIn("Page.setWebLifecycleState", source)
         self.assertIn("SEMANTIC_TURNS", source)
+        self.assertIn("document.readyState === 'complete'", source)
+        self.assertIn("$('captions') && $('roleGate')", source)
         self.assertNotIn("handle(", source)
         self.assertNotIn("window.fetch =", source)
         self.assertNotIn("CONTROLLED_TTS_SPY", source)
