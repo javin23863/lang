@@ -234,3 +234,192 @@ Sources: [PyPI release metadata and artifact hashes](https://pypi.org/pypi/kokor
 [current model-loading source](https://github.com/hexgrad/kokoro/blob/dfb907a02bba8152ca444717ca5d78747ccb4bec/kokoro/model.py),
 [current pipeline/voice-loading source](https://github.com/hexgrad/kokoro/blob/dfb907a02bba8152ca444717ca5d78747ccb4bec/kokoro/pipeline.py),
 [official model repository and license](https://huggingface.co/hexgrad/Kokoro-82M/tree/f3ff3571791e39611d31c381e3a41a3af07b4987).
+
+## Latency facts and experiment order
+
+No number in this section is a measured latency result for this deployment.
+**Repository fact** describes the inspected code, **source fact** comes from a
+linked primary source, and **recommendation** is an architecture inference that
+still needs a controlled English/Spanish run.
+
+### Current critical path
+
+- **Repository fact:** `pcm-worklet.js` sends 100 ms PCM frames. `modal_app.py`
+  first permits a partial after 0.8 seconds of speech, schedules later partials
+  every 0.4 seconds, and declares an endpoint after 500 ms of silence. Each
+  partial re-decodes the utterance-so-far; the shared faster-whisper instance
+  serializes decodes. OPUS-MT then returns a complete greedy translation.
+- **Repository fact:** translated voice starts only from a final caption.
+  Kokoro completes each yielded segment, Modal concatenates every segment into
+  one WAV, the Worker reads the full upstream body, and the browser waits for a
+  full `Blob` before playback. A generator in one library therefore does not
+  make this end-to-end path streaming.
+- **Recommendation:** before changing a threshold or model, add monotonic stage
+  durations for queue wait, endpoint, ASR, MT, TTS, Worker first byte, and
+  client playback, plus one client-observed end-to-end duration. Report cold
+  and warm starts separately and bucket by language, utterance length,
+  concurrency, and `MODAL_REGION`; do not subtract clocks from different
+  machines.
+
+### ASR, browser audio, and endpointing
+
+- **Source fact:** faster-whisper's `segments` iterator is lazy execution, not a
+  live-audio protocol. Its own README lists Whisper-Streaming as a separate
+  wrapper. That project's paper/repository explains why naive fixed windows can
+  split words and uses repeated updates plus a local-agreement policy to commit
+  stable prefixes.
+- **Source fact:** OpenAI lists multilingual `turbo` at 809M parameters, about
+  6 GB VRAM, and about 8x the relative speed of `large` on its English/A100
+  comparison, while warning that real speed varies with language and hardware.
+  `distil-whisper/distil-large-v3` is explicitly tagged and used as an
+  English-language ASR model, so it is not an English/Spanish replacement.
+- **Source fact:** Web Audio runs `AudioWorkletProcessor` code on the audio
+  rendering thread. `MediaRecorder(timeslice)` may use a larger user-agent
+  minimum, so it is not an exact low-latency framing clock. WebRTC stats'
+  `audioLevel` also averages over an implementation-defined interval. Silero
+  VAD supports sequential 8/16 kHz chunks and publishes a 30+ ms chunk path;
+  those facts do not prescribe an utterance-end silence threshold.
+- **Recommendation:** keep AudioWorklet capture and server-side Silero as the
+  authority. First A/B the endpoint-silence and partial cadence with false-cut,
+  hallucination, and bilingual transcript gates. Test 50 ms versus the current
+  100 ms wire frame only if capture-to-Modal timing is material: those sizes
+  derive to 20 versus 10 incoming messages/second/speaker, and Cloudflare
+  recommends 50-100 ms WebSocket batching to reduce context switches and
+  request count. Do not jump to 32 ms merely because Silero evaluates roughly
+  32 ms internally.
+- **Recommendation:** keep the multilingual `large-v3-turbo` baseline. If ASR
+  compute dominates after staging, compare smaller official multilingual
+  Whisper sizes on paired English/Spanish fixtures under identical endpointing
+  and decoding settings; exclude English-only Distil-Whisper from that trial.
+
+Sources: [faster-whisper execution and streaming integrations](https://github.com/SYSTRAN/faster-whisper#usage),
+[Whisper-Streaming paper](https://aclanthology.org/2023.ijcnlp-demo.3/),
+[Whisper-Streaming policy and chunking caveats](https://github.com/ufal/whisper_streaming#background),
+[OpenAI Whisper model table](https://github.com/openai/whisper#available-models-and-languages),
+[Distil-Whisper model card](https://huggingface.co/distil-whisper/distil-large-v3),
+[Web Audio processing model](https://www.w3.org/TR/webaudio/#processing-model),
+[MediaRecorder timeslice algorithm](https://www.w3.org/TR/mediastream-recording/#mediarecorder-api),
+[WebRTC audio-level interval](https://www.w3.org/TR/webrtc-stats/#dom-rtcaudiosourcestats-audiolevel),
+[Silero VAD capabilities](https://github.com/snakers4/silero-vad),
+[Durable Object WebSocket batching](https://developers.cloudflare.com/durable-objects/best-practices/websockets/),
+[Durable Object request accounting](https://developers.cloudflare.com/durable-objects/platform/pricing/).
+
+### OPUS-MT and incremental output
+
+- **Source fact:** OPUS-MT models are Marian neural translation models trained
+  on OPUS data and primarily use SentencePiece segmentation. CTranslate2
+  recommends int8 on CPU and `beam_size=1` for lower translation cost; the
+  current adapter already uses both and preloads both room directions.
+- **Source fact:** CTranslate2 can yield target tokens with `generate_tokens`,
+  or invoke a per-token callback from `translate_batch` when beam size is one.
+  This streams decoding of a complete source-token sequence; it does not make
+  an unstable ASR source prefix final.
+- **Recommendation:** keep the current full-result OPUS-MT call unless staged
+  timings show MT is material. A token callback could update caption previews,
+  but it adds cancellation, detokenization, and revision semantics while final
+  TTS must still wait for stable text. Validate translation quality separately
+  in both directions before changing the pinned models.
+
+Sources: [OPUS-MT architecture and model provenance](https://github.com/Helsinki-NLP/Opus-MT),
+[CTranslate2 Translator token and batch APIs](https://opennmt.net/CTranslate2/python/ctranslate2.Translator.html),
+[CTranslate2 performance guidance](https://opennmt.net/CTranslate2/performance.html),
+[current English-to-Spanish model card](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-en-es),
+[current Spanish-to-English model card](https://huggingface.co/Helsinki-NLP/opus-mt-es-en).
+
+### TTS first audio
+
+- **Repository/source fact:** `modal_app.py` constructs one `KModel` and passes
+  it into both `KPipeline` instances. In the pinned Kokoro source, `KModel`
+  loads its checkpoint with `map_location='cpu'`, and `KPipeline` only performs
+  automatic `.to(device).eval()` placement when it constructs the model
+  itself; a supplied `KModel` is retained as-is. The current Kokoro synthesis
+  path therefore stays on CPU even though the Modal container has an L4.
+- **Source fact:** the pinned Kokoro `KPipeline` is a generator, but it calls
+  `KPipeline.infer` before yielding each segment. Its non-English path chunks at
+  roughly 400 characters; this app caps TTS input at 300 characters. The
+  official repository publishes no time-to-first-audio guarantee for this
+  stack and warns that very short utterances can be weaker.
+- **Source fact:** maintained Piper exposes a C API that returns successive
+  `piper_audio_chunk` values and lists English plus several Spanish locales.
+  The engine is GPL-3.0 and each voice has its own model-card license. Its
+  official sources likewise publish no first-byte result for this architecture.
+- **Recommendation:** after adding stage timing, make the first TTS A/B the
+  current placement versus explicit `KModel(...).to('cuda').eval()` on the L4,
+  checking cold start, synthesis duration, GPU memory, output equivalence, and
+  English/Spanish voice quality. This is smaller and better isolated than a
+  provider or transport change; it is an experiment, not a measured speedup.
+- **Recommendation:** a provider swap alone cannot remove the current three
+  full-body buffers. If translated-voice timing is the bottleneck, prototype
+  framed PCM from synthesis through a streaming Worker response into scheduled
+  browser playback, with cancellation and natural-audio recovery preserved.
+  Cloudflare explicitly recommends response streaming for lower first-byte
+  time. Keep Kokoro until the same phrases show that synthesis, rather than
+  buffering or cold start, is the limiting stage; treat Piper as a licensed
+  A/B candidate, not an assumed faster replacement.
+
+Sources: [pinned Kokoro model loading](https://github.com/hexgrad/kokoro/blob/dfb907a02bba8152ca444717ca5d78747ccb4bec/kokoro/model.py#L54-L68),
+[pinned Kokoro pipeline placement and inference](https://github.com/hexgrad/kokoro/blob/dfb907a02bba8152ca444717ca5d78747ccb4bec/kokoro/pipeline.py#L58-L110),
+[pinned Kokoro pipeline generation](https://github.com/hexgrad/kokoro/blob/dfb907a02bba8152ca444717ca5d78747ccb4bec/kokoro/pipeline.py#L386-L442),
+[Kokoro voice limitations and Spanish routes](https://huggingface.co/hexgrad/Kokoro-82M/blob/f3ff3571791e39611d31c381e3a41a3af07b4987/VOICES.md),
+[maintained Piper repository and GPL-3.0 license](https://github.com/OHF-Voice/piper1-gpl),
+[Piper chunk API](https://github.com/OHF-Voice/piper1-gpl/blob/main/libpiper/README.md),
+[Piper languages and per-voice license warning](https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/VOICES.md),
+[Cloudflare response-streaming guidance](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/#stream-request-and-response-bodies).
+
+### Modal cold starts, geography, and concurrency
+
+- **Source fact:** scale-from-zero adds both queueing and one-time container
+  initialization. `min_containers`, `buffer_containers`, and a longer
+  `scaledown_window` trade more idle resources for fewer cold starts. The
+  current `min_containers=0`, one-container, 60-second window is consequently
+  a cost-oriented scale-to-zero choice, not the lowest-latency choice.
+- **Source fact:** Modal CPU memory snapshots capture imports/CPU state. GPU
+  snapshots are alpha; Modal warns that snapshots do not speed storage-bound
+  model-weight loading and can add overhead. Snapshotting work must run before
+  capture, while this app currently initializes ASR/MT/TTS lazily from its
+  first request.
+- **Source fact:** `@modal.concurrent(max_inputs=5, target_inputs=5)` controls
+  accepted inputs and autoscaler targets; it does not promise five parallel
+  neural decodes. Modal specifically warns that concurrency can be
+  counterproductive for CPU-bound work. In this app, model locks remain the
+  effective serialization boundary.
+- **Source fact:** Modal routes Function inputs through `us-east` by default
+  even when a container runs elsewhere. A `routing_region` can reduce network
+  overhead, while a pinned container region carries a documented price
+  multiplier and a narrower resource pool can worsen cold-start availability.
+- **Source fact:** the Durable Object's outbound Modal WebSocket prevents
+  hibernation and incurs duration while it keeps the object alive, but only for
+  up to 15 minutes per connection; the connection is not a permanent residency
+  guarantee.
+- **Recommendation:** preserve scale-to-zero for the free-first beta. If cold
+  initialization dominates, trial memory snapshots on the same L4 and pinned
+  artifacts before paying for a warm container; include snapshot creation and
+  restore cases and verify bilingual model readiness. Change concurrency only
+  after recording queue wait and GPU utilization. Log `MODAL_REGION`, and set
+  routing/container geography only from observed user distribution. Keep the
+  existing compute reconnect path and classify post-eviction reconnects as
+  cold or warm instead of assuming the outbound socket keeps the object alive.
+
+Sources: [Modal cold-start controls and cost tradeoff](https://modal.com/docs/guide/cold-start),
+[Modal memory snapshots and limitations](https://modal.com/docs/guide/memory-snapshots),
+[Modal input concurrency](https://modal.com/docs/guide/concurrent-inputs),
+[Modal region selection and routing](https://modal.com/docs/guide/region-selection),
+[`MODAL_REGION` runtime variable](https://modal.com/docs/guide/environment_variables),
+[Durable Object outbound-connection lifecycle](https://developers.cloudflare.com/durable-objects/concepts/durable-object-lifecycle/).
+
+### Recommended experiment order
+
+1. Add stage timing without changing behavior; establish cold/warm English and
+   Spanish distributions and record quality/refusal outcomes beside latency.
+2. A/B current Kokoro CPU placement against explicit
+   `KModel(...).to('cuda').eval()` on the L4; keep the change only if the staged
+   bilingual results justify its cold-start and GPU-memory cost.
+3. Tune endpoint silence and partial cadence; only then A/B 50/100 ms wire
+   frames. Preserve the current false-cut, hallucination, and rate-limit gates.
+4. If cold initialization dominates, test Modal snapshots; add a warm container
+   only when the measured latency target justifies its idle cost.
+5. If optional voice still dominates, stream audio end-to-end before comparing
+   Kokoro with Piper. A library generator or chunk API is not acceptance proof.
+6. Change Whisper size, OPUS-MT model, concurrency, or region last, one variable
+   at a time. No source above is a substitute for a local bilingual p50/p95 and
+   quality run on the deployed path.
