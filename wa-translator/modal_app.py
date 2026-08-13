@@ -59,7 +59,7 @@ IDLE_DROP_S = 3.0
 MAX_STREAM_INPUTS = 4
 MAX_TTS_INPUTS = 1
 
-MODEL_ROOT = Path(os.environ.get("LANG_ROOM_MODEL_ROOT", "/models"))
+MODEL_ROOT = Path(os.environ.get("LANG_ROOM_MODEL_ROOT", "/model-cache/lang-room"))
 KOKORO_REPO = "hexgrad/Kokoro-82M"
 KOKORO_REVISION = "f3ff3571791e39611d31c381e3a41a3af07b4987"
 KOKORO_MODEL_SHA256 = "496dba118d1a58f5f3db2efc88dbdc216e0483fc89fe6e47ee1f2c53f18ad1e4"
@@ -538,9 +538,9 @@ if modal is not None:  # pragma: no branch - false only in the local test venv
             extra_options="--require-hashes",
         )
         .env({
-            "HOME": "/models/home",
-            "HF_HOME": "/models/huggingface",
-            "LANG_ROOM_MODEL_ROOT": "/models/lang-room",
+            "HOME": "/root",
+            "HF_HOME": "/model-cache/huggingface",
+            "LANG_ROOM_MODEL_ROOT": "/model-cache/lang-room",
         })
         .add_local_file(str(Path(__file__)), "/root/wa-translator/modal_app.py")
         .add_local_file(str(Path(__file__).with_name("windows") / "asr_whisper.py"),
@@ -559,7 +559,7 @@ if modal is not None:  # pragma: no branch - false only in the local test venv
     @modal_application.function(
         image=modal_image,
         gpu="L4",
-        volumes={"/models": modal_volume},
+        volumes={"/model-cache": modal_volume},
         secrets=[modal.Secret.from_name("spoken-translation-modal")],
         max_containers=1,
         min_containers=0,

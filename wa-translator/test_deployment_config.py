@@ -18,8 +18,12 @@ class DeploymentConfigTests(unittest.TestCase):
         for literal in ('gpu="L4"', "max_containers=1", "min_containers=0",
                         "scaledown_window=60", "timeout=86_400",
                         "@modal.concurrent(max_inputs=5, target_inputs=5)",
-                        'volumes={"/models": modal_volume}'):
+                        'volumes={"/model-cache": modal_volume}'):
             self.assertIn(literal, MODAL)
+        self.assertIn('"HOME": "/root"', MODAL)
+        self.assertIn('"HF_HOME": "/model-cache/huggingface"', MODAL)
+        self.assertIn('"LANG_ROOM_MODEL_ROOT": "/model-cache/lang-room"', MODAL)
+        self.assertNotIn('"HOME": "/model-cache/', MODAL)
         self.assertIn('Volume.from_name("spoken-translation-model-cache"', MODAL)
         self.assertIn("KOKORO_REVISION =", MODAL)
         self.assertIn("WHISPER_REVISION =", MODAL)
