@@ -263,17 +263,27 @@ class ModalStreamTests(unittest.TestCase):
                 ws.receive_json()
 
     def test_public_stream_keeps_finals_and_attributes_language(self):
-        client, compute, _tts = client_fixture()
+        compute = FakeCompute()
+        tts = FakeTTS()
+        api = modal_app.create_api(
+            shared_secret=SECRET, compute=compute, tts=tts,
+            endpointer_factory=FakeEndpointer,
+        )
         headers = {"authorization": f"Bearer {SECRET}"}
-        with client.websocket_connect("/stream", headers=headers) as ws:
-            ws.send_json({"type": "start", "stream_id": "participant-1",
-                          "source_lang": "en", "source_locale": "en-US",
-                          "target_langs": ["es", "fr"], **START_REVISIONS})
-            for marker in (1000, 2000):
-                ws.send_bytes(np.full(1600, marker, dtype=np.int16).tobytes())
-                ws.send_json({"type": "speech_end"})
-            first = ws.receive_json()
-            second = ws.receive_json()
+        # Starlette's current WebSocket test transport cancels a standalone
+        # portal during close. Keep the ASGI lifespan open for the complete
+        # multi-caption exchange so this verifies stream ordering, not a test
+        # harness teardown race.
+        with TestClient(api) as client:
+            with client.websocket_connect("/stream", headers=headers) as ws:
+                ws.send_json({"type": "start", "stream_id": "participant-1",
+                              "source_lang": "en", "source_locale": "en-US",
+                              "target_langs": ["es", "fr"], **START_REVISIONS})
+                for marker in (1000, 2000):
+                    ws.send_bytes(np.full(1600, marker, dtype=np.int16).tobytes())
+                    ws.send_json({"type": "speech_end"})
+                first = ws.receive_json()
+                second = ws.receive_json()
 
         self.assertEqual([first["seq"], second["seq"]], [1, 2])
         self.assertEqual([first["original"], second["original"]],

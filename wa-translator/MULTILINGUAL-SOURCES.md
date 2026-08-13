@@ -1,8 +1,8 @@
 # Multilingual expansion: primary-source decision record
 
-Research date: 2026-08-14  
+Research date: 2026-08-14
 Source policy: official model repositories, official runtime documentation and
-source, and author papers only.  
+source, and author papers only.
 Status: architecture research, not implementation or production validation. No
 model weights were downloaded and no multilingual quality or latency benchmark
 was run for this note.
