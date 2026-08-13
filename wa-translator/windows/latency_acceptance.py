@@ -29,10 +29,6 @@ FIXTURES = {
         "text": "Bonjour Marie, comment allez-vous aujourd’hui ?",
         "locale": "fr-FR", "voice_profile": "fr-ff-siwis",
     },
-    "en_to_ja": {
-        "text": "こんにちは、今日はいかがですか。",
-        "locale": "ja-JP", "voice_profile": "ja-jf-alpha",
-    },
 }
 TTS_WARM_TARGET_S = 2.0
 VOICE_WARM_TARGET_S = 3.0

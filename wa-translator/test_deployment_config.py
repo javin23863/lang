@@ -107,13 +107,13 @@ class DeploymentConfigTests(unittest.TestCase):
         ):
             self.assertIn(artifact, LOCK)
 
-    def test_enabled_japanese_voice_pipeline_has_its_explicit_misaki_frontend(self):
-        # Kokoro constructs every advertised language pipeline at first use.  The
-        # Japanese voices are therefore only truthful when the misaki ``ja``
-        # extra (and its pyopenjtalk frontend) is in the immutable image lock.
-        self.assertIn("misaki[ja]==0.9.4", RUNTIME_INPUT)
+    def test_unpinned_japanese_dictionary_cannot_be_advertised_or_bundled(self):
+        # Kokoro 0.9.4's Japanese route needs a separately downloaded MeCab
+        # dictionary.  Until that artifact and license are reviewed and pinned,
+        # Japanese is captions-only and the image must not imply it is enabled.
+        self.assertNotIn("misaki[ja]", RUNTIME_INPUT)
         for artifact in ("fugashi==", "jaconv==", "mojimoji==", "pyopenjtalk==", "unidic=="):
-            self.assertIn(artifact, LOCK)
+            self.assertNotIn(artifact, LOCK)
 
     def test_deployment_docs_disclose_required_operational_ceiling(self):
         docs = (ROOT / "cloudflare/DEPLOYMENT.md").read_text(encoding="utf-8").lower()

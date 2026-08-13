@@ -48,6 +48,14 @@ class LanguageCatalogTests(unittest.TestCase):
         french = language_catalog.locale_profile("fr-FR")
         self.assertTrue(french["capabilities"]["tts"]["available"])
         self.assertEqual([voice["style"] for voice in french["voice_profiles"]], ["female"])
+        japanese = language_catalog.locale_profile("ja-JP")
+        self.assertFalse(japanese["capabilities"]["tts"]["available"])
+        self.assertIn("documented provider voice", japanese["capabilities"]["tts"]["reason"])
+        self.assertEqual(
+            (language_catalog.public_catalog()["counts"]["voice_languages"],
+             language_catalog.public_catalog()["counts"]["voice_profiles"]),
+            (3, 7),
+        )
         self.assertFalse(language_catalog.is_joinable_locale("pt-BR"))
         self.assertIsNone(language_catalog.locale_profile("xx-XX"))
 
@@ -69,8 +77,6 @@ class LanguageCatalogTests(unittest.TestCase):
             "es-ef-dora": "d9d69b0f8a2b87a345f269d89639f89dfbd1a6c9da0c498ae36dd34afcf35530",
             "es-em-alex": "5eac53f767c3f31a081918ba531969aea850bed18fe56419b804d642c6973431",
             "fr-ff-siwis": "8073bf2d2c4b9543a90f2f0fd2144de4ed157e2d4b79ddeb0d5123066171fbc9",
-            "ja-jf-alpha": "1bf4c9dc69e45ee46183b071f4db766349aac5592acbcfeaf051018048a5d787",
-            "ja-jm-kumo": "98340afd68b1cee84fe0cd95528cfa6d4b39e416aa75a9df64049d52c8b55896",
         })
 
 

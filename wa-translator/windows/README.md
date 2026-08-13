@@ -10,7 +10,9 @@ regional Locale maps to `es` and makes no dialect-specific ASR/MT claim.
 The local adapter validates the same Locale and multi-target room protocol, but
 deliberately advertises no TTS profiles. It is captions-only rather than
 silently substituting a local or wrong-language voice. Production TTS runs only
-on the single Modal L4 with the nine exact catalog-declared Kokoro profiles.
+on the single Modal L4 with the seven exact catalog-declared Kokoro profiles
+for English, Spanish and French. Japanese remains captions-only until its
+dictionary/runtime dependency is pinned and license-reviewed.
 
 ## Run it
 

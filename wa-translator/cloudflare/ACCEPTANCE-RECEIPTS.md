@@ -7,8 +7,10 @@ must not be read as a receipt for the revision-pinned M2M100 multilingual
 implementation now in this branch. The current locally verified contract is:
 
 - one shared catalog: 100 base text Languages, 122 Locale profiles, six
-  release-tested live-speech Languages, four production TTS Languages and nine
-  exact enabled Voice Profiles;
+  release-tested live-speech Languages, three production TTS Languages and
+  seven exact enabled Voice Profiles; Japanese remains captions-only despite
+  documented upstream voices until its dictionary/runtime dependency is pinned
+  and license-reviewed;
 - one source ASR transcription fans out to up to three unique listener base
   Languages; same-base Locale listeners share one translation;
 - M2M100 418M is pinned to `55c2e61bbf05dfb8d7abccdc3fae6fc8512fd636` under

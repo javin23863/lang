@@ -93,7 +93,7 @@ describe("public room WebSocket interface", () => {
     const a1 = await openSocket(roomA);
     const a1Welcome = await join(a1, "en", "A1", "female");
     expect(a1Welcome).toMatchObject({
-      type: "welcome", peers: [], catalog_revision: "2026-08-14-m2m100-55c2e61-voice-bytes"
+      type: "welcome", peers: [], catalog_revision: "2026-08-14-m2m100-55c2e61-tts3"
     });
 
     const b1 = await openSocket(roomB);

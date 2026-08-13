@@ -141,7 +141,7 @@ class ModalComputeTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["cache-control"], "no-store")
         self.assertEqual(response.json()["revision"],
-                         "2026-08-14-m2m100-55c2e61-voice-bytes")
+                         "2026-08-14-m2m100-55c2e61-tts3")
         self.assertEqual(response.json()["counts"]["base_languages"], 100)
 
     def test_fixed_mt_receipt_endpoint_rejects_arbitrary_input_and_reports_pin(self):
@@ -356,7 +356,7 @@ class ModalTTSTests(unittest.TestCase):
         tts.preload()
 
         self.assertEqual([voice_profile for _text, voice_profile in calls], [
-            "en-us-af-heart", "en-gb-bf-emma", "es-ef-dora", "fr-ff-siwis", "ja-jf-alpha",
+            "en-us-af-heart", "en-gb-bf-emma", "es-ef-dora", "fr-ff-siwis",
         ])
         self.assertTrue(all(8 <= len(text) <= 50 for text, _voice_profile in calls))
 
@@ -399,9 +399,11 @@ class ModalTTSTests(unittest.TestCase):
                     device=types.SimpleNamespace(type=self.device)),
                 ))
 
+        pipeline_languages = []
+
         class FakePipeline:
-            def __init__(self, **_kwargs):
-                pass
+            def __init__(self, **kwargs):
+                pipeline_languages.append(kwargs["lang_code"])
 
             def __call__(self, _text, *, voice):
                 self.voice = voice
@@ -440,6 +442,7 @@ class ModalTTSTests(unittest.TestCase):
         self.assertTrue(audio.startswith(b"RIFF"))
         self.assertEqual(models[0].device, "cuda")
         self.assertFalse(models[0].training)
+        self.assertEqual(pipeline_languages, ["a"])
 
     def test_tts_auth_caps_and_declared_release_voice_profiles(self):
         client, _compute, tts = client_fixture()
@@ -455,7 +458,7 @@ class ModalTTSTests(unittest.TestCase):
 
         profiles = [
             "en-us-af-heart", "en-us-am-michael", "en-gb-bf-emma", "en-gb-bm-fable",
-            "es-ef-dora", "es-em-alex", "fr-ff-siwis", "ja-jf-alpha", "ja-jm-kumo",
+            "es-ef-dora", "es-em-alex", "fr-ff-siwis",
         ]
         for voice_profile in profiles:
             response = client.post("/tts", headers=headers,
@@ -476,8 +479,6 @@ class ModalTTSTests(unittest.TestCase):
             "es-ef-dora": {"pipeline": "e", "model_voice": "ef_dora"},
             "es-em-alex": {"pipeline": "e", "model_voice": "em_alex"},
             "fr-ff-siwis": {"pipeline": "f", "model_voice": "ff_siwis"},
-            "ja-jf-alpha": {"pipeline": "j", "model_voice": "jf_alpha"},
-            "ja-jm-kumo": {"pipeline": "j", "model_voice": "jm_kumo"},
         })
         self.assertEqual(modal_app.language_catalog.voice_profile(
             "fr-ff-siwis")["style"], "female")

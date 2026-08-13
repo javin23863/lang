@@ -1,6 +1,6 @@
 {
   "schema_version": "1",
-  "revision": "2026-08-14-m2m100-55c2e61-voice-bytes",
+  "revision": "2026-08-14-m2m100-55c2e61-tts3",
   "models": {
     "mt": {
       "id": "facebook/m2m100_418M",
@@ -23,9 +23,7 @@
         "en-gb-bm-fable": "d44935f3135257a9064df99f007fc1342ff1aa767552b4a4fa4c3b2e6e59079c",
         "es-ef-dora": "d9d69b0f8a2b87a345f269d89639f89dfbd1a6c9da0c498ae36dd34afcf35530",
         "es-em-alex": "5eac53f767c3f31a081918ba531969aea850bed18fe56419b804d642c6973431",
-        "fr-ff-siwis": "8073bf2d2c4b9543a90f2f0fd2144de4ed157e2d4b79ddeb0d5123066171fbc9",
-        "ja-jf-alpha": "1bf4c9dc69e45ee46183b071f4db766349aac5592acbcfeaf051018048a5d787",
-        "ja-jm-kumo": "98340afd68b1cee84fe0cd95528cfa6d4b39e416aa75a9df64049d52c8b55896"
+        "fr-ff-siwis": "8073bf2d2c4b9543a90f2f0fd2144de4ed157e2d4b79ddeb0d5123066171fbc9"
       }
     }
   },
@@ -44,9 +42,7 @@
     "en-gb-bm-fable",
     "es-ef-dora",
     "es-em-alex",
-    "fr-ff-siwis",
-    "ja-jf-alpha",
-    "ja-jm-kumo"
+    "fr-ff-siwis"
   ],
   "languages": [
     {

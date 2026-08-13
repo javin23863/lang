@@ -11,8 +11,10 @@ The shared catalog currently declares **100 M2M100 base text Languages**,
 Languages** (Arabic, German, English, Spanish, French, Japanese). Those counts
 are deliberately separate: locale variants such as `es-MX` map to base `es` and
 do not claim a distinct ASR/MT model or dialect quality. Production TTS is
-enabled for four Languages (English, Spanish, French, Japanese) through nine
-pinned profiles; Arabic and German remain captions-only.
+enabled for three Languages (English, Spanish, French) through seven pinned
+profiles. Japanese, Arabic and German remain captions-only; Japanese has
+documented upstream voices but they are deliberately not enabled until its
+dictionary/runtime dependency is pinned and licensed for this release.
 
 There are two adapters. The Windows adapter below is the local development path.
 The production beta uses a permanent Cloudflare `workers.dev` room plus a
@@ -88,7 +90,7 @@ Stated plainly, because each of these will look like a bug otherwise:
   and translate it back forever. The other person still hears your real voice
   throughout — only the caption feed is held.
 - **Voice quality varies.** The cloud uses revision-pinned Kokoro artifacts
-  only for the nine profiles declared in the catalog. Unsupported languages are
+  only for the seven profiles declared in the catalog. Unsupported languages are
   captions-only; the local development adapter also stays captions-only rather
   than pretending to reproduce cloud TTS.
 - **Model work belongs on the production L4.** The local adapter can use the

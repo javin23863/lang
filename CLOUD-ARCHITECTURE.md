@@ -110,7 +110,9 @@ ephemeral.
   the same process. This is an explicit beta ceiling, not a scale claim.
 - The GPU is primarily for low-latency Whisper transcription and M2M100
   CTranslate2 (`int8_float16`), and also accelerates Kokoro when a declared
-  Voice Profile is enabled. Local CPU parity can read an explicitly
+  Voice Profile is enabled. Japanese has documented upstream voices but remains
+  captions-only until its dictionary/runtime dependency is pinned and licensed.
+  Local CPU parity can read an explicitly
   pre-provisioned cache for contract development only; it never downloads or
   converts this model lane and is not a production-quality receipt.
 - Modal scales to zero after the last active connection. Model files use a
@@ -173,8 +175,10 @@ Modal and TURN calls may be replaced only at their true network seams.
   Object and must never depend on Modal process stickiness.
 - Release live speech is limited to Arabic, German, English, Spanish, French
   and Japanese. Caption text coverage and Locale profile count are not a claim
-  of full per-language conversational quality. Production TTS has four
-  Languages and nine profiles; the other catalog Languages are captions-only.
+  of full per-language conversational quality. Production TTS has three
+  Languages and seven profiles (English, Spanish and French); Japanese's
+  documented upstream voices are not release-enabled until its dictionary is
+  pinned and license-reviewed. The other catalog Languages are captions-only.
 - Voice identity is a selected synthesized style, not gender detection and not
   voice cloning.
 - A `workers.dev` address and native Edge app-mode shortcut are sufficient. A

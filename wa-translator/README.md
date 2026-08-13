@@ -10,8 +10,10 @@ Sprint-0 benchmark evidence that chose the models.
 
 `capabilities.json` — the shared 100-base-Language / 122-Locale capability
 catalog. It distinguishes six release-tested live-speech Languages from 100
-M2M100 text Languages, and four enabled TTS Languages / nine exact profiles.
-A Locale does not imply a distinct MT or ASR model.
+M2M100 text Languages, and three enabled TTS Languages / seven exact profiles.
+A documented Japanese provider voice is not release-enabled pending a pinned,
+license-reviewed dictionary/runtime dependency. A Locale does not imply a
+distinct MT or ASR model.
 
 `windows/` — local multilingual UI/protocol adapter. With explicitly
 pre-provisioned ASR/M2M artifacts it can exercise the same revision-pinned

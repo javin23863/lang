@@ -217,11 +217,12 @@ wheel SHA-256             = a129dc6364a286bd6a92c396e9862459d3d3e45f2c15596ed5a9
 
 The package wheel hash comes from the official PyPI release metadata [S15].
 The enabled production subset is smaller than the upstream inventory: it is
-four TTS language codes and nine explicitly selected profiles. The deployment
-found that the pinned Hugging Face resolve response's `ETag` is **not** the
-SHA-256 of its delivered `.pt` bytes. On 2026-08-14, all nine official pinned
-resolve responses were downloaded and SHA-256 hashed locally; the runtime pins
-those delivered bytes rather than treating an `ETag` as a content digest [S19]:
+three TTS language codes and seven explicitly selected profiles (English,
+Spanish and French). The deployment found that the pinned Hugging Face resolve
+response's `ETag` is **not** the SHA-256 of its delivered `.pt` bytes. On
+2026-08-14, all nine candidate resolve responses were downloaded and SHA-256
+hashed locally; the runtime pins only the seven release-enabled delivered bytes
+rather than treating an `ETag` as a content digest [S19]:
 
 ```text
 en-us-af-heart  0ab5709b8ffab19bfd849cd11d98f75b60af7733253ad0d67b12382a102cb4ff
@@ -231,14 +232,25 @@ en-gb-bm-fable  d44935f3135257a9064df99f007fc1342ff1aa767552b4a4fa4c3b2e6e59079c
 es-ef-dora      d9d69b0f8a2b87a345f269d89639f89dfbd1a6c9da0c498ae36dd34afcf35530
 es-em-alex      5eac53f767c3f31a081918ba531969aea850bed18fe56419b804d642c6973431
 fr-ff-siwis     8073bf2d2c4b9543a90f2f0fd2144de4ed157e2d4b79ddeb0d5123066171fbc9
+
+# documented Japanese candidates, audited but NOT release-enabled
 ja-jf-alpha     1bf4c9dc69e45ee46183b071f4db766349aac5592acbcfeaf051018048a5d787
 ja-jm-kumo      98340afd68b1cee84fe0cd95528cfa6d4b39e416aa75a9df64049d52c8b55896
 ```
 
-The remaining documented Kokoro groups (`zh`, `hi`, `it`, and `pt`) are not
-enabled in this release. They remain captions-only even though their upstream
-voices are documented, until their live-speech ASR/MT/TTS route is separately
-validated.
+Japanese is intentionally captions-only in the release. The pinned
+`kokoro==0.9.4` Japanese path reached an undeclared MeCab/fugashi dictionary
+dependency during actual Modal initialization. Misaki documents both a newer
+Japanese tokenizer based on `pyopenjtalk` plus full UniDic and an older chain
+through `fugashi`/MeCab/`unidic-lite` [S20]. Fugashi confirms that its
+dictionary is an additional dependency and that full UniDic needs a separate
+download [S21]. A future Japanese voice route must pin, license-notice and
+test one exact frontend/dictionary configuration before it can be enabled.
+
+The remaining documented Kokoro groups (`ja`, `zh`, `hi`, `it`, and `pt`) are
+not enabled in this release. They remain captions-only even though their
+upstream voices are documented, until their live-speech ASR/MT/TTS route is
+separately validated.
 
 The upstream limitations are unusually relevant to a conversation product
 [S13]:
@@ -375,10 +387,16 @@ validate any newly listed language.
 - **[S18]** MADLAD-400 author paper:
   <https://arxiv.org/abs/2309.04662>
   (accessed 2026-08-14).
-- **[S19]** Hexgrad Kokoro pinned voice resolve endpoints, one per enabled
+- **[S19]** Hexgrad Kokoro pinned voice resolve endpoints, one per candidate
   file; for example American English Heart:
   <https://huggingface.co/hexgrad/Kokoro-82M/resolve/f3ff3571791e39611d31c381e3a41a3af07b4987/voices/af_heart.pt>;
   the remaining exact filenames are `am_michael`, `bf_emma`, `bm_fable`,
   `ef_dora`, `em_alex`, `ff_siwis`, `jf_alpha`, and `jm_kumo` with `.pt`
   suffixes at the same pinned revision (downloaded and content-hashed,
   2026-08-14).
+- **[S20]** Hexgrad Misaki Japanese tokenizer documentation, including newer
+  `pyopenjtalk`/full-UniDic and older `fugashi`/MeCab/`unidic-lite` paths:
+  <https://github.com/hexgrad/misaki> (accessed 2026-08-14).
+- **[S21]** Fugashi dictionary installation documentation, including the
+  separate full-UniDic download requirement:
+  <https://github.com/polm/fugashi> (accessed 2026-08-14).

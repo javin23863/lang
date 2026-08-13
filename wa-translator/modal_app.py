@@ -92,7 +92,6 @@ TTS_WARMUP_FIXTURES = (
     ("Good morning. The room is ready.", "en-gb-bf-emma"),
     ("Hola María, ¿cómo estás hoy?", "es-ef-dora"),
     ("Bonjour, la salle est prête.", "fr-ff-siwis"),
-    ("こんにちは、準備ができました。", "ja-jf-alpha"),
 )
 
 SAMPLE_RATE = 16_000
@@ -285,6 +284,7 @@ class KokoroTTS:
     def __init__(self) -> None:
         self._model: Any = None
         self._pipelines: dict[str, Any] = {}
+        self._pipeline_factory: Callable[..., Any] | None = None
         self._snapshot: Path | None = None
         self._load_lock = __import__("threading").RLock()
         self._synthesis_lock = __import__("threading").RLock()
@@ -335,13 +335,9 @@ class KokoroTTS:
                     f"Kokoro model placement failed: expected {device}, got {actual_device}")
             if os.environ.get("MODAL_IS_REMOTE") == "1" and actual_device != "cuda":
                 raise RuntimeError("Kokoro CUDA unavailable in deployed L4 container")
-            pipelines = {
-                pipeline: KPipeline(lang_code=pipeline, repo_id=str(local_dir), model=model)
-                for pipeline in sorted({route["pipeline"] for route in VOICE_ROUTES.values()})
-            }
             self._model = model
             self._snapshot = local_dir
-            self._pipelines = pipelines
+            self._pipeline_factory = KPipeline
             print(f"[tts] Kokoro model ready device={actual_device}", flush=True)
 
     def synthesize(self, text: str, voice_profile: str) -> bytes:
@@ -350,11 +346,18 @@ class KokoroTTS:
             raise ValueError("unsupported Kokoro voice profile")
         with self._synthesis_lock:
             self._ensure_loaded()
-            assert self._snapshot is not None
+            assert self._snapshot is not None and self._model is not None
+            assert self._pipeline_factory is not None
             voice_name = route["model_voice"]
             voice_path = self._snapshot / "voices" / f"{voice_name}.pt"
+            pipeline = self._pipelines.get(route["pipeline"])
+            if pipeline is None:
+                pipeline = self._pipeline_factory(
+                    lang_code=route["pipeline"], repo_id=str(self._snapshot), model=self._model,
+                )
+                self._pipelines[route["pipeline"]] = pipeline
             chunks: list[np.ndarray] = []
-            for result in self._pipelines[route["pipeline"]](text, voice=str(voice_path)):
+            for result in pipeline(text, voice=str(voice_path)):
                 audio = result.audio if hasattr(result, "audio") else result[2]
                 if audio is not None:
                     chunks.append(np.asarray(audio, dtype=np.float32))

@@ -2,6 +2,7 @@ import unittest
 
 from latency_acceptance import (
     assert_warm_targets,
+    FIXTURES,
     measurement_schedule,
     prime_stream_for_preload,
     send_heartbeat,
@@ -18,10 +19,11 @@ from live_bilingual_check import (
 
 class LatencyAcceptanceTests(unittest.TestCase):
     def test_tts_probe_uses_current_locale_and_explicit_voice_profile_contract(self):
-        self.assertEqual(join_selection("en_to_ja"), ("ja-JP", "ja-jf-alpha"))
-        payload = tts_payload("en_to_ja")
-        self.assertEqual(payload["locale"], "ja-JP")
-        self.assertEqual(payload["voice_profile"], "ja-jf-alpha")
+        self.assertEqual(join_selection("en_to_fr"), ("fr-FR", "fr-ff-siwis"))
+        payload = tts_payload("en_to_fr")
+        self.assertEqual(payload["locale"], "fr-FR")
+        self.assertEqual(payload["voice_profile"], "fr-ff-siwis")
+        self.assertNotIn("en_to_ja", FIXTURES)
         self.assertNotIn("lang", payload)
         self.assertNotIn("voice_style", payload)
 

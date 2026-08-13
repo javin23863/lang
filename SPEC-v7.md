@@ -126,9 +126,11 @@ Voice Profile selected for your target Locale. Partials are never spoken: they
 are rewritten as the sentence lands, so speaking them would stutter and repeat.
 The browser plays an authenticated `/tts` WAV through one reusable,
 user-unlocked audio element; it never silently uses a wrong-language browser
-voice. The cloud profile set is currently English (US/GB), Spanish, French
-(female only), and Japanese. Arabic, German and every non-enabled catalog
-Language remain captions-only. The local adapter advertises no TTS profiles,
+voice. The cloud profile set is currently English (US/GB), Spanish, and French
+(female only). Japanese has documented upstream voices but remains
+captions-only until its dictionary/runtime dependency is pinned and
+license-reviewed; Arabic, German and every other non-enabled catalog Language
+also remain captions-only. The local adapter advertises no TTS profiles,
 which is an intentional fail-closed parity stance rather than a fallback.
 
 **The feedback loop is the hazard, not the synthesis.** Your speaker is

@@ -169,7 +169,7 @@ def test_private_room_http_flow():
     assert capabilities.json()["counts"] == {
         "base_languages": 100, "locale_profiles": 122,
         "live_speech_languages": 6, "text_languages": 100,
-        "voice_languages": 4, "voice_profiles": 9,
+        "voice_languages": 3, "voice_profiles": 7,
     }
     disabled_runtime = srv.local_runtime_capabilities(model_loading_enabled=False)
     assert disabled_runtime["captions_available"] is False

@@ -17,9 +17,11 @@ system, native wrapper or custom domain.
   (at most three); Spanish regional listeners share one Spanish translation.
   Translated voice is incoming-only.
 - The production runtime exposes only exact pinned Kokoro profiles reachable
-  from release live-speech locales: American/British English, Spanish, French
-  female, and Japanese. Arabic and German are captions-only in this release;
-  no wrong-language voice fallback is permitted.
+  from release live-speech locales: American/British English, Spanish, and
+  French female. Japanese has documented upstream voices but is captions-only
+  until its dictionary/runtime dependency is pinned and license-reviewed;
+  Arabic and German are also captions-only. No wrong-language voice fallback
+  is permitted.
 - One L4 Modal container has four stream slots reserved for global captions, shared by
   every room, plus one TTS slot. A room still admits up to four participants,
   but a fifth active speaker across rooms receives an explicit

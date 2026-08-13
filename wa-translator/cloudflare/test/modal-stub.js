@@ -14,8 +14,6 @@ export default {
         "es-ef-dora": true,
         "es-em-alex": true,
         "fr-ff-siwis": true,
-        "ja-jf-alpha": true,
-        "ja-jm-kumo": true,
       };
       if (request.method !== "POST"
           || !voiceProfiles[body.voice_profile]
