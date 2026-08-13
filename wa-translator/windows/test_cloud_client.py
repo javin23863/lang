@@ -56,6 +56,17 @@ class CloudClientContractTests(unittest.TestCase):
         self.assertIn("setNaturalAudioMuted(false)", HTML)
         self.assertIn("$('remoteVideo').muted = muted", HTML)
 
+    def test_natural_audio_stays_live_until_translated_playback_actually_starts(self):
+        toggle_start = HTML.index("$('voiceBtn').onclick")
+        toggle_end = HTML.index("\n};", toggle_start)
+        self.assertNotIn("setNaturalAudioMuted(true)", HTML[toggle_start:toggle_end])
+        playing_start = HTML.index("fallbackAudio.onplaying")
+        playing_end = HTML.index("\n    };", playing_start)
+        self.assertIn("setNaturalAudioMuted(true)", HTML[playing_start:playing_end])
+        finish_start = HTML.index("function finishSpeech")
+        finish_end = HTML.index("\n}", finish_start)
+        self.assertIn("setNaturalAudioMuted(false)", HTML[finish_start:finish_end])
+
     def test_asr_guard_does_not_disable_webrtc_microphone_track(self):
         start = HTML.index("function setAsrPaused")
         end = HTML.index("\n}", start)

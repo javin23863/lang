@@ -543,14 +543,16 @@ async function requestFallbackSpeech(item) {
     fallbackUrl = URL.createObjectURL(audio);
     fallbackAudio.src = fallbackUrl;
     fallbackAudio.volume = 1;
+    fallbackAudio.onplaying = () => {
+      if (item.settled || item !== activeSpeech
+          || item.generation !== speechGeneration || !voiceOn) return;
+      setNaturalAudioMuted(true);
+      setAsrPaused(true);
+    };
     fallbackAudio.onended = () => finishSpeech(item);
     fallbackAudio.onerror = () => finishSpeech(item, 'Could not play spoken translation');
     item.playTimer = setTimeout(
       () => finishSpeech(item, 'Spoken translation playback timed out'), 60000);
-    // Natural incoming audio and the local ASR feed are both gated before
-    // play(), while the WebRTC microphone track sent to peers remains live.
-    setNaturalAudioMuted(true);
-    setAsrPaused(true);
     await fallbackAudio.play();
   } catch (error) {
     if (error.name === 'AbortError' && item.settled) return;
@@ -581,6 +583,7 @@ function finishSpeech(item, error) {
   clearTimeout(item.fetchTimer);
   if (item !== activeSpeech || item.generation !== speechGeneration) return;
   stopFallbackAudio();
+  setNaturalAudioMuted(false);
   activeSpeech = null;
   if (error) {
     speaking = false;
@@ -614,6 +617,7 @@ function cancelSpeech() {
     activeSpeech = null;
   }
   stopFallbackAudio();
+  setNaturalAudioMuted(false);
   if (needsTail) {
     // Block a rapid off/on or language-change final until the cancelled sound
     // has left the room. Otherwise this old timer could reopen ASR in the
@@ -675,8 +679,6 @@ $('voiceBtn').onclick = () => {
     failVoice();
   } else {
     voiceOn = true;
-    // Replace natural incoming audio immediately, before any translated phrase.
-    setNaturalAudioMuted(true);
     updateVoiceButton();
   }
   setStatus(voiceOn ? 'Speaking translations aloud' : 'Translations muted — captions only');
@@ -874,7 +876,7 @@ function startPeer(peer) {
 
   pc.ontrack = (e) => {
     $('remoteVideo').srcObject = e.streams[0];
-    setNaturalAudioMuted(voiceOn);
+    setNaturalAudioMuted(asrPaused);
     $('videoNote').classList.add('hidden');
   };
   pc.onicecandidate = (e) => {

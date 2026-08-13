@@ -244,8 +244,8 @@ async def check_voice_modes(tab, other_tab, my_id, other_id, check):
     await tab.js("$('voiceBtn').click()")
     enabled = await tab.js(STATE)
     other_unchanged = await other_tab.js(STATE)
-    check(enabled["voiceOn"] and enabled["remoteMuted"],
-          "voice: enabling locally mutes natural audio before phrase playback")
+    check(enabled["voiceOn"] and not enabled["remoteMuted"],
+          "voice: enabling locally keeps natural audio until translated playback")
     check(not other_unchanged["voiceOn"] and not other_unchanged["remoteMuted"],
           "voice: each participant controls translated audio independently")
 
@@ -253,6 +253,8 @@ async def check_voice_modes(tab, other_tab, my_id, other_id, check):
     await tab.js(f"handle({caption(other_id, 51, True, 'Necesito ayuda', {'en': 'I need help'})})")
     await _wait_js(tab, "window.__voice.playing === 1")
     during = await tab.js(STATE)
+    check(during["remoteMuted"],
+          "voice: translated playback mutes natural incoming audio only while playing")
     await _wait_js(tab, "window.__voice.ended === 1", timeout=3)
     await asyncio.sleep(0.35)
     played = await tab.js("({voice:window.__voice, posts:window.__worklet})")
@@ -269,6 +271,9 @@ async def check_voice_modes(tab, other_tab, my_id, other_id, check):
           f"voice: translated WAV decoded and played to completion (got {played['voice']})")
     check(False in played["posts"] and played["posts"][-1] is True,
           f"voice: local ASR paused and resumed around playback (got {played['posts']})")
+    after_playback = await tab.js(STATE)
+    check(not after_playback["remoteMuted"],
+          "voice: natural incoming audio resumes between translated phrases")
     flushes_after = await tab.js("window.__controls.filter(x=>x.type==='speech_end').length")
     check(flushes_after == flushes_before + 1,
           "voice: ASR pause flushes once before playback and never flushes playback feedback")
