@@ -17,12 +17,32 @@ import websockets
 
 PUBLIC_BASE = "https://spoken-translation-room.spoken-translation-cloudflare.workers.dev"
 FIXTURES = {
-    "en_to_es": {"text": "Hola María, ¿cómo estás hoy?", "lang": "es"},
-    "es_to_en": {"text": "Hi David, I'm fine, thank you.", "lang": "en"},
+    "en_to_es": {
+        "text": "Hola María, ¿cómo estás hoy?",
+        "locale": "es-ES", "voice_profile": "es-ef-dora",
+    },
+    "es_to_en": {
+        "text": "Hi David, I'm fine, thank you.",
+        "locale": "en-US", "voice_profile": "en-us-af-heart",
+    },
+    "en_to_fr": {
+        "text": "Bonjour Marie, comment allez-vous aujourd’hui ?",
+        "locale": "fr-FR", "voice_profile": "fr-ff-siwis",
+    },
+    "en_to_ja": {
+        "text": "こんにちは、今日はいかがですか。",
+        "locale": "ja-JP", "voice_profile": "ja-jf-alpha",
+    },
 }
 TTS_WARM_TARGET_S = 2.0
 VOICE_WARM_TARGET_S = 3.0
-USER_AGENT = "spoken-translation-latency-acceptance/1.0"
+# The public Worker correctly rejects generic scripted traffic at Cloudflare's
+# edge.  This is a browser-facing room receipt, so use the same browser-shaped
+# user agent for both HTTPS and WebSocket handshake probes.
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "Chrome/140 Safari/537.36"
+)
 
 
 def assert_warm_targets(records: list[dict[str, Any]]) -> None:
@@ -56,13 +76,14 @@ def _room(base: str) -> tuple[str, str]:
     return path.rsplit("/", 1)[-1], path
 
 
-async def _join(base: str, token: str, lang: str):
+async def _join(base: str, token: str, locale: str, voice_profile: str):
     websocket_base = base.replace("https://", "wss://").replace("http://", "ws://")
     socket = await websockets.connect(
-        f"{websocket_base}/ws/{token}", origin=base, max_size=None)
+        f"{websocket_base}/ws/{token}", origin=base, max_size=None,
+        additional_headers={"User-Agent": USER_AGENT})
     await socket.send(json.dumps({
-        "type": "join", "lang": lang, "name": "Latency fixture",
-        "voice_style": "female",
+        "type": "join", "locale": locale, "name": "Latency fixture",
+        "voice_profile": voice_profile,
     }))
     while True:
         message = json.loads(await socket.recv())
@@ -82,6 +103,16 @@ async def send_heartbeat(socket: Any) -> None:
     await socket.send('{"type":"heartbeat"}')
 
 
+def tts_payload(direction: str) -> dict[str, str]:
+    """Build the current fail-closed Worker request for one fixed route."""
+    fixture = FIXTURES[direction]
+    return {
+        "text": fixture["text"],
+        "locale": fixture["locale"],
+        "voice_profile": fixture["voice_profile"],
+    }
+
+
 async def _heartbeats(socket: Any) -> None:
     while True:
         await asyncio.sleep(8)
@@ -91,10 +122,7 @@ async def _heartbeats(socket: Any) -> None:
 def _request(base: str, token: str, participant_id: str,
              direction: str, phase: str, sample: int) -> dict[str, Any]:
     fixture = FIXTURES[direction]
-    body = json.dumps({
-        "text": fixture["text"], "lang": fixture["lang"],
-        "voice_style": "female",
-    }, ensure_ascii=False).encode()
+    body = json.dumps(tts_payload(direction), ensure_ascii=False).encode()
     request = urllib.request.Request(
         f"{base}/tts", method="POST", data=body,
         headers={
@@ -126,7 +154,7 @@ async def run(
     preload_wait_s: float | None = None,
 ) -> list[dict[str, Any]]:
     token, _path = await asyncio.to_thread(_room, base)
-    socket, participant_id = await _join(base, token, "en")
+    socket, participant_id = await _join(base, token, "en-US", "en-us-af-heart")
     heartbeat = asyncio.create_task(_heartbeats(socket))
     records = []
     try:
