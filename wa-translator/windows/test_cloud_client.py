@@ -110,6 +110,7 @@ class CloudClientContractTests(unittest.TestCase):
         self.assertIn("document.readyState === 'complete'", source)
         self.assertIn("typeof $ === 'function'", source)
         self.assertIn('page.get("url", "").startswith(room_url)', source)
+        self.assertIn("fallbackAudio.src.startsWith('blob:')", source)
         self.assertNotIn("handle(", source)
         self.assertNotIn("window.fetch =", source)
         self.assertNotIn("CONTROLLED_TTS_SPY", source)

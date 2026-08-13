@@ -290,9 +290,11 @@ OBSERVER = r"""(() => {
     childList: true, subtree: true, characterData: true, attributes: true
   });
   fallbackAudio.addEventListener('playing', () => {
+    if (!fallbackAudio.src.startsWith('blob:')) return;
     window.__acceptance.plays.push({type: 'playing', at: performance.now()});
   });
   fallbackAudio.addEventListener('ended', () => {
+    if (!fallbackAudio.src.startsWith('blob:')) return;
     window.__acceptance.plays.push({
       type: 'ended', at: performance.now(), duration: fallbackAudio.duration,
       currentTime: fallbackAudio.currentTime
