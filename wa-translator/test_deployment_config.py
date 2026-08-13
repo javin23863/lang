@@ -36,11 +36,14 @@ class DeploymentConfigTests(unittest.TestCase):
         self.assertIn("MAX_STREAM_INPUTS = 4", MODAL)
         self.assertIn("MAX_TTS_INPUTS = 1", MODAL)
 
-    def test_ap_south_routing_experiment_preserves_the_default_endpoint(self):
-        self.assertIn("def web() -> FastAPI:", MODAL)
+    def test_only_the_ap_south_public_function_can_start_an_l4(self):
         self.assertIn('routing_region="ap-south"', MODAL)
         self.assertIn("def web_ap_south() -> FastAPI:", MODAL)
-        self.assertEqual(MODAL.count("min_containers=0"), 2)
+        self.assertNotIn("def web() -> FastAPI:", MODAL)
+        self.assertEqual(MODAL.count("@modal_application.function("), 1)
+        self.assertEqual(MODAL.count('gpu="L4"'), 1)
+        self.assertEqual(MODAL.count("max_containers=1"), 1)
+        self.assertEqual(MODAL.count("min_containers=0"), 1)
         self.assertNotIn('region="ap"', MODAL)
         self.assertNotIn('region="ap-southeast"', MODAL)
 

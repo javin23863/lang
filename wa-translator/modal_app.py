@@ -665,24 +665,9 @@ if modal is not None:  # pragma: no branch - false only in the local test venv
                                           create_if_missing=True)
     modal_application = modal.App("spoken-translation-compute")
 
-    @modal_application.function(
-        image=modal_image,
-        gpu="L4",
-        volumes={"/model-cache": modal_volume},
-        secrets=[modal.Secret.from_name("spoken-translation-modal")],
-        max_containers=1,
-        min_containers=0,
-        scaledown_window=60,
-        timeout=86_400,
-    )
-    @modal.concurrent(max_inputs=5, target_inputs=5)
-    @modal.asgi_app()
-    def web() -> FastAPI:
-        return create_api()
-
-    # Keep the default endpoint as the rollback control.  This sibling changes
-    # only Modal's input/output routing for the Southeast Asia latency A/B;
-    # container placement, capacity, and scale-to-zero remain identical.
+    # The previous default-routed deployment remains available in Modal/Git
+    # history for rollback. Only this AP-routed function may allocate an L4 in
+    # the active deployment, preserving the app's one-container beta ceiling.
     @modal_application.function(
         image=modal_image,
         gpu="L4",
