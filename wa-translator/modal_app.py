@@ -43,7 +43,10 @@ VOICE_ROUTES = {
     ("es", "female"): "ef_dora",
     ("es", "male"): "em_alex",
 }
-TTS_WARMUP_FIXTURES = (("Hello.", "en", "female"), ("Hola.", "es", "female"))
+TTS_WARMUP_FIXTURES = (
+    ("Hi David, I'm fine, thank you.", "en", "female"),
+    ("Hola María, ¿cómo estás hoy?", "es", "female"),
+)
 
 SAMPLE_RATE = 16_000
 MAX_PCM_FRAME_BYTES = 32_000

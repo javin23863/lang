@@ -218,6 +218,18 @@ class ModalStreamTests(unittest.TestCase):
 
 
 class ModalTTSTests(unittest.TestCase):
+    def test_preload_uses_representative_fixed_bilingual_phrases(self):
+        calls = []
+        tts = modal_app.KokoroTTS()
+        tts.synthesize = lambda text, lang, style: calls.append((text, lang, style))
+
+        tts.preload()
+
+        self.assertEqual([(lang, style) for _text, lang, style in calls], [
+            ("en", "female"), ("es", "female"),
+        ])
+        self.assertTrue(all(20 <= len(text) <= 50 for text, _lang, _style in calls))
+
     def test_tts_failure_logs_bounded_diagnostic_without_text_or_credentials(self):
         api = modal_app.create_api(
             shared_secret=SECRET, compute=FakeCompute(), tts=FailingTTS(),
