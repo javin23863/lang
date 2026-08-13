@@ -43,6 +43,7 @@ VOICE_ROUTES = {
     ("es", "female"): "ef_dora",
     ("es", "male"): "em_alex",
 }
+TTS_WARMUP_FIXTURES = (("Hello.", "en", "female"), ("Hola.", "es", "female"))
 
 SAMPLE_RATE = 16_000
 MAX_PCM_FRAME_BYTES = 32_000
@@ -198,6 +199,7 @@ class KokoroTTS:
         self._pipelines: dict[str, Any] = {}
         self._snapshot: Path | None = None
         self._load_lock = __import__("threading").RLock()
+        self._synthesis_lock = __import__("threading").RLock()
 
     def _ensure_loaded(self) -> None:
         if self._model is not None:
@@ -228,50 +230,60 @@ class KokoroTTS:
                     raise RuntimeError(f"Kokoro voice missing: {voice}")
 
             device = "cuda" if torch.cuda.is_available() else "cpu"
-            self._model = KModel(
+            model = KModel(
                 repo_id=str(local_dir),
                 config=str(local_dir / "config.json"),
                 model=str(model_file),
             ).to(device).eval()
-            actual_device = next(self._model.parameters()).device.type
+            actual_device = next(model.parameters()).device.type
             if actual_device != device:
                 raise RuntimeError(
                     f"Kokoro model placement failed: expected {device}, got {actual_device}")
             if os.environ.get("MODAL_IS_REMOTE") == "1" and actual_device != "cuda":
                 raise RuntimeError("Kokoro CUDA unavailable in deployed L4 container")
-            print(f"[tts] Kokoro model ready device={actual_device}", flush=True)
-            self._snapshot = local_dir
-            self._pipelines = {
+            pipelines = {
                 "en": KPipeline(lang_code="a", repo_id=str(local_dir),
-                                model=self._model),
+                                model=model),
                 "es": KPipeline(lang_code="e", repo_id=str(local_dir),
-                                model=self._model),
+                                model=model),
             }
+            self._model = model
+            self._snapshot = local_dir
+            self._pipelines = pipelines
+            print(f"[tts] Kokoro model ready device={actual_device}", flush=True)
 
     def synthesize(self, text: str, lang: str, voice_style: str) -> bytes:
-        self._ensure_loaded()
-        assert self._snapshot is not None
-        voice_name = VOICE_ROUTES[(lang, voice_style)]
-        voice_path = self._snapshot / "voices" / f"{voice_name}.pt"
-        chunks: list[np.ndarray] = []
-        for result in self._pipelines[lang](text, voice=str(voice_path)):
-            audio = result.audio if hasattr(result, "audio") else result[2]
-            if audio is not None:
-                chunks.append(np.asarray(audio, dtype=np.float32))
-        if not chunks:
-            raise RuntimeError("Kokoro produced no audio")
-        samples = np.clip(np.concatenate(chunks), -1.0, 1.0)
-        pcm = (samples * 32767).astype(np.int16).tobytes()
-        output = io.BytesIO()
-        with wave.open(output, "wb") as wav_file:
-            wav_file.setnchannels(1)
-            wav_file.setsampwidth(2)
-            wav_file.setframerate(24_000)
-            wav_file.writeframes(pcm)
-        result = output.getvalue()
-        if len(result) > MAX_TTS_AUDIO_BYTES:
-            raise RuntimeError("Kokoro output exceeded the response cap")
-        return result
+        with self._synthesis_lock:
+            self._ensure_loaded()
+            assert self._snapshot is not None
+            voice_name = VOICE_ROUTES[(lang, voice_style)]
+            voice_path = self._snapshot / "voices" / f"{voice_name}.pt"
+            chunks: list[np.ndarray] = []
+            for result in self._pipelines[lang](text, voice=str(voice_path)):
+                audio = result.audio if hasattr(result, "audio") else result[2]
+                if audio is not None:
+                    chunks.append(np.asarray(audio, dtype=np.float32))
+            if not chunks:
+                raise RuntimeError("Kokoro produced no audio")
+            samples = np.clip(np.concatenate(chunks), -1.0, 1.0)
+            pcm = (samples * 32767).astype(np.int16).tobytes()
+            output = io.BytesIO()
+            with wave.open(output, "wb") as wav_file:
+                wav_file.setnchannels(1)
+                wav_file.setsampwidth(2)
+                wav_file.setframerate(24_000)
+                wav_file.writeframes(pcm)
+            result = output.getvalue()
+            if len(result) > MAX_TTS_AUDIO_BYTES:
+                raise RuntimeError("Kokoro output exceeded the response cap")
+            return result
+
+    def preload(self) -> None:
+        started = time.monotonic()
+        for text, lang, style in TTS_WARMUP_FIXTURES:
+            self.synthesize(text, lang, style)
+        elapsed_ms = round((time.monotonic() - started) * 1_000)
+        print(f"[tts] Kokoro preload ready elapsed_ms={elapsed_ms}", flush=True)
 
 
 @dataclass(frozen=True)
@@ -462,6 +474,29 @@ def create_api(
     compute_engine = compute or ModelRuntime()
     tts_engine = tts or KokoroTTS()
     input_capacity = capacity or InputCapacity()
+    preload_lock = threading.Lock()
+    preload_started = False
+
+    def start_tts_preload() -> None:
+        nonlocal preload_started
+        preload = getattr(tts_engine, "preload", None)
+        if not callable(preload):
+            return
+        with preload_lock:
+            if preload_started:
+                return
+            preload_started = True
+
+        def run() -> None:
+            try:
+                preload()
+            except Exception as error:
+                print(f"[tts] preload {_bounded_diagnostic(error, secret)}",
+                      file=sys.stderr, flush=True)
+
+        threading.Thread(
+            target=run, name="kokoro-preload", daemon=True,
+        ).start()
     if endpointer_factory is None:
         windows_dir = Path(__file__).with_name("windows")
         if str(windows_dir) not in sys.path:
@@ -493,6 +528,7 @@ def create_api(
             if start is None:
                 await websocket.close(code=1008, reason="invalid start message")
                 return
+            start_tts_preload()
             state = StreamState(
                 **start,
                 endpointer=endpointer_factory(),

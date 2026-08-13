@@ -86,6 +86,19 @@ class FailingTTS:
         raise RuntimeError(f"failed text={text} token={SECRET}")
 
 
+class BlockingPreloadTTS(FakeTTS):
+    def __init__(self):
+        super().__init__()
+        self.preload_calls = 0
+        self.preload_started = __import__("threading").Event()
+        self.preload_release = __import__("threading").Event()
+
+    def preload(self):
+        self.preload_calls += 1
+        self.preload_started.set()
+        self.preload_release.wait(timeout=5)
+
+
 def client_fixture():
     compute = FakeCompute()
     tts = FakeTTS()
@@ -99,6 +112,35 @@ def client_fixture():
 
 
 class ModalStreamTests(unittest.TestCase):
+    def test_valid_stream_starts_one_nonblocking_tts_preload(self):
+        tts = BlockingPreloadTTS()
+        api = modal_app.create_api(
+            shared_secret=SECRET,
+            compute=FakeCompute(),
+            tts=tts,
+            endpointer_factory=FakeEndpointer,
+        )
+        headers = {"authorization": f"Bearer {SECRET}"}
+        client = TestClient(api)
+        for stream_id in ("participant-1", "participant-2"):
+            with client.websocket_connect("/stream", headers=headers) as ws:
+                ws.send_json({
+                    "type": "start", "stream_id": stream_id,
+                    "source_lang": "en", "target_lang": "es",
+                })
+                self.assertTrue(tts.preload_started.wait(timeout=1))
+                ws.send_bytes(np.full(1600, 1000, dtype=np.int16).tobytes())
+                ws.send_json({"type": "speech_end"})
+                self.assertTrue(ws.receive_json()["final"])
+            if stream_id == "participant-1":
+                # Let the background seam finish before opening a second stream;
+                # the assertion remains that only one preload is ever launched.
+                tts.preload_release.set()
+        try:
+            self.assertEqual(tts.preload_calls, 1)
+        finally:
+            tts.preload_release.set()
+
     def test_capacity_reserves_four_streams_and_one_tts_input(self):
         capacity = modal_app.InputCapacity()
         self.assertEqual([capacity.try_stream() for _ in range(5)],
