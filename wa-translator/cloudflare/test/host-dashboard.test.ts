@@ -21,8 +21,12 @@ describe("installed host dashboard client", () => {
     expect(html).toContain('fetch("/api/rooms"');
     expect(html).toContain('fetch("/api/room-control"');
     expect(html).toContain('fetch("/api/room-control/close"');
-    expect(html).toContain('fetch("/api/capabilities"');
-    expect(html).toContain('id="catalogSummary"');
+    expect(html).not.toContain('fetch("/api/capabilities"');
+    expect(html).not.toContain('id="catalogSummary"');
+    expect(html).not.toContain('Private multilingual rooms');
+    expect(html).not.toContain('Conversations that keep their natural flow.');
+    expect(html).not.toContain('Create a private video room, share its link');
+    expect(html).not.toContain('Capability declarations never imply locale-specific ASR');
     expect(html).toContain("function clearCurrentRoom(state, message)");
     expect(html).toContain('clearCurrentRoom("expired", "This room has expired or is no longer controlled by this device.")');
     expect(html).toContain('clearCurrentRoom("closed", "This room is closed.")');

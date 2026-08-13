@@ -16,15 +16,14 @@ LIVE_CHECK_PATH = pathlib.Path(__file__).with_name("live_bilingual_check.py")
 class CloudClientContractTests(unittest.TestCase):
     def test_captions_only_and_controlled_voice_controls_are_literal_defaults(self):
         self.assertIn("let voiceOn = false", HTML)
-        self.assertIn('id="listenVoiceSel"', HTML)
-        self.assertIn('<option value="match">Match speaker</option>', HTML)
         self.assertIn('id="publishVoiceSel"', HTML)
-        self.assertIn("voice_style: myVoiceStyle", HTML)
+        self.assertIn("voice_profile: myVoiceProfileId", HTML)
+        self.assertIn("Voice unavailable — captions only", HTML)
 
     def test_turn_and_tts_keep_bearer_in_headers(self):
         self.assertIn("fetch('/api/turn'", HTML)
         self.assertIn("'Authorization': 'Bearer ' + roomId", HTML)
-        self.assertIn("voice_style: item.voiceStyle", HTML)
+        self.assertIn("voice_profile: item.voiceProfileId", HTML)
         self.assertNotIn("turn?token=", HTML)
         self.assertIn("'X-Participant-ID': myId", HTML)
 
@@ -93,19 +92,29 @@ class CloudClientContractTests(unittest.TestCase):
     def test_language_role_is_explicit_before_the_room_connects(self):
         self.assertIn('id="roleGate"', HTML)
         self.assertIn('role="dialog"', HTML)
-        self.assertIn('data-lang="en"', HTML)
-        self.assertIn('data-lang="es"', HTML)
+        self.assertIn('id="roleLocaleSel"', HTML)
+        self.assertIn('id="joinBtn"', HTML)
+        self.assertNotIn('id="localeSearch"', HTML)
+        self.assertNotIn('id="roleChoices"', HTML)
+        self.assertIn("function localeOptionLabel(profile)", HTML)
+        self.assertIn("profile.native_name + ' — ' + profile.display_name", HTML)
+        self.assertIn("overflow-y:auto", HTML)
+        self.assertIn("max-height:calc(100dvh - 36px)", HTML)
         self.assertIn("let ws, myId = null, ttsToken = null, myLang = null", HTML)
         self.assertNotIn("navigator.language", HTML)
-        self.assertIn("function chooseLanguage(lang)", HTML)
-        self.assertIn("chooseLanguage(button.dataset.lang)", HTML)
-        self.assertNotIn("\nconnect();\n", HTML)
+        self.assertIn("function chooseLocale(localeId)", HTML)
+        self.assertIn("function previewRoleLocale()", HTML)
+        self.assertIn("document.documentElement.dir = profile.rtl ? 'rtl' : 'ltr'", HTML)
+        self.assertIn("$('joinBtn').onclick = () => chooseLocale($('roleLocaleSel').value)", HTML)
+        start = HTML.index("function chooseLocale(localeId)")
+        end = HTML.index("\n}", start)
+        body = HTML[start:end]
+        self.assertLess(body.index("roleChosen = true"), body.index("connect()"))
 
-    def test_role_copy_explains_incoming_only_translated_voice(self):
+    def test_role_summary_declares_the_shared_base_language_route(self):
         self.assertIn('id="roleSummary"', HTML)
-        self.assertIn("Your own translated words play on the other device", HTML)
-        self.assertIn("Incoming Spanish becomes English on this device", HTML)
-        self.assertIn("Incoming English becomes Spanish on this device", HTML)
+        self.assertIn("it maps to base ${profile.language}", HTML)
+        self.assertIn("One transcription is shared with the unique listener languages", HTML)
 
     def test_bfcache_restore_rejoins_but_explicit_leave_stays_terminal(self):
         self.assertIn("let explicitLeave = false", HTML)

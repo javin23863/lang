@@ -35,13 +35,9 @@
              background:#fff;margin-right:7px;animation:blink 1s infinite}
 #settingsBtn{font-size:12px}.icon{background:var(--panel-2);color:var(--ink);padding:8px;width:42px}.icon.off{background:transparent;color:var(--muted);border-color:var(--line)}#settings{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:9px;border-top:1px solid var(--line);padding-top:10px}.setting{display:flex;flex-direction:column;gap:4px;min-width:0;color:var(--muted);font-size:11px;text-align:left}.setting select,.setting input{width:100%;min-width:0;background:var(--panel-2);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:9px 8px;font-size:13px}.setting input{padding:8px}.capability{font-size:11px;color:var(--muted);line-height:1.35;padding:8px 10px;border-radius:9px;background:#0a2930;border:1px solid #286457}.capability.warning{background:#352928;border-color:#795848;color:#f3d0bc}
 #status{position:absolute;top:9px;left:50%;transform:translateX(-50%);padding:5px 10px;text-align:center;font-size:11px;color:var(--ink);background:#061019b8;border:1px solid #ffffff22;border-radius:999px;z-index:5;max-width:calc(100% - 32px)}#participantCount{position:absolute;top:9px;left:9px;padding:5px 8px;border-radius:999px;font-size:11px;color:var(--ink);background:#061019b8;border:1px solid #ffffff22;z-index:5;direction:ltr;unicode-bidi:plaintext}
-#roleGate{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(4,13,20,.94);backdrop-filter:blur(14px)}
+#roleGate{position:fixed;inset:0;z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:18px;overflow-y:auto;background:rgba(4,13,20,.94);backdrop-filter:blur(14px)}
 #roleGate[hidden]{display:none}
-.roleCard{width:min(100%,520px);background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:clamp(18px,5vw,28px);box-shadow:var(--shadow)}.brand{font-weight:800;font-size:12px;letter-spacing:.13em;text-transform:uppercase;color:var(--accent);margin-bottom:10px}.roleCard h1{font-size:clamp(23px,6vw,31px);line-height:1.13;margin-bottom:8px}.roleCard>p{color:var(--muted);font-size:14px;line-height:1.5}.roleChoices{display:grid;grid-template-columns:1fr;gap:8px;margin:18px 0 14px}.roleChoice{background:var(--panel-2);color:var(--ink);border:1px solid var(--line);border-radius:12px;text-align:left;padding:14px}.roleChoice:hover{border-color:var(--accent);background:#153b42}
-.roleChoice strong,.roleChoice span{display:block}
-.roleChoice strong{font-size:17px;margin-bottom:4px}
-.roleChoice span{font-size:12px;font-weight:400;line-height:1.35}
-.routeNote{padding-top:12px;border-top:1px solid var(--line)}#roleSummary{grid-column:1/-1;color:var(--muted);font-size:11px;line-height:1.4;padding:2px 2px 0}
+.roleCard{width:min(100%,520px);max-height:calc(100dvh - 36px);margin:auto;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:clamp(18px,5vw,28px);box-shadow:var(--shadow)}.brand{font-weight:800;font-size:12px;letter-spacing:.13em;text-transform:uppercase;color:var(--accent);margin-bottom:10px}.roleCard h1{font-size:clamp(23px,6vw,31px);line-height:1.13;margin-bottom:16px}.roleLocale{display:grid;gap:6px;color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.03em}.roleLocale select{width:100%;min-width:0;min-height:44px;background:var(--panel-2);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:9px 8px;font-size:14px}.roleCard .capability{margin:10px 0}.roleJoin{width:100%;background:var(--accent);color:var(--accent-ink)}#roleSummary{grid-column:1/-1;color:var(--muted);font-size:11px;line-height:1.4;padding:2px 2px 0}
 html[dir=rtl] #selfWrap{left:10px;right:auto}html[dir=rtl] #participantCount{right:9px;left:auto}html[dir=rtl] .msg.mine{align-self:flex-start;border-radius:3px 13px 13px 13px}html[dir=rtl] .msg.theirs{align-self:flex-end;border-radius:13px 3px 13px 13px}
 @media(max-width:380px){
   #stage{height:31vh;min-height:160px}
@@ -49,7 +45,7 @@ html[dir=rtl] #selfWrap{left:10px;right:auto}html[dir=rtl] #participantCount{rig
   #bar{padding-left:7px;padding-right:7px;gap:5px;grid-template-columns:repeat(5,minmax(0,1fr))}
   #micBtn{grid-column:1/-1}
   .icon{width:100%;min-width:0;padding:7px 2px;font-size:10px;white-space:nowrap}.setting select{font-size:11px;padding:7px 3px}
-  .roleCard{padding:16px}.roleChoices{grid-template-columns:1fr;margin:14px 0 12px}
+  .roleCard{padding:16px}
 }
 </style>
 </head>
@@ -58,11 +54,11 @@ html[dir=rtl] #selfWrap{left:10px;right:auto}html[dir=rtl] #participantCount{rig
 <div id="roleGate" role="dialog" aria-modal="true" aria-labelledby="roleTitle">
   <div class="roleCard">
     <p class="brand">Lingua Relay</p><h1 id="roleTitle">Choose your speaking locale</h1>
-    <p>Only live-speech locales are shown. Captions can cover more text languages, but availability never claims dialect-specific ASR or MT quality.</p>
-    <label class="setting" for="localeSearch">Search by language, native name, or region<input id="localeSearch" type="search" placeholder="e.g. Español, Japan, العربية" autocomplete="off"></label>
-    <div id="roleChoices" class="roleChoices" aria-live="polite"></div>
-    <p id="roleEmpty" class="routeNote" hidden>No live-speech locale matches. Search by native name, English name, or region.</p>
-    <p class="routeNote">Your own words stay natural for listeners. Translated voice on this device is for incoming speech only.</p>
+    <label class="roleLocale" for="roleLocaleSel">I speak
+      <select id="roleLocaleSel" aria-describedby="roleCapability" disabled></select>
+    </label>
+    <p id="roleCapability" class="capability" role="status" aria-live="polite">Loading verified language options…</p>
+    <button id="joinBtn" class="roleJoin" type="button" disabled>Join room</button>
   </div>
 </div>
 
@@ -127,9 +123,13 @@ function scheduleTurnRefresh(delay) {
 }
 
 function localeProfile(id) { return locales.get(id) || null; }
+function localeOptionLabel(profile) {
+  return profile.native_name === profile.display_name ? profile.native_name
+    : profile.native_name + ' — ' + profile.display_name;
+}
 function localeName(id) {
   const profile = localeProfile(id);
-  return profile ? profile.native_name + ' · ' + profile.display_name : String(id || 'Unknown locale');
+  return profile ? localeOptionLabel(profile) : String(id || 'Unknown locale');
 }
 function localVoices(profile) {
   if (!profile || !Array.isArray(profile.voice_profiles)) return [];
@@ -157,42 +157,45 @@ function updateRoleSummary() {
   $('capabilityNote').textContent = capabilityText(profile);
   $('capabilityNote').classList.toggle('warning', !localVoices(profile).length);
 }
-function localeMatches(profile, query) {
-  const needle = query.trim().toLocaleLowerCase();
-  return !needle || (profile.search_names || []).some(value =>
-    String(value).toLocaleLowerCase().includes(needle));
+function roleCapabilityText(profile) {
+  if (!profile) return 'Select a verified speaking locale.';
+  if (!runtimeCaptionsAvailable) return runtimeCaptionsUnavailableReason;
+  if (localVoices(profile).length) return 'Captions · Voice';
+  return 'Captions · Voice unavailable — ' +
+    (profile.capabilities?.tts?.reason || 'captions only');
 }
-function renderRoleChoices() {
-  const query = $('localeSearch').value || '';
-  const choices = [...locales.values()].filter(profile =>
-    profile.capabilities?.asr?.available && localeMatches(profile, query));
-  const target = $('roleChoices');
-  target.replaceChildren();
-  for (const profile of choices.slice(0, 30)) {
-    const button = document.createElement('button');
-    button.className = 'roleChoice';
-    button.type = 'button';
-    button.dataset.locale = profile.id;
-    const captionBadge = runtimeCaptionsAvailable ? 'Captions' : 'Caption runtime unavailable';
-    const badges = localVoices(profile).length ? captionBadge + ' · Voice' : captionBadge;
-    button.innerHTML = '<strong></strong><span></span>';
-    button.querySelector('strong').textContent = `${profile.native_name} · ${profile.display_name}`;
-    button.querySelector('span').textContent = `${profile.id} · ${profile.region} · ${badges}`;
-    button.onclick = () => chooseLocale(profile.id);
-    target.appendChild(button);
+function updateRoleGate() {
+  const profile = localeProfile($('roleLocaleSel').value);
+  const joinable = Boolean(profile?.capabilities?.asr?.available);
+  $('joinBtn').disabled = !joinable;
+  $('roleCapability').textContent = roleCapabilityText(profile);
+  $('roleCapability').classList.toggle('warning', !joinable || !localVoices(profile).length);
+}
+function previewRoleLocale() {
+  const profile = localeProfile($('roleLocaleSel').value);
+  if (profile) {
+    document.documentElement.lang = profile.id;
+    document.documentElement.dir = profile.rtl ? 'rtl' : 'ltr';
   }
-  $('roleEmpty').hidden = choices.length !== 0;
+  updateRoleGate();
 }
 function fillLocaleSelect() {
-  const select = $('localeSel');
-  select.replaceChildren();
-  for (const profile of [...locales.values()].filter(item => item.capabilities?.asr?.available)) {
-    const option = document.createElement('option');
-    option.value = profile.id;
-    option.textContent = `${profile.native_name} · ${profile.display_name}`;
-    option.selected = profile.id === myLocale;
-    select.appendChild(option);
+  const profiles = [...locales.values()].filter(item => item.capabilities?.asr?.available);
+  const defaultLocale = profiles.some(profile => profile.id === 'en-US') ? 'en-US' : profiles[0]?.id;
+  for (const id of ['roleLocaleSel', 'localeSel']) {
+    const select = $(id);
+    const selected = myLocale || select.value || defaultLocale;
+    select.replaceChildren();
+    for (const profile of profiles) {
+      const option = document.createElement('option');
+      option.value = profile.id;
+      option.textContent = localeOptionLabel(profile);
+      option.selected = profile.id === selected;
+      select.appendChild(option);
+    }
+    select.disabled = profiles.length === 0;
   }
+  updateRoleGate();
 }
 function fillVoiceSelect() {
   const select = $('publishVoiceSel');
@@ -271,15 +274,15 @@ async function loadCapabilities() {
         'Caption compute is unavailable in this adapter.');
     }
     fillLocaleSelect();
-    renderRoleChoices();
     const remembered = localStorage.getItem('lingua-relay.locale');
     if (remembered && localeProfile(remembered)?.capabilities?.asr?.available) {
       applyLocale(remembered, localStorage.getItem('lingua-relay.voice-profile'));
     }
-    $('localeSearch').oninput = renderRoleChoices;
   } catch (error) {
-    $('roleEmpty').hidden = false;
-    $('roleEmpty').textContent = 'Capability catalog unavailable. This room will not join until its declared language support can be verified.';
+    $('roleLocaleSel').disabled = true;
+    $('joinBtn').disabled = true;
+    $('roleCapability').textContent = 'Capability catalog unavailable. This room will not join until its declared language support can be verified.';
+    $('roleCapability').classList.add('warning');
     setStatus('Capability catalog unavailable', true);
   }
 }
@@ -1050,6 +1053,8 @@ async function onSignal(from, data) {
 
 window.addEventListener('pagehide', suspendRoom);
 window.addEventListener('pageshow', restoreSuspendedRoom);
+$('roleLocaleSel').onchange = previewRoleLocale;
+$('joinBtn').onclick = () => chooseLocale($('roleLocaleSel').value);
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('/sw.js', {scope: '/'}).catch(() => {});
 }

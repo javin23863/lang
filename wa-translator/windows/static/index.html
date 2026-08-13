@@ -8,16 +8,12 @@
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <title>Lingua Relay · Private rooms</title>
 <style>
-*{box-sizing:border-box}:root{color-scheme:dark;--canvas:#09141e;--panel:#10212e;--panel-2:#172d3b;--line:#294455;--ink:#eef3f5;--muted:#aab8c1;--accent:#67e0bc;--accent-ink:#06251e;--danger:#df6572;--focus:#a9ecff}body{margin:0;min-height:100vh;background:radial-gradient(circle at 86% 0,#17445b 0,#09141e 36rem);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:clamp(12px,4vw,42px);display:grid;place-items:center}.card{width:min(760px,100%);background:linear-gradient(145deg,#10212ef2,#0b1924f2);border:1px solid var(--line);border-radius:22px;padding:clamp(20px,5vw,42px);box-shadow:0 22px 62px #0009}.brand{font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin:0 0 12px}.eyebrow{font-size:12px;color:var(--muted);margin:0 0 10px;letter-spacing:.08em;text-transform:uppercase}h1{font-size:clamp(29px,5vw,45px);line-height:1.06;max-width:14ch;margin:0 0 12px}.intro,.muted{color:var(--muted);line-height:1.55}.intro{max-width:58ch;margin:0 0 18px}.catalog{padding:12px 14px;border:1px solid #286457;border-radius:12px;background:#0a2930;color:#d3f6eb;font-size:13px;line-height:1.45;margin:0 0 24px}.state{border-radius:12px;padding:12px 14px;background:var(--panel-2);border:1px solid var(--line);margin:0 0 18px;font-weight:700}.state[data-state="open"]{background:#115646;border-color:#2c8a70}.state[data-state="closed"],.state[data-state="expired"],.state[data-state="error"]{background:#3d272c;border-color:#87515a}.room{display:grid;gap:14px;border-top:1px solid var(--line);padding-top:22px}.field{display:grid;gap:7px;color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.03em}input{width:100%;min-width:0;border:1px solid var(--line);border-radius:10px;background:#09141e;color:var(--ink);font:14px ui-monospace,SFMono-Regular,Consolas,monospace;padding:12px}.actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}button{border:1px solid transparent;border-radius:12px;min-height:44px;padding:10px 12px;font:700 14px inherit;cursor:pointer;background:var(--panel-2);color:var(--ink)}button.primary{background:var(--accent);color:var(--accent-ink)}button.danger{background:#572a32;border-color:#87515a;color:#fff}button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-offset:2px}button:disabled{cursor:wait;opacity:.65}.notice{min-height:20px;margin:2px 0 0;color:var(--muted);font-size:13px}.footnote{font-size:12px;margin:18px 0 0}.create{width:100%;margin-top:22px;font-size:16px}.roomLabel{font-size:13px;font-weight:800;margin:0;color:var(--ink)}@media(max-width:500px){body{padding:12px}.card{border-radius:16px}.actions{grid-template-columns:1fr 1fr}}@media(max-width:380px){body{padding:8px}.card{padding:17px}.actions{gap:7px}button{font-size:13px;padding:9px 7px}input{font-size:12px}.intro{font-size:14px}}
+*{box-sizing:border-box}:root{color-scheme:dark;--canvas:#09141e;--panel:#10212e;--panel-2:#172d3b;--line:#294455;--ink:#eef3f5;--muted:#aab8c1;--accent:#67e0bc;--accent-ink:#06251e;--danger:#df6572;--focus:#a9ecff}body{margin:0;min-height:100vh;background:radial-gradient(circle at 86% 0,#17445b 0,#09141e 36rem);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:clamp(12px,4vw,42px);display:grid;place-items:center}.card{width:min(760px,100%);background:linear-gradient(145deg,#10212ef2,#0b1924f2);border:1px solid var(--line);border-radius:22px;padding:clamp(20px,5vw,42px);box-shadow:0 22px 62px #0009}.brand{font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin:0 0 16px}.state{border-radius:12px;padding:12px 14px;background:var(--panel-2);border:1px solid var(--line);margin:0 0 18px;font-weight:700}.state[data-state="open"]{background:#115646;border-color:#2c8a70}.state[data-state="closed"],.state[data-state="expired"],.state[data-state="error"]{background:#3d272c;border-color:#87515a}.room{display:grid;gap:14px;border-top:1px solid var(--line);padding-top:22px}.field{display:grid;gap:7px;color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.03em}input{width:100%;min-width:0;border:1px solid var(--line);border-radius:10px;background:#09141e;color:var(--ink);font:14px ui-monospace,SFMono-Regular,Consolas,monospace;padding:12px}.actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}button{border:1px solid transparent;border-radius:12px;min-height:44px;padding:10px 12px;font:700 14px inherit;cursor:pointer;background:var(--panel-2);color:var(--ink)}button.primary{background:var(--accent);color:var(--accent-ink)}button.danger{background:#572a32;border-color:#87515a;color:#fff}button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-offset:2px}button:disabled{cursor:wait;opacity:.65}.notice{min-height:20px;margin:2px 0 0;color:var(--muted);font-size:13px}.create{width:100%;margin-top:22px;font-size:16px}.roomLabel{font-size:13px;font-weight:800;margin:0;color:var(--ink)}@media(max-width:500px){body{padding:12px}.card{border-radius:16px}.actions{grid-template-columns:1fr 1fr}}@media(max-width:380px){body{padding:8px}.card{padding:17px}.actions{gap:7px}button{font-size:13px;padding:9px 7px}input{font-size:12px}}
 </style>
 </head>
 <body>
-<main class="card" aria-labelledby="title">
+<main class="card" aria-label="Lingua Relay">
   <p class="brand">Lingua Relay</p>
-  <p class="eyebrow">Private multilingual rooms</p>
-  <h1 id="title">Conversations that keep their natural flow.</h1>
-  <p class="intro">Create a private video room, share its link, and let each participant choose a verified speaking locale. Natural call audio remains direct; captions and spoken translations are clearly declared.</p>
-  <p id="catalogSummary" class="catalog" role="status" aria-live="polite">Checking declared language capabilities…</p>
   <p id="roomState" class="state" data-state="idle" aria-live="polite">No active room on this device.</p>
   <section id="roomPanel" class="room" hidden aria-label="Current private room">
     <p class="roomLabel">Room control</p>
@@ -33,7 +29,6 @@
   </section>
   <p id="roomNotice" class="notice" role="status" aria-live="polite"></p>
   <button id="createBtn" class="primary create" type="button">Create private room</button>
-  <p class="muted footnote">Room control stays only on this device. Closing a room disconnects everyone and permanently disables its shared link. Capability declarations never imply locale-specific ASR or translation quality.</p>
 </main>
 <script>
 const STORAGE_KEY = "live-translator.host-room.v1";
@@ -80,32 +75,6 @@ function setNotice(text) {
 function setState(state, text) {
   $("roomState").dataset.state = state;
   $("roomState").textContent = text;
-}
-
-async function loadCapabilitySummary() {
-  try {
-    const response = await fetch("/api/capabilities", {
-      cache: "no-store", headers: {Accept: "application/json"}
-    });
-    if (!response.ok) throw new Error("capabilities unavailable");
-    const value = await response.json();
-    const counts = value && value.counts;
-    if (!counts || counts.base_languages !== 100 || counts.locale_profiles < 117
-        || !Number.isInteger(counts.live_speech_languages)
-        || !Number.isInteger(counts.voice_profiles)) throw new Error("invalid capability catalog");
-    const runtimeVoiceCount = Array.isArray(value.runtime?.voice_profile_ids)
-      ? value.runtime.voice_profile_ids.length : counts.voice_profiles;
-    const runtimeCaptionNote = value.runtime?.captions_available === false
-      ? ' · local caption runtime disabled' : '';
-    $("catalogSummary").textContent =
-      `${counts.live_speech_languages} release-tested live-speech languages · ` +
-      `${counts.text_languages} text-translation base languages · ` +
-      `${counts.locale_profiles} locale profiles · ${runtimeVoiceCount} enabled voice profiles` +
-      runtimeCaptionNote + '.';
-  } catch (_) {
-    $("catalogSummary").textContent =
-      "Language capability information is unavailable. Participants will verify support before they join.";
-  }
 }
 
 function renderRoom(state, participantCount) {
@@ -278,7 +247,6 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") refreshStatus();
 });
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
-loadCapabilitySummary();
 currentRoom = loadRoom();
 if (currentRoom && currentRoom.expires_at * 1000 > Date.now()) {
   renderRoom("ready", 0);

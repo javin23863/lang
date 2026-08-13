@@ -57,7 +57,16 @@ describe("public room URL interface", () => {
 
     const page = await exports.default.fetch(`${ORIGIN}${path}`);
     expect(page.status).toBe(200);
-    expect(await page.text()).toContain('id="voiceBtn"');
+    const html = await page.text();
+    expect(html).toContain('id="voiceBtn"');
+    expect(html).toContain('<select id="roleLocaleSel"');
+    expect(html).toContain('id="joinBtn"');
+    expect(html).not.toContain('id="localeSearch"');
+    expect(html).not.toContain('id="roleChoices"');
+    expect(html).toContain('function localeOptionLabel(profile)');
+    expect(html).toContain("profile.native_name + ' — ' + profile.display_name");
+    expect(html).toContain('overflow-y:auto');
+    expect(html).toContain('max-height:calc(100dvh - 36px)');
     expect(page.headers.get("Cache-Control")).toBe("no-store");
     expect(page.headers.get("Referrer-Policy")).toBe("no-referrer");
 

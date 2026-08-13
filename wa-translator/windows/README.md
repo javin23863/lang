@@ -45,8 +45,8 @@ receipt. Choose a unique test port for every isolated UI check.
 | `mt_ct2.py` | revision-pinned M2M100 418M CTranslate2 adapter; source tokenized once, target-prefixed batch fanout |
 | `asr_whisper.py` | faster-whisper `large-v3-turbo`, explicit source base Language |
 | `static/index.html` | professional local host dashboard |
-| `static/room.html` | responsive room UI, searchable Locale picker, RTL, caption dock and voice capability state |
-| `browser_check.py` | isolated two-tab WebRTC/UI lifecycle check, including 360 px and RTL assertions |
+| `static/room.html` | responsive room UI, compact native Locale picker with native-first labels, RTL, caption dock and voice capability state |
+| `browser_check.py` | isolated browser WebRTC/UI lifecycle check, including host dashboard, 360 px, native Locale labels and RTL assertions |
 | `test_room.py` | private links, isolation, room cap, multi-target dedupe, protocol and capability endpoint checks |
 | `test_language_catalog.py` | catalog counts, Spanish mappings, RTL, capability truth and search |
 | `test_m2m_catalog.py` | public M2M token/fanout/passthrough/bounds contract with fakes |
@@ -63,8 +63,9 @@ $py = "..\..\.venv\Scripts\python.exe"
 ```
 
 `browser_check.py` needs a separately started isolated local server. It proves
-WebRTC, captions-only default, exact-profile UI behavior, sharing, 360 px and
-RTL layout. Its simulated audio lifecycle is not a human-audible acceptance
+WebRTC, captions-only default, compact exact-profile picker behavior, native
+Locale labels, sharing, host dashboard, 360 px and RTL layout. Its simulated
+audio lifecycle is not a human-audible acceptance
 receipt and does not claim cloud TTS is locally available.
 
 ## Model and quality boundary

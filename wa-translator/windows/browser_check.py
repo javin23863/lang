@@ -32,6 +32,9 @@ import websockets
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from translation_server import DEFAULT_PORT
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
+
 CHROME = os.environ.get(
     "CHROME_EXE", r"C:\Program Files\Google\Chrome\Application\chrome.exe")
 PORT = 9444
@@ -160,7 +163,8 @@ CONTROLLED_TTS_SPY = r"""(() => {
   };
   const realPlay = HTMLMediaElement.prototype.play;
   HTMLMediaElement.prototype.play = function() {
-    if (this === fallbackAudio && this.src.startsWith('blob:')) {
+    const translatedWav = this === fallbackAudio && this.src.startsWith('blob:');
+    if (translatedWav) {
       window.__voice.starts++;
       this.addEventListener('playing', () => window.__voice.playing++, {once: true});
       this.addEventListener('ended', () => {
@@ -173,7 +177,9 @@ CONTROLLED_TTS_SPY = r"""(() => {
       }, {once: true});
     }
     const result = realPlay.call(this);
-    Promise.resolve(result).catch(error => window.__voice.errors.push(String(error)));
+    if (translatedWav) {
+      Promise.resolve(result).catch(error => window.__voice.errors.push(String(error)));
+    }
     return result;
   };
   window.__worklet = [];
@@ -315,6 +321,69 @@ async def check_voice_modes(tab, other_tab, my_id, other_id, check):
           "voice: reconnect restores natural audio")
 
 
+async def check_role_picker(tab, check):
+    await tab.call("Emulation.setDeviceMetricsOverride", width=360, height=640,
+                   deviceScaleFactor=1, mobile=True)
+    picker = await tab.js("""(() => {
+      const gate = $('roleGate');
+      const card = gate.querySelector('.roleCard');
+      const select = $('roleLocaleSel');
+      const join = $('joinBtn');
+      select.focus();
+      const cardBounds = card.getBoundingClientRect();
+      const option = id => [...select.options].find(item => item.value === id)?.textContent;
+      return {
+        open: !gate.hidden,
+        nativeSelect: select instanceof HTMLSelectElement,
+        noChoiceWall: !$('localeSearch') && !$('roleChoices'),
+        enabled: !select.disabled && !join.disabled,
+        focused: document.activeElement === select,
+        fits: document.documentElement.scrollWidth <= innerWidth &&
+          cardBounds.top >= 0 && cardBounds.bottom <= innerHeight &&
+          select.getBoundingClientRect().left >= 0 && select.getBoundingClientRect().right <= innerWidth &&
+          join.getBoundingClientRect().left >= 0 && join.getBoundingClientRect().right <= innerWidth,
+        scrollSafe: getComputedStyle(gate).overflowY === 'auto' &&
+          getComputedStyle(card).overflowY === 'auto' && cardBounds.height <= innerHeight - 36,
+        labels: {esMX: option('es-MX'), jaJP: option('ja-JP'), arSA: option('ar-SA')},
+      };
+    })()""")
+    check(picker["open"] and picker["nativeSelect"] and picker["noChoiceWall"]
+          and picker["enabled"] and picker["focused"],
+          f"role picker: compact native control remains keyboard reachable (got {picker})")
+    check(picker["fits"] and picker["scrollSafe"],
+          f"role picker: 360x640 has no horizontal or dialog scroll trap (got {picker})")
+    check(picker["labels"] == {
+        "esMX": "Español (México) — Spanish (Mexico)",
+        "jaJP": "日本語 (Japan) — Japanese (Japan)",
+        "arSA": "العربية (Saudi Arabia) — Arabic (Saudi Arabia)",
+    }, f"role picker: catalog labels are native-name first (got {picker['labels']})")
+    shot = await tab.call("Page.captureScreenshot", format="png")
+    out_path = os.path.join(tempfile.gettempdir(), "room_role_picker_360.png")
+    with open(out_path, "wb") as output:
+        output.write(base64.b64decode(shot["data"]))
+    print("role picker 360px screenshot:", out_path)
+
+    rtl = await tab.js("""(() => {
+      const select = $('roleLocaleSel');
+      select.value = 'ar-SA';
+      select.dispatchEvent(new Event('change', {bubbles: true}));
+      const card = $('roleGate').querySelector('.roleCard').getBoundingClientRect();
+      return {dir: document.documentElement.dir, locale: myLocale,
+              scroll: document.documentElement.scrollWidth, width: innerWidth,
+              fits: card.top >= 0 && card.bottom <= innerHeight};
+    })()""")
+    check(rtl["dir"] == "rtl" and rtl["locale"] is None
+          and rtl["scroll"] <= rtl["width"] and rtl["fits"],
+          f"role picker: Arabic preview is RTL and remains reachable at 360px (got {rtl})")
+    rtl_shot = await tab.call("Page.captureScreenshot", format="png")
+    rtl_path = os.path.join(tempfile.gettempdir(), "room_role_picker_rtl_360.png")
+    with open(rtl_path, "wb") as output:
+        output.write(base64.b64decode(rtl_shot["data"]))
+    print("role picker RTL screenshot:", rtl_path)
+    await tab.js("$('roleLocaleSel').value='en-US';$('roleLocaleSel').dispatchEvent(new Event('change', {bubbles:true}))")
+    await tab.call("Emulation.clearDeviceMetricsOverride")
+
+
 async def check_invitation_ui(tab, check):
     await tab.call("Emulation.setDeviceMetricsOverride", width=360, height=800,
                    deviceScaleFactor=1, mobile=True)
@@ -398,6 +467,53 @@ async def check_invitation_ui(tab, check):
     await tab.call("Emulation.clearDeviceMetricsOverride")
 
 
+async def check_dashboard_ui(check):
+    page = devtools(f"/json/new?{BASE}/", method="PUT")
+    async with Tab(page["webSocketDebuggerUrl"]) as tab:
+        await tab.call("Runtime.enable")
+        ready = await _wait_js(tab, "document.readyState === 'complete'", timeout=8)
+        if not ready:
+            raise RuntimeError("dashboard did not finish loading")
+        dashboard = await tab.js("""(() => {
+          const text = document.body.textContent;
+          const ids = ['roomState', 'createBtn', 'shareLink', 'copyBtn', 'shareBtn', 'openBtn', 'closeBtn'];
+          const banned = ['Private multilingual rooms',
+                          'Conversations that keep their natural flow.',
+                          'Create a private video room, share its link',
+                          'Capability declarations never imply locale-specific ASR'];
+          return {controls: ids.every(id => !!document.getElementById(id)),
+                  banned: banned.filter(value => text.includes(value))};
+        })()""")
+        check(dashboard["controls"] and not dashboard["banned"],
+              f"dashboard: only room control remains, without marketing copy (got {dashboard})")
+
+        await tab.call("Emulation.setDeviceMetricsOverride", width=1440, height=900,
+                       deviceScaleFactor=1, mobile=False)
+        desktop = await tab.call("Page.captureScreenshot", format="png")
+        desktop_path = os.path.join(tempfile.gettempdir(), "room_dashboard_desktop.png")
+        with open(desktop_path, "wb") as output:
+            output.write(base64.b64decode(desktop["data"]))
+        print("dashboard desktop screenshot:", desktop_path)
+
+        await tab.call("Emulation.setDeviceMetricsOverride", width=360, height=640,
+                       deviceScaleFactor=1, mobile=True)
+        mobile_layout = await tab.js("""(() => {
+          const create = document.getElementById('createBtn').getBoundingClientRect();
+          return {scroll: document.documentElement.scrollWidth, width: innerWidth,
+                  create: {left: create.left, right: create.right}};
+        })()""")
+        check(mobile_layout["scroll"] <= mobile_layout["width"]
+              and mobile_layout["create"]["left"] >= 0
+              and mobile_layout["create"]["right"] <= mobile_layout["width"],
+              f"dashboard: 360px room control remains reachable (got {mobile_layout})")
+        mobile = await tab.call("Page.captureScreenshot", format="png")
+        mobile_path = os.path.join(tempfile.gettempdir(), "room_dashboard_360.png")
+        with open(mobile_path, "wb") as output:
+            output.write(base64.b64decode(mobile["data"]))
+        print("dashboard 360px screenshot:", mobile_path)
+        await tab.call("Emulation.clearDeviceMetricsOverride")
+
+
 async def run():
     room = ROOM or create_room_url()
     profile = tempfile.mkdtemp(prefix="room-check-")
@@ -454,16 +570,21 @@ async def run():
                 loaded = await _wait_js(tab, "catalogRevision && locales.size >= 117", timeout=8)
                 if not loaded:
                     raise RuntimeError("capability catalog did not load")
-            await a.js("chooseLocale('en-US')")
-            await b.js("chooseLocale('es-ES')")
 
             def check(cond, msg):
                 print(("  ok   " if cond else "  FAIL ") + msg)
                 if not cond:
                     failures.append(msg)
 
+            print("pre-join locale picker:")
+            await check_role_picker(a, check)
+            await a.js("chooseLocale('en-US')")
+            await b.js("chooseLocale('es-ES')")
+
             print("private invitation UI:")
             await check_invitation_ui(a, check)
+            print("host dashboard UI:")
+            await check_dashboard_ui(check)
 
             # The peer connection is established by joining alone — nothing here
             # calls into page internals, so this is the flow a user actually gets.
