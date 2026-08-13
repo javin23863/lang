@@ -124,6 +124,40 @@ def client_fixture():
     return TestClient(api), compute, tts
 
 
+class ModalComputeTests(unittest.TestCase):
+    def test_compute_preload_initializes_shared_vad_import_first(self):
+        events = []
+        endpointer = types.ModuleType("endpointer")
+        endpointer.speech_probs = lambda _pcm: events.append("vad")
+        faster_whisper = types.ModuleType("faster_whisper")
+        faster_whisper.__path__ = []
+        faster_whisper_utils = types.ModuleType("faster_whisper.utils")
+        faster_whisper_utils.download_model = (
+            lambda *_args, **_kwargs: events.append("download"))
+        asr_whisper = types.ModuleType("asr_whisper")
+
+        class FakeASR:
+            def __init__(self, **_kwargs):
+                events.append("asr")
+
+        asr_whisper.WhisperASR = FakeASR
+        mt_ct2 = types.ModuleType("mt_ct2")
+        mt_ct2.preload = lambda: events.append("mt")
+
+        with tempfile.TemporaryDirectory() as folder, \
+                mock.patch.object(modal_app, "MODEL_ROOT", pathlib.Path(folder)), \
+                mock.patch.dict(sys.modules, {
+                    "endpointer": endpointer,
+                    "faster_whisper": faster_whisper,
+                    "faster_whisper.utils": faster_whisper_utils,
+                    "asr_whisper": asr_whisper,
+                    "mt_ct2": mt_ct2,
+                }):
+            modal_app.ModelRuntime()._ensure_loaded()
+
+        self.assertEqual(events, ["vad", "download", "asr", "mt"])
+
+
 class ModalStreamTests(unittest.TestCase):
     def test_valid_stream_starts_one_nonblocking_sequential_model_preload(self):
         compute = BlockingPreloadCompute()

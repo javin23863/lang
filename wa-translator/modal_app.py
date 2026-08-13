@@ -156,6 +156,12 @@ class ModelRuntime:
             windows_dir = Path(__file__).with_name("windows")
             if str(windows_dir) not in sys.path:
                 sys.path.insert(0, str(windows_dir))
+            # The receiver also lazily imports faster_whisper.vad on its first
+            # PCM frame.  Initialize that shared import path here before
+            # importing another faster_whisper submodule, avoiding a cold-start
+            # race through a partially initialized package.
+            from endpointer import speech_probs
+            speech_probs(np.zeros(512, dtype=np.float32))
             from faster_whisper.utils import download_model
             from asr_whisper import WhisperASR
             import mt_ct2
