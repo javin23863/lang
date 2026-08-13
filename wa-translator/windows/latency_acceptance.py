@@ -70,6 +70,14 @@ async def _join(base: str, token: str, lang: str):
             return socket, message["id"]
 
 
+async def prime_stream_for_preload(
+    socket: Any, wait_s: float, *, sleep: Any = asyncio.sleep,
+) -> None:
+    """Open the real compute stream with silence, then allow preload to overlap setup."""
+    await socket.send(b"\0" * 3200)
+    await sleep(wait_s)
+
+
 def _request(base: str, token: str, participant_id: str,
              direction: str, phase: str, sample: int) -> dict[str, Any]:
     fixture = FIXTURES[direction]
@@ -105,11 +113,17 @@ def _request(base: str, token: str, participant_id: str,
 
 async def run(
     base: str, phase: str, directions: tuple[str, ...], samples: int,
+    preload_wait_s: float | None = None,
 ) -> list[dict[str, Any]]:
     token, _path = await asyncio.to_thread(_room, base)
     socket, participant_id = await _join(base, token, "en")
     records = []
     try:
+        if preload_wait_s is not None:
+            await prime_stream_for_preload(socket, preload_wait_s)
+            print(json.dumps({
+                "event": "stream_preload_probe", "wait_s": preload_wait_s,
+            }, sort_keys=True), flush=True)
         for record_phase, direction, sample in measurement_schedule(
                 phase, directions, samples):
             record = await asyncio.to_thread(
@@ -132,11 +146,19 @@ def main() -> int:
                         dest="directions",
                         help="repeat to select directions (default: both)")
     parser.add_argument("--samples", type=int, default=1)
+    parser.add_argument("--stream-preload-wait", type=float,
+                        help="send one silent frame, then wait this many seconds")
     args = parser.parse_args()
     if not 1 <= args.samples <= 10:
         parser.error("--samples must be between 1 and 10")
+    if args.stream_preload_wait is not None \
+            and not 0 <= args.stream_preload_wait <= 80:
+        parser.error("--stream-preload-wait must be between 0 and 80 seconds")
     directions = tuple(args.directions or FIXTURES)
-    asyncio.run(run(args.base.rstrip("/"), args.phase, directions, args.samples))
+    asyncio.run(run(
+        args.base.rstrip("/"), args.phase, directions, args.samples,
+        args.stream_preload_wait,
+    ))
     return 0
 
 

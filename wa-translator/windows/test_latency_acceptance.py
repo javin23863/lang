@@ -1,6 +1,10 @@
 import unittest
 
-from latency_acceptance import assert_warm_targets, measurement_schedule
+from latency_acceptance import (
+    assert_warm_targets,
+    measurement_schedule,
+    prime_stream_for_preload,
+)
 
 
 class LatencyAcceptanceTests(unittest.TestCase):
@@ -23,6 +27,25 @@ class LatencyAcceptanceTests(unittest.TestCase):
         ]
         with self.assertRaisesRegex(AssertionError, "es_to_en warm voice"):
             assert_warm_targets(records)
+
+
+class StreamPreloadTests(unittest.IsolatedAsyncioTestCase):
+    async def test_preload_probe_sends_one_silent_frame_then_waits(self):
+        class Socket:
+            sent = []
+
+            async def send(self, value):
+                self.sent.append(value)
+
+        waits = []
+
+        async def sleep(seconds):
+            waits.append(seconds)
+
+        socket = Socket()
+        await prime_stream_for_preload(socket, 7.5, sleep=sleep)
+        self.assertEqual(socket.sent, [b"\0" * 3200])
+        self.assertEqual(waits, [7.5])
 
 
 if __name__ == "__main__":
