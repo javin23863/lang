@@ -95,10 +95,24 @@ def _has_concepts(value: str, concepts: tuple[tuple[str, ...], ...]) -> bool:
                for alternatives in concepts)
 
 
+def _same_host_listener_speech_ends(
+    listener: dict[str, Any], speaker: dict[str, Any],
+) -> list[dict[str, float]]:
+    """Express source-microphone events on the listener browser's clock."""
+    listener_origin = float(listener["timeOrigin"])
+    speaker_origin = float(speaker["timeOrigin"])
+    return [
+        {"at": speaker_origin + float(event["at"]) - listener_origin}
+        for event in speaker["localSpeechEnds"]
+    ]
+
+
 def _voice_latency_records(
     acceptance: dict[str, Any], listener_lang: str,
+    speech_ends: list[dict[str, float]] | None = None,
 ) -> list[dict[str, Any]]:
-    speech_ends = acceptance["remoteSpeechEnds"]
+    if speech_ends is None:
+        speech_ends = acceptance["remoteSpeechEnds"]
     captions = [caption for caption in acceptance["captions"] if not caption["mine"]]
     playing = [event for event in acceptance["plays"] if event["type"] == "playing"]
     assert len(speech_ends) == len(captions) == len(playing) == 3, (
@@ -329,7 +343,10 @@ class Tab:
 
 
 OBSERVER = r"""(() => {
-  window.__acceptance = {captions: [], plays: [], closes: [], remoteSpeechEnds: []};
+  window.__acceptance = {
+    captions: [], plays: [], closes: [], localSpeechEnds: [],
+    remoteSpeechEnds: [], timeOrigin: performance.timeOrigin
+  };
   const seen = new WeakSet();
   const scan = () => document.querySelectorAll('.msg:not(.live)').forEach(node => {
     if (seen.has(node)) return;
@@ -383,7 +400,7 @@ OBSERVER = r"""(() => {
     });
   });
   let observedSocket = null;
-  let observedRemoteTrack = null;
+  let observedLocalTrack = null;
   setInterval(() => {
     if (!ws || ws === observedSocket) return;
     observedSocket = ws;
@@ -392,10 +409,10 @@ OBSERVER = r"""(() => {
     }));
   }, 100);
   setInterval(() => {
-    if (!audioCtx || !$('remoteVideo').srcObject) return;
-    const track = $('remoteVideo').srcObject.getAudioTracks()[0];
-    if (!track || track === observedRemoteTrack) return;
-    observedRemoteTrack = track;
+    if (!audioCtx || !mediaStream) return;
+    const track = mediaStream.getAudioTracks()[0];
+    if (!track || track === observedLocalTrack) return;
+    observedLocalTrack = track;
     const source = audioCtx.createMediaStreamSource(new MediaStream([track]));
     const analyser = audioCtx.createAnalyser();
     analyser.fftSize = 2048;
@@ -419,7 +436,7 @@ OBSERVER = r"""(() => {
         speaking = true;
         lastActiveAt = now;
       } else if (speaking && now - lastActiveAt >= 200) {
-        window.__acceptance.remoteSpeechEnds.push({at: lastActiveAt});
+        window.__acceptance.localSpeechEnds.push({at: lastActiveAt});
         speaking = false;
       }
       requestAnimationFrame(meter);
@@ -751,7 +768,13 @@ async def run(screenshot: Path | None) -> None:
             latency_records = [
                 record
                 for lang in ("en", "es")
-                for record in _voice_latency_records(page_results[lang], lang)
+                for record in _voice_latency_records(
+                    page_results[lang], lang,
+                    _same_host_listener_speech_ends(
+                        page_results[lang],
+                        page_results["es" if lang == "en" else "en"],
+                    ),
+                )
             ]
             for record in sorted(latency_records, key=lambda value: value["turn"]):
                 print(json.dumps(record, sort_keys=True), flush=True)

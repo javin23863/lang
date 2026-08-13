@@ -8,6 +8,7 @@ from latency_acceptance import (
 )
 from live_bilingual_check import (
     OBSERVER,
+    _same_host_listener_speech_ends,
     _voice_latency_records,
     assert_warm_voice_targets,
 )
@@ -66,10 +67,23 @@ class StreamPreloadTests(unittest.IsolatedAsyncioTestCase):
 
 
 class BrowserVoiceLatencyTests(unittest.TestCase):
-    def test_remote_speech_end_uses_rms_not_noise_sensitive_peak(self):
+    def test_local_microphone_speech_end_uses_rms_not_noise_sensitive_peak(self):
+        self.assertIn("localSpeechEnds", OBSERVER)
+        self.assertIn("mediaStream.getAudioTracks()[0]", OBSERVER)
         self.assertIn("sumSquares += centered * centered", OBSERVER)
         self.assertIn("rms >= 2", OBSERVER)
         self.assertNotIn("Math.max(peak", OBSERVER)
+
+    def test_same_host_browser_clocks_are_transformed_to_the_listener(self):
+        listener = {"timeOrigin": 10_000.0}
+        speaker = {
+            "timeOrigin": 10_250.0,
+            "localSpeechEnds": [{"at": 1_000.0}, {"at": 2_000.0}],
+        }
+        self.assertEqual(
+            _same_host_listener_speech_ends(listener, speaker),
+            [{"at": 1_250.0}, {"at": 2_250.0}],
+        )
 
     def test_browser_events_produce_same_clock_voice_stages_and_gate(self):
         acceptance = {
