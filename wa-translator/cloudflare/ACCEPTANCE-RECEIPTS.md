@@ -1,6 +1,6 @@
 # Cloud caption-room acceptance receipts
 
-Status snapshot: **2026-08-13 16:43 +07:00**. A “live automated pass” below
+Status snapshot: **2026-08-13 17:06 +07:00**. A “live automated pass” below
 means the deployed `workers.dev` room was exercised through its public browser
 interfaces. It is not the human-audible receipt required by A11.
 
@@ -32,11 +32,16 @@ Never change A8 or A11 to pass without the remaining live receipts in
   translated playback, and defers natural-audio mute until `playing`.
 - Active Modal ingress:
   `https://m2747076--spoken-translation-compute-web-ap-south.ap-south.modal.run`.
-  App `ap-BGN0rYSJePL3mDbezdmZOe` is deployed at version `v15` from compute
-  source commit `d903184` (2026-08-13 16:08:49 +07:00).
-- Rollback Modal ingress remains deployed at
-  `https://m2747076--spoken-translation-compute-web.modal.run`. The AP endpoint
-  changes ingress routing only; its L4 container region is not pinned.
+  App `ap-BGN0rYSJePL3mDbezdmZOe` is deployed at version `v16` from compute
+  source commit `474e457` (2026-08-13 17:04:50 +07:00). The deployment exposes
+  one Modal Function with `max_containers=1`; `modal container list --json`
+  showed one active container after the verification request.
+- The previous default ingress remains available in Git and Modal version `v15`
+  history for rollback reference, but is not simultaneously deployed. Its old
+  URL, `https://m2747076--spoken-translation-compute-web.modal.run`, returned
+  HTTP 404 after v16 deployed. The active AP endpoint returned 401 without its
+  Worker-held bearer, and a joined participant's fixed EN→ES request through
+  the Worker returned a valid 24 kHz WAV in 25.875 seconds from cold.
 - Cloudflare Realtime TURN application `spoken-translation-room` is active.
   `TURN_KEY_ID` and `TURN_API_TOKEN` exist only as encrypted Worker secrets;
   no long-term key is in Git, the browser client, this receipt, or command logs.

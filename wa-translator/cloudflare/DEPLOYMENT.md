@@ -15,9 +15,15 @@ system, native wrapper or custom domain.
 - One L4 Modal container has five total concurrent inputs: four stream slots
   reserved for long-lived participant WebSockets and one TTS slot. A second
   simultaneous TTS request fails fast instead of taking a stream slot. The
-  container has a 60-second idle scale-down window and scale-to-zero. The named Modal Volume is the persistent model
-  cache. A cold start still initializes models even when their files are
-  cached, so first-caption and first-voice latency will be higher.
+  active deployment exposes only the AP-routed `web_ap_south` Modal Function;
+  per-function `max_containers=1` is therefore also the app-wide L4 ceiling.
+  The container has a 60-second idle scale-down window and scale-to-zero. The
+  named Modal Volume is the persistent model cache. A cold start still
+  initializes models even when their files are cached, so first-caption and
+  first-voice latency will be higher. The prior default-routed implementation
+  remains in Git and Modal deployment history for rollback, but must not be
+  deployed alongside the AP function because each Function owns its own
+  container ceiling.
 - A room link is a deliberately replayable HMAC bearer for exactly 24 hours.
   Anyone holding it can rejoin during that period. There is no revocation or
   single-use invite without adding an account model.
