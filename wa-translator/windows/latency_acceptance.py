@@ -78,6 +78,16 @@ async def prime_stream_for_preload(
     await sleep(wait_s)
 
 
+async def send_heartbeat(socket: Any) -> None:
+    await socket.send('{"type":"heartbeat"}')
+
+
+async def _heartbeats(socket: Any) -> None:
+    while True:
+        await asyncio.sleep(8)
+        await send_heartbeat(socket)
+
+
 def _request(base: str, token: str, participant_id: str,
              direction: str, phase: str, sample: int) -> dict[str, Any]:
     fixture = FIXTURES[direction]
@@ -117,6 +127,7 @@ async def run(
 ) -> list[dict[str, Any]]:
     token, _path = await asyncio.to_thread(_room, base)
     socket, participant_id = await _join(base, token, "en")
+    heartbeat = asyncio.create_task(_heartbeats(socket))
     records = []
     try:
         if preload_wait_s is not None:
@@ -132,6 +143,8 @@ async def run(
             records.append(record)
             print(json.dumps(record, sort_keys=True), flush=True)
     finally:
+        heartbeat.cancel()
+        await asyncio.gather(heartbeat, return_exceptions=True)
         await socket.close(1000, "latency fixture complete")
     assert_warm_targets(records)
     return records

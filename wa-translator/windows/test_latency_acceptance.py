@@ -4,6 +4,7 @@ from latency_acceptance import (
     assert_warm_targets,
     measurement_schedule,
     prime_stream_for_preload,
+    send_heartbeat,
 )
 
 
@@ -30,6 +31,17 @@ class LatencyAcceptanceTests(unittest.TestCase):
 
 
 class StreamPreloadTests(unittest.IsolatedAsyncioTestCase):
+    async def test_heartbeat_keeps_public_participant_live_during_samples(self):
+        class Socket:
+            sent = []
+
+            async def send(self, value):
+                self.sent.append(value)
+
+        socket = Socket()
+        await send_heartbeat(socket)
+        self.assertEqual(socket.sent, ['{"type":"heartbeat"}'])
+
     async def test_preload_probe_sends_one_silent_frame_then_waits(self):
         class Socket:
             sent = []
