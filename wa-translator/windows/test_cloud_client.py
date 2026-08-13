@@ -107,6 +107,8 @@ class CloudClientContractTests(unittest.TestCase):
         self.assertIn("audio_base64", source)
         self.assertIn("AudioWorkletNode", source)
         self.assertIn("Page.setWebLifecycleState", source)
+        self.assertIn("previous_id", source)
+        self.assertIn("participant_count", source)
         self.assertIn("SEMANTIC_TURNS", source)
         self.assertIn("document.readyState === 'complete'", source)
         self.assertIn("typeof $ === 'function'", source)

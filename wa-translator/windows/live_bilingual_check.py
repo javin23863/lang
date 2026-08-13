@@ -195,7 +195,10 @@ async def _generate_microphone_timelines(directory: Path) -> dict[str, Path]:
         await socket.close(1000, "fixture complete")
 
     paths: dict[str, Path] = {}
-    total_seconds = SEMANTIC_TURNS[-1].at_s + 14
+    # Keep silence beyond the lifecycle gate. Chrome may loop a fake capture at
+    # EOF; a loop here would create a seventh real utterance during resume and
+    # make the lifecycle receipt ambiguous.
+    total_seconds = SEMANTIC_TURNS[-1].at_s + BACKGROUND_SECONDS + 30
     for lang in ("en", "es"):
         timeline = np.zeros(total_seconds * CAPTURE_RATE, dtype="<i2")
         for index, turn in enumerate(SEMANTIC_TURNS, 1):
@@ -640,7 +643,7 @@ async def run(screenshot: Path | None) -> None:
                 "selected_ice": ice, "turns": 6, "socket_close_events": [],
             }), flush=True)
 
-            spanish_id = await spanish.js("myId")
+            previous_id = await spanish.js("myId")
             await spanish.call("Page.setWebLifecycleState", state="frozen")
             print(json.dumps({"event": "background_frozen", "seconds": BACKGROUND_SECONDS}),
                   flush=True)
@@ -649,12 +652,24 @@ async def run(screenshot: Path | None) -> None:
                 "({socket:ws.readyState, peers:peers.size, count:$('participantCount').textContent})")
             assert foreground["socket"] == 1 and foreground["peers"] == 1
             await spanish.call("Page.setWebLifecycleState", state="active")
-            resumed = await _wait_js(spanish,
-                "ws.readyState === WebSocket.OPEN && peers.size === 1 && myId")
-            assert resumed == spanish_id, "background resume unexpectedly rejoined with a new id"
+            resumed_id = await _wait_js(spanish,
+                "ws.readyState === WebSocket.OPEN && peers.size === 1 "
+                "&& $('participantCount').textContent === '2 / 4 people' && myId")
+            await _wait_js(english,
+                f"ws.readyState === WebSocket.OPEN && peers.size === 1 "
+                f"&& peers.has({json.dumps(resumed_id)}) "
+                "&& $('participantCount').textContent === '2 / 4 people'")
+            lifecycle_closes = await spanish.js("window.__acceptance.closes")
+            resume_state = await asyncio.gather(*(tab.js(
+                "({socket:ws.readyState, peers:peers.size, "
+                "count:$('participantCount').textContent})") for tab in tabs.values()))
             print(json.dumps({
                 "event": "background_resumed", "seconds": BACKGROUND_SECONDS,
-                "participant_count": foreground["count"], "same_participant": True,
+                "participant_count": "2 / 4 people",
+                "same_participant": resumed_id == previous_id,
+                "rejoined": resumed_id != previous_id,
+                "close_events": lifecycle_closes,
+                "devices": resume_state,
             }), flush=True)
 
             await asyncio.gather(*(network.stop() for network in networks.values()))
