@@ -1,6 +1,6 @@
 # Cloud caption-room acceptance receipts
 
-Status snapshot: **2026-08-13 13:44 +07:00**. A “live automated pass” below
+Status snapshot: **2026-08-13 16:43 +07:00**. A “live automated pass” below
 means the deployed `workers.dev` room was exercised through its public browser
 interfaces. It is not the human-audible receipt required by A11.
 
@@ -25,16 +25,80 @@ Never change A8 or A11 to pass without the remaining live receipts in
 ## Current deployment
 
 - Worker creator URL: `https://spoken-translation-room.spoken-translation-cloudflare.workers.dev`
-- Worker deployment `344cfa3e-6581-4b15-acd3-a12f8f61bf8b`, version
-  `50d44efa-4f4e-4081-a147-f6107c5d37d3`, deployed from runtime source commit
-  `87b0e6c` (`fix: keep bilingual rooms alive and explicit`).
-- Installing the encrypted TURN secrets produced current Worker version
-  `346ef629-eb72-412f-b478-7c26af3114eb`; application source is unchanged.
-- Modal URL: `https://m2747076--spoken-translation-compute-web.modal.run`, app
-  `ap-BGN0rYSJePL3mDbezdmZOe`; this wave did not replace the Modal deployment.
+- Worker deployment `8c54de84-8745-4bff-9b34-06d532121aa1`, version
+  `86f03b7f-181f-441b-a358-617cd0815f0e`, deployed from runtime source commit
+  `015d374`. It accepts validated WebRTC signalling up to 64 KiB while ordinary
+  control messages remain capped at 8 KiB.
+- Active Modal ingress:
+  `https://m2747076--spoken-translation-compute-web-ap-south.ap-south.modal.run`.
+  App `ap-BGN0rYSJePL3mDbezdmZOe` is deployed at version `v15` from compute
+  source commit `d903184` (2026-08-13 16:08:49 +07:00).
+- Rollback Modal ingress remains deployed at
+  `https://m2747076--spoken-translation-compute-web.modal.run`. The AP endpoint
+  changes ingress routing only; its L4 container region is not pinned.
 - Cloudflare Realtime TURN application `spoken-translation-room` is active.
   `TURN_KEY_ID` and `TURN_API_TOKEN` exist only as encrypted Worker secrets;
   no long-term key is in Git, the browser client, this receipt, or command logs.
+
+## 2026-08-13 latency remediation
+
+Kokoro now moves its supplied `KModel` to the deployed CUDA device and calls
+`eval()` before constructing `KPipeline`; production startup logged
+`device=cuda`. The Modal image also pins the CUDA 12 cuDNN runtime used by both
+Kokoro and CTranslate2. Authenticated room-stream startup launches one bounded,
+single-flight preload that initializes ASR/MT and then representative English
+and Spanish TTS without blocking the WebSocket. Scale-to-zero remains enabled
+(`min_containers=0`, 60-second scale-down); no continuously warm L4 was added.
+
+The Worker streams an upstream WAV only after checking a present in-range
+`Content-Length`, `audio/wav`, and a `RIFF` prefix, and its counting stream
+rejects truncation. The browser still creates the playback Blob after the full
+response, but natural peer audio is muted only when translated playback
+actually enters `playing`, so a cold translation no longer creates a silent
+call. Full PCM-to-browser streaming was not added because AP ingress met the
+warm final-to-playback target without that larger change.
+
+Public fixed-phrase `/tts` samples after prewarming were, in seconds:
+
+| Direction | Samples | Result |
+|---|---|---|
+| EN→ES | 1.812, 1.313, 0.828 | 3/3 at or below 2.0 s |
+| ES→EN | 1.250, 1.062, 1.657 | 3/3 at or below 2.0 s |
+
+The first strict AP browser run before caption-model preload passed all five
+warm speech-end→actual-playback samples: 2.412, 2.659, 1.913, 2.722, and 2.001
+seconds (sample median 2.412 s). Its first conversation turn was 7.016 seconds,
+including a 5.140-second cold caption. That same run completed six correct
+semantic turns, six real playbacks, 138.2 seconds with no socket closes, the
+35-second lifecycle gate, and independent English/Spanish acoustic checks.
+
+After caption-model preload and the bounded WebRTC signalling fix, a fresh
+public run again completed six correct semantic turns and six actual playback
+starts with both sockets stable and no close events. The strict timing gate was
+narrowly red:
+
+| Warm turn | Speech end→final | Final→playing | Speech end→playing | Result |
+|---:|---:|---:|---:|---|
+| 2 | 1.209 s | 1.634 s | 2.843 s | Pass |
+| 3 | 1.105 s | 1.932 s | 3.037 s | **Fail by 0.037 s** |
+| 4 | 1.002 s | 0.934 s | 1.936 s | Pass |
+| 5 | 1.202 s | 1.718 s | 2.920 s | Pass |
+| 6 | 1.210 s | 1.801 s | 3.011 s | **Fail by 0.011 s** |
+
+The five-sample warm median was 2.920 seconds for speech-end→playing and 1.718
+seconds for final→playing. Thus final→playing was 5/5 at or below 2.0 seconds,
+but the required end-to-end warm voice gate was only 3/5 at or below 3.0
+seconds in the latest run. The harness intentionally failed before repeating
+the lifecycle and acoustic sections; those remain proven by the earlier strict
+AP run, not by this final run. These are individual samples, not a claimed
+population distribution.
+
+A genuinely scale-zero, immediate first request remained about 26 seconds in
+one observed cold sample. A fresh room with 15 seconds of setup overlap still
+hit TTS before sequential ASR/MT/TTS preload completed and took 16.516 seconds.
+The cold-first target therefore remains unmet without paid warm capacity. A
+continuously warm L4 was not enabled, and no cost decision was made on the
+operator's behalf.
 
 ## Live TURN relay receipt
 
@@ -134,6 +198,7 @@ byte-for-byte future output.
 $env:PYTHONIOENCODING='utf-8'
 .\.venv\Scripts\python.exe wa-translator\windows\live_bilingual_check.py --screenshot "$env:TEMP\live_bilingual_role_360.png"
 Get-FileHash -Algorithm SHA256 "$env:TEMP\live_bilingual_role_360.png"
+.\.venv\Scripts\python.exe wa-translator\windows\latency_acceptance.py --phase warm --samples 3
 
 Set-Location wa-translator\cloudflare
 npm run check
@@ -155,12 +220,15 @@ Set-Location windows
 ..\..\.venv\Scripts\python.exe -m unittest test_cloud_client.py test_live_bilingual_check.py test_tts_local.py
 Set-Location ..\..
 node wa-translator\windows\test_pcm_worklet.cjs
+.\.venv\Scripts\modal.exe app history ap-BGN0rYSJePL3mDbezdmZOe --json
 git diff --check
 ```
 
-The live command completed 6/6 semantic turns, 6/6 translated playbacks, both
+The earlier strict AP live command completed 6/6 semantic turns, 6/6 translated playbacks, both
 independent acoustic-language checks, the 140.1-second stability assertion, and
-the 35-second background/rejoin assertion. The final focused run passed Worker
-typecheck, 21/21 Worker tests and deployment dry-run; 7/7 Modal tests; 7/7
-deployment/caption configuration tests; 15/15 local-room tests; 18/18 browser,
-live-receipt, and local-TTS tests; 2/2 worklet tests; and `git diff --check`.
+the 35-second background/rejoin assertion. The final local run passed Worker
+typecheck, 23/23 Worker tests and deployment dry-run; 20/20 Modal,
+deployment, and caption-filter tests; 15/15 local-room tests; 26/26 browser,
+latency-harness, live-receipt, and local-TTS tests; and 2/2 worklet tests. The
+latest public strict run remained red only at the two warm timing samples
+recorded above; it is not represented as a full acceptance pass.

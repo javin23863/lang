@@ -42,9 +42,10 @@ system, native wrapper or custom domain.
   sentences. Voice is a selected synthetic female/male style, never inferred
   identity, gender detection, cloning or biometric data.
 
-Protocol limits are fail-closed: 8 KiB browser/compute control frames, 32,000
-byte PCM frames, 300-character captions and TTS text, 2 KiB TTS request bodies,
-4 MiB TTS WAV responses, eight pending browser sockets, four joined
+Protocol limits are fail-closed: 8 KiB ordinary browser/compute control frames,
+up to 64 KiB only for validated WebRTC signalling, 32,000-byte PCM frames,
+300-character captions and TTS text, 2 KiB TTS request bodies, 4 MiB TTS WAV
+responses, eight pending browser sockets, four joined
 participants, a 40,000-byte/second microphone rate with a 64,000-byte burst,
 12 TTS phrases per room per 60 seconds, an eight-second maximum compute
 reconnect delay, and TURN TTL clamped to 60–172,800 seconds (configured to
