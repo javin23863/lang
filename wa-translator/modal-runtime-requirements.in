@@ -8,7 +8,7 @@ ctranslate2==4.8.0
 # CTranslate2's Linux wheel dynamically loads CUDA 12 even though Torch below
 # brings its own CUDA 13 runtime. Keep this compatibility pair explicit.
 nvidia-cublas-cu12==12.9.2.10
-nvidia-cudnn-cu12==9.16.0.29
+nvidia-cudnn-cu12==9.20.0.48
 sentencepiece==0.2.2
 numpy==2.4.6
 huggingface-hub==1.26.0

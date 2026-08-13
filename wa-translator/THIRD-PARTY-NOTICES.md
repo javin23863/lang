@@ -35,7 +35,7 @@ The complete license text is in `licenses/Apache-2.0.txt`.
   `mobiuslabsgmbh/faster-whisper-large-v3-turbo` model is pinned to revision
   `0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf` and declares MIT.
 - **NVIDIA CUDA 12 runtime libraries**, pinned as
-  `nvidia-cublas-cu12==12.9.2.10` and `nvidia-cudnn-cu12==9.16.0.29`, are
+  `nvidia-cublas-cu12==12.9.2.10` and `nvidia-cudnn-cu12==9.20.0.48`, are
   redistributed in the Modal image under the NVIDIA SDK license. Source and
   license: <https://developer.nvidia.com/cuda-toolkit> and
   <https://docs.nvidia.com/cuda/eula/index.html>.

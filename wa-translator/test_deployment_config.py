@@ -41,7 +41,7 @@ class DeploymentConfigTests(unittest.TestCase):
         notices = (ROOT / "THIRD-PARTY-NOTICES.md").read_text(encoding="utf-8")
         for artifact in (
             "nvidia-cublas-cu12==12.9.2.10",
-            "nvidia-cudnn-cu12==9.16.0.29",
+            "nvidia-cudnn-cu12==9.20.0.48",
         ):
             self.assertIn(artifact, source)
             self.assertIn(artifact, LOCK)
