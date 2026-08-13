@@ -113,6 +113,25 @@ describe("TURN and translated-voice edge interfaces", () => {
     participant.socket.close(1000, "done");
   });
 
+  it("fails closed on missing, oversized, non-RIFF, and truncated upstream audio", async () => {
+    const roomToken = await token();
+    const participant = await join(roomToken);
+    const request = (text: string) => exports.default.fetch(`${ORIGIN}/tts`, {
+      method: "POST",
+      headers: voiceHeaders(roomToken, participant.id),
+      body: JSON.stringify({ text, lang: "en", voice_style: "female" })
+    });
+
+    for (const text of [
+      "fixture-missing-length", "fixture-oversize-length", "fixture-non-riff"
+    ]) {
+      expect((await request(text)).status, text).toBe(503);
+    }
+    const truncated = await request("fixture-truncated");
+    await expect(truncated.arrayBuffer()).rejects.toThrow();
+    participant.socket.close(1000, "done");
+  });
+
   it("requires a live participant and caps translated voice per room", async () => {
     const roomToken = await token();
     const participant = await join(roomToken);

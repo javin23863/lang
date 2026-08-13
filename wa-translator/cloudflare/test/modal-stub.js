@@ -11,9 +11,41 @@ export default {
           || !["female", "male"].includes(body.voice_style)) {
         return new Response("invalid", { status: 422 });
       }
+      const streamed = (value, length) => {
+        const stream = length === undefined
+          ? new TransformStream() : new FixedLengthStream(length);
+        const writer = stream.writable.getWriter();
+        void writer.write(new TextEncoder().encode(value))
+          .then(() => writer.close()).catch(() => writer.abort().catch(() => {}));
+        return stream.readable;
+      };
+      if (body.text === "fixture-missing-length") {
+        return new Response(streamed("RIFFmissing"), {
+          headers: { "Content-Type": "audio/wav" }
+        });
+      }
+      if (body.text === "fixture-oversize-length") {
+        return new Response(streamed("RIFFoversize", 4194305), {
+          headers: { "Content-Type": "audio/wav", "Content-Length": "4194305" }
+        });
+      }
+      if (body.text === "fixture-non-riff") {
+        return new Response(new TextEncoder().encode("NOPEaudio"), {
+          headers: { "Content-Type": "audio/wav" }
+        });
+      }
+      if (body.text === "fixture-truncated") {
+        return new Response(streamed("RIFFtiny", 100), {
+          headers: { "Content-Type": "audio/wav", "Content-Length": "100" }
+        });
+      }
       const marker = `${body.lang}:${body.voice_style}:${body.text}`;
-      return new Response(new TextEncoder().encode("RIFF" + marker), {
-        headers: { "Content-Type": "audio/wav", "X-Upstream-Secret": "must-not-leak" }
+      const audio = new TextEncoder().encode("RIFF" + marker);
+      return new Response(audio, {
+        headers: {
+          "Content-Type": "audio/wav", "Content-Length": String(audio.byteLength),
+          "X-Upstream-Secret": "must-not-leak"
+        }
       });
     }
     if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {

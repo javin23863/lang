@@ -247,6 +247,58 @@ async function readLimited(
   return body;
 }
 
+async function validatedAudioStream(
+  stream: ReadableStream<Uint8Array> | null, expectedBytes: number
+): Promise<ReadableStream<Uint8Array> | null> {
+  if (!stream || expectedBytes <= 4 || expectedBytes > MAX_TTS_AUDIO_BYTES) return null;
+  const reader = stream.getReader();
+  const initial: Uint8Array[] = [];
+  const prefix = new Uint8Array(4);
+  let prefixBytes = 0;
+  let received = 0;
+  while (prefixBytes < prefix.byteLength) {
+    const { value, done } = await reader.read();
+    if (done || !value) {
+      await reader.cancel().catch(() => {});
+      return null;
+    }
+    received += value.byteLength;
+    if (received > expectedBytes) {
+      await reader.cancel().catch(() => {});
+      return null;
+    }
+    initial.push(value);
+    const take = Math.min(value.byteLength, prefix.byteLength - prefixBytes);
+    prefix.set(value.subarray(0, take), prefixBytes);
+    prefixBytes += take;
+  }
+  if (new TextDecoder().decode(prefix) !== "RIFF") {
+    await reader.cancel().catch(() => {});
+    return null;
+  }
+
+  const output = new FixedLengthStream(expectedBytes);
+  const writer = output.writable.getWriter();
+  void (async () => {
+    try {
+      for (const chunk of initial) await writer.write(chunk);
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        received += value.byteLength;
+        if (received > expectedBytes) throw new Error("upstream TTS exceeded declared length");
+        await writer.write(value);
+      }
+      if (received !== expectedBytes) throw new Error("upstream TTS was truncated");
+      await writer.close();
+    } catch (error) {
+      await reader.cancel(error).catch(() => {});
+      await writer.abort(error).catch(() => {});
+    }
+  })();
+  return output.readable;
+}
+
 function contentLengthTooLarge(request: Request, maxBytes: number): boolean {
   const raw = request.headers.get("Content-Length");
   if (!raw) return false;
@@ -380,18 +432,19 @@ async function translatedVoice(request: Request, env: Env): Promise<Response> {
   if (!upstream.ok || !upstream.headers.get("Content-Type")?.startsWith("audio/wav")) {
     return new Response("Translated voice is unavailable", { status: 503 });
   }
-  const audioLength = Number(upstream.headers.get("Content-Length") || "0");
-  if (audioLength > MAX_TTS_AUDIO_BYTES) {
+  const rawAudioLength = upstream.headers.get("Content-Length");
+  const audioLength = Number(rawAudioLength);
+  if (!rawAudioLength || !Number.isSafeInteger(audioLength)
+      || audioLength <= 4 || audioLength > MAX_TTS_AUDIO_BYTES) {
     return new Response("Translated voice is unavailable", { status: 503 });
   }
-  const audio = await readLimited(upstream.body, MAX_TTS_AUDIO_BYTES);
-  if (!audio || audio.byteLength <= 4
-      || new TextDecoder().decode(audio.slice(0, 4)) !== "RIFF") {
+  const audio = await validatedAudioStream(upstream.body, audioLength);
+  if (!audio) {
     return new Response("Translated voice is unavailable", { status: 503 });
   }
   const headers = privateHeaders();
   headers.set("Content-Type", "audio/wav");
-  return new Response(audio.buffer as ArrayBuffer, { headers });
+  return new Response(audio, { headers });
 }
 
 export class Room extends DurableObject<Env> {
