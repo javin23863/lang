@@ -1,5 +1,7 @@
 """Public-interface security and queue tests for the Modal compute adapter."""
 
+import contextlib
+import io
 import json
 import unittest
 
@@ -50,6 +52,13 @@ class FakeCompute:
         marker = int(round(float(pcm.max()) * 32768)) if len(pcm) else 0
         self.calls.append((marker, source_lang, target_lang, stream_id, final))
         return f"source-{marker}", f"translated-{marker}"
+
+
+class FailingCompute:
+    def transcribe_translate(self, *_args):
+        raise modal_app.ModelInitializationError(
+            RuntimeError(f"model init failed token={SECRET} " + ("x" * 1_000))
+        )
 
 
 class FakeTTS:
@@ -131,6 +140,28 @@ class ModalStreamTests(unittest.TestCase):
             ws.send_bytes(b"\0" * 32002)
             with self.assertRaises(Exception):
                 ws.receive_json()
+
+    def test_stream_compute_failure_is_logged_without_audio_or_credentials(self):
+        api = modal_app.create_api(
+            shared_secret=SECRET,
+            compute=FailingCompute(),
+            tts=FakeTTS(),
+            endpointer_factory=FakeEndpointer,
+        )
+        output = io.StringIO()
+        with contextlib.redirect_stderr(output):
+            with TestClient(api).websocket_connect(
+                    "/stream", headers={"authorization": f"Bearer {SECRET}"}) as ws:
+                ws.send_json({"type": "start", "stream_id": "s",
+                              "source_lang": "en", "target_lang": "es"})
+                ws.send_bytes(np.full(1600, 1000, dtype=np.int16).tobytes())
+                ws.send_json({"type": "speech_end"})
+                with self.assertRaises(Exception):
+                    ws.receive_json()
+        logged = output.getvalue()
+        self.assertIn("RuntimeError: model init failed", logged)
+        self.assertNotIn(SECRET, logged)
+        self.assertLessEqual(len(logged), 300)
 
 
 class ModalTTSTests(unittest.TestCase):

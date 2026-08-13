@@ -13,6 +13,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import secrets
 import sys
 import threading
@@ -51,6 +52,7 @@ MAX_CAPTION_CHARS = 300
 MAX_TTS_BODY_BYTES = 2_048
 MAX_TTS_CHARS = 300
 MAX_TTS_AUDIO_BYTES = 4 * 1024 * 1024
+MAX_DIAGNOSTIC_CHARS = 240
 END_SILENCE_MS = 500
 PARTIAL_EVERY_S = 0.4
 MIN_PARTIAL_S = 0.8
@@ -76,6 +78,30 @@ class Compute(Protocol):
 
 class TTS(Protocol):
     def synthesize(self, text: str, lang: str, voice_style: str) -> bytes: ...
+
+
+class ModelInitializationError(RuntimeError):
+    """Marks failures that occur before any participant audio is decoded."""
+
+    def __init__(self, cause: Exception) -> None:
+        self.cause_type = type(cause).__name__
+        super().__init__(str(cause))
+
+
+def _bounded_initialization_diagnostic(
+    error: ModelInitializationError, shared_secret: str,
+) -> str:
+    """Return useful model-startup context without logging request content."""
+    message = " ".join(str(error).split())
+    if shared_secret:
+        message = message.replace(shared_secret, "[redacted]")
+    message = re.sub(
+        r"(?i)(bearer\s+|(?:token|secret|password|credential)\s*[=:]\s*)\S+",
+        r"\1[redacted]",
+        message,
+    )
+    message = re.sub(r"(https?://[^?\s]+)\?\S+", r"\1?[redacted]", message)
+    return f"{error.cause_type}: {message[:MAX_DIAGNOSTIC_CHARS]}"
 
 
 class InputCapacity:
@@ -143,7 +169,12 @@ class ModelRuntime:
         self, pcm: np.ndarray, source_lang: str, target_lang: str,
         stream_id: str, final: bool,
     ) -> tuple[str, str]:
-        self._ensure_loaded()
+        try:
+            self._ensure_loaded()
+        except ModelInitializationError:
+            raise
+        except Exception as error:
+            raise ModelInitializationError(error) from error
         import mt_ct2
 
         original = self._asr.transcribe(pcm, source_lang, partial=not final)
@@ -467,6 +498,11 @@ def create_api(
             for task in done:
                 error = task.exception()
                 if error and not isinstance(error, WebSocketDisconnect):
+                    if isinstance(error, ModelInitializationError):
+                        diagnostic = _bounded_initialization_diagnostic(error, secret)
+                    else:
+                        diagnostic = type(error).__name__
+                    print(f"[stream] {diagnostic}", file=sys.stderr, flush=True)
                     try:
                         await websocket.close(code=1011, reason="compute stream failed")
                     except RuntimeError:
