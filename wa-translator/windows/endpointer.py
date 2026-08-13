@@ -24,6 +24,11 @@ LEAD_PAD = 3200            # 200ms kept before the first speech window
 WINDOW_MS = WINDOW / SAMPLE_RATE * 1000
 
 
+def prime_vad_import() -> None:
+    """Finish the shared faster-whisper VAD import without loading its model."""
+    from faster_whisper.vad import get_vad_model  # noqa: F401
+
+
 def speech_probs(pcm: np.ndarray) -> np.ndarray:
     """Per-32ms speech probability. Trailing partial window is dropped."""
     from faster_whisper.vad import get_vad_model

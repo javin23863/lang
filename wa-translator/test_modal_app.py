@@ -128,7 +128,7 @@ class ModalComputeTests(unittest.TestCase):
     def test_compute_preload_initializes_shared_vad_import_first(self):
         events = []
         endpointer = types.ModuleType("endpointer")
-        endpointer.speech_probs = lambda _pcm: events.append("vad")
+        endpointer.prime_vad_import = lambda: events.append("vad_import")
         faster_whisper = types.ModuleType("faster_whisper")
         faster_whisper.__path__ = []
         faster_whisper_utils = types.ModuleType("faster_whisper.utils")
@@ -155,7 +155,7 @@ class ModalComputeTests(unittest.TestCase):
                 }):
             modal_app.ModelRuntime()._ensure_loaded()
 
-        self.assertEqual(events, ["vad", "download", "asr", "mt"])
+        self.assertEqual(events, ["vad_import", "download", "asr", "mt"])
 
 
 class ModalStreamTests(unittest.TestCase):

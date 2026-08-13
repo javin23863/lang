@@ -160,8 +160,8 @@ class ModelRuntime:
             # PCM frame.  Initialize that shared import path here before
             # importing another faster_whisper submodule, avoiding a cold-start
             # race through a partially initialized package.
-            from endpointer import speech_probs
-            speech_probs(np.zeros(512, dtype=np.float32))
+            from endpointer import prime_vad_import
+            prime_vad_import()
             from faster_whisper.utils import download_model
             from asr_whisper import WhisperASR
             import mt_ct2
