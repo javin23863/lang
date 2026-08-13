@@ -21,6 +21,9 @@ The production beta uses a permanent Cloudflare `workers.dev` room plus a
 scale-to-zero Modal GPU and short-lived Cloudflare TURN credentials. It still
 has no accounts or database. See [`CLOUD-ARCHITECTURE.md`](CLOUD-ARCHITECTURE.md)
 and the [deployment runbook](wa-translator/cloudflare/DEPLOYMENT.md).
+The dated deployment IDs, public probes, tested language counts and remaining
+acceptance gaps are maintained in
+[`MULTILINGUAL-PRODUCT-HANDOFF.md`](MULTILINGUAL-PRODUCT-HANDOFF.md).
 
 ```powershell
 cd wa-translator\windows

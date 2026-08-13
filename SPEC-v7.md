@@ -11,7 +11,9 @@
 > and up to four participants per room. The Windows machine is a local
 > UI/protocol development adapter that does not materialize production models;
 > the production compute lane is the one AP-routed, scale-to-zero L4 with four
-> caption streams shared globally across rooms.
+> caption streams shared globally across rooms. The current deployed receipt,
+> limits and unresolved human-audibility acceptance are maintained in
+> [`MULTILINGUAL-PRODUCT-HANDOFF.md`](MULTILINGUAL-PRODUCT-HANDOFF.md).
 
 ## Why v6 could not do this
 

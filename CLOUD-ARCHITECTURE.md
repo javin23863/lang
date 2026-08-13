@@ -1,8 +1,11 @@
 # Cloud caption room — implementation contract
 
-> STATUS 2026-08-14: multilingual implementation is locally gated; public
-> deployment and its named model receipts are tracked separately. A8 remains
-> partial and A11 remains unmet until the required human-observable receipt.
+> STATUS 2026-08-14: the public Worker and one AP-routed Modal L4 are deployed
+> with a matched shared catalog. The deployed model-load and enabled-TTS
+> receipts are recorded in
+> [`MULTILINGUAL-PRODUCT-HANDOFF.md`](MULTILINGUAL-PRODUCT-HANDOFF.md).
+> A8 remains partial and A11 remains unmet until the required human-observable
+> receipt.
 
 ## Product boundary
 
@@ -59,7 +62,8 @@ one Cloudflare Durable Object per room
         v
 Modal ASGI app (starts on demand)
   - each microphone stream -> Whisper ASR once -> M2M100 captions to unique targets
-  - optional exact-profile Kokoro speech for English/Spanish/French/Japanese
+  - optional exact-profile Kokoro speech for English/Spanish/French;
+    Japanese is captions-only pending a pinned, license-reviewed frontend
         |
         v
 Browser WebRTC peer connection

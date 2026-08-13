@@ -3,9 +3,12 @@
 Research date: 2026-08-14
 Source policy: official model repositories, official runtime documentation and
 source, and author papers only.
-Status: architecture research, not implementation or production validation. No
-model weights were downloaded and no multilingual quality or latency benchmark
-was run for this note.
+Status: primary-source decision record. It does not itself certify translation
+quality or human-audible output. The pinned implementation and bounded v20
+runtime receipts are recorded in
+[`../MULTILINGUAL-PRODUCT-HANDOFF.md`](../MULTILINGUAL-PRODUCT-HANDOFF.md);
+no model weights were downloaded and no multilingual quality/latency benchmark
+was run *for this research note*.
 
 ## Decision
 

@@ -1,4 +1,7 @@
+import os
+import sys
 import unittest
+from unittest.mock import patch
 
 import verify_multilingual_deployment as verifier
 
@@ -52,6 +55,29 @@ class DeploymentDriftTests(unittest.TestCase):
         self.assertEqual(len(calls), len(verifier.FIXTURE_IDS))
         self.assertEqual(len(fixtures), len(verifier.FIXTURE_IDS))
         self.assertIn("fixture en-ar-room-time semantic hints did not match", errors)
+
+    def test_main_passes_the_worker_m2m_revision_to_the_fixed_receipt_gate(self):
+        worker = {
+            "revision": "catalog-a",
+            "models": {"mt": {"revision": "mt-a"}},
+            "locales": [{"voice_profiles": [{"id": "voice-a"}]}],
+        }
+        health = {
+            "catalog_revision": "catalog-a",
+            "mt_revision": "mt-a",
+            "voice_profiles": ["voice-a"],
+        }
+        with patch.dict(os.environ, {"MODAL_SHARED_SECRET": "test-secret"}), \
+             patch.object(sys, "argv", [
+                 "verify_multilingual_deployment.py",
+                 "--worker-url", "https://worker.test",
+                 "--modal-url", "https://modal.test",
+             ]), \
+             patch.object(verifier, "fetch_json", side_effect=[worker, worker, health]), \
+             patch.object(verifier, "verify_fixture_receipts", return_value=([], [])) as receipts:
+            self.assertEqual(verifier.main(), 0)
+
+        receipts.assert_called_once_with("https://modal.test", "test-secret", "mt-a")
 
 
 if __name__ == "__main__":

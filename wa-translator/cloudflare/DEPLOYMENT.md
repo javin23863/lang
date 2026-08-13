@@ -121,14 +121,39 @@ No secret value belongs in git, a URL, browser code or logs. Before deployment:
    wildcard. Record the deployment ID and URL printed by each CLI.
 
 The commands above require operator grants and may incur external charges.
-They are instructions, not a claim that deployment occurred.
+They are reproducible instructions. The current authenticated deployment and
+its public receipts are recorded below and in
+[`../../MULTILINGUAL-PRODUCT-HANDOFF.md`](../../MULTILINGUAL-PRODUCT-HANDOFF.md).
+
+## Current deployed receipt — 2026-08-14 +07
+
+- Worker: `https://spoken-translation-room.spoken-translation-cloudflare.workers.dev`,
+  version `f9976551-31df-47e7-9816-3d4e0e85fc75`, deployment transaction
+  `09b15764-0806-481a-9142-484b47653ac6`, from runtime source
+  `08392d818d23e486c50200b4f17cee498d5ccb25`.
+- Modal: app `ap-BGN0rYSJePL3mDbezdmZOe`, version `v20`, tag `08392d8`,
+  deployed at 05:54:25 +07 to
+  `https://m2747076--spoken-translation-compute-web-ap-south.ap-south.modal.run`.
+  It exposes one AP-routed Function with `gpu="L4"`, `max_containers=1`,
+  `min_containers=0`, and a 60-second scale-down window. A post-deploy
+  container listing observed exactly one running container after the model
+  probe; this is not a reservation to keep it warm.
+- Public `GET /health` returned `ok`; `/api/capabilities` returned no-store,
+  catalog revision `2026-08-14-m2m100-55c2e61-tts3`, 100 base Languages, 122
+  Locale profiles, six live-speech Languages, 100 text Languages, three enabled
+  TTS Languages and seven Voice Profiles. `ja-JP` explicitly reports Voice
+  unavailable rather than reaching a wrong-language or unpinned frontend.
+- Actual v20 logs show Whisper CUDA/float16 and M2M100 CUDA/int8_float16 at
+  revision `55c2e61bbf05`. Public enabled-route probes returned valid 24 kHz
+  WAVs for Spanish, English and French. These are model/runtime receipts, not
+  a native-speaker quality certification or A11 human-audibility proof.
 
 ## Live receipts required after deployment
 
-1. `GET /health` must return `{"status":"ok"}` at the permanent Worker URL
-   while the Windows host is stopped. Create a room with a same-origin
-   `POST /api/rooms`, open the returned `/room/<token>`, and cold-start both
-   directions through the public WebSocket.
+1. The public health, catalog, one-stream model-load and enabled TTS probes
+   above are complete. The remaining strict M2M semantic corpus is intentionally
+   authenticated at Modal; run it only from an authorized environment holding
+   `MODAL_SHARED_SECRET`, and do not expose that secret to a browser or log.
 2. Replace a Modal process and show that only compute reconnects: natural
    WebRTC media stays connected and later captions resume. Do not infer this
    receipt from the offline stub replacement test.

@@ -1,6 +1,6 @@
 # Cloud caption-room acceptance receipts
 
-## Current truth — multilingual wave, 2026-08-14 (pre-deploy)
+## Current truth — multilingual wave, 2026-08-14 (deployed, bounded receipt)
 
 The dated entries below are historical bilingual/previous-model receipts. They
 must not be read as a receipt for the revision-pinned M2M100 multilingual
@@ -17,10 +17,12 @@ implementation now in this branch. The current locally verified contract is:
   MIT; its source weights/tokenizer and enabled Kokoro voices are hash-checked;
 - the one-L4 four-stream limit is global across rooms; the affected speaker
   receives an explicit capacity status while natural WebRTC media remains live;
-- local contract checks are green, but no deployed M2M100/voice/public-room
-  receipt belongs to this new model version until the deployment verifier runs
-  all seven fixed semantic fixtures (now mandatory, not an opt-in flag) on the
-  AP-routed L4.
+- local contract checks are green; public Worker version
+  `f9976551-31df-47e7-9816-3d4e0e85fc75` and Modal v20/tag `08392d8` have a
+  matched catalog, actual Whisper/M2M100 CUDA model-load receipt, and valid
+  public English, Spanish and French 24 kHz TTS WAV receipts. The strict seven
+  fixed semantic M2M fixtures remain mandatory but cannot be called without
+  the intentionally server-held Modal secret; their absence is not a pass.
 
 A8 remains **partial**: a real live Modal replacement during an observed
 natural WebRTC call and an explicit Windows-host-off receipt are still missing.
@@ -33,6 +35,8 @@ The fixed M2M receipt corpus is
 [`../multilingual_fixtures.json`](../multilingual_fixtures.json): EN↔ES,
 EN→FR/DE/JA/AR, ES→FR and Spanish Locale mapping. Semantic token hints make an
 observed output reviewable; they are not a native-speaker quality certificate.
+See [`../../MULTILINGUAL-PRODUCT-HANDOFF.md`](../../MULTILINGUAL-PRODUCT-HANDOFF.md)
+for exact deployment IDs, timing and the remaining receipt commands.
 
 ---
 
@@ -60,7 +64,12 @@ interfaces. It is not the human-audible receipt required by A11.
 Never change A8 or A11 to pass without the remaining live receipts in
 `DEPLOYMENT.md`.
 
-## Current deployment
+## Historical bilingual deployment snapshot (superseded by v20)
+
+This pre-multilingual deployment snapshot is retained only to preserve the
+older bilingual evidence that follows. The current Worker/Modal deployment is
+the v20 receipt at the top of this document and in
+[`../../MULTILINGUAL-PRODUCT-HANDOFF.md`](../../MULTILINGUAL-PRODUCT-HANDOFF.md).
 
 - Worker creator URL: `https://spoken-translation-room.spoken-translation-cloudflare.workers.dev`
 - Worker deployment `18af951a-6a11-41d9-a0b1-9aaf1a792559`, version

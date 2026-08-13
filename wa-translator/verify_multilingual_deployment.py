@@ -126,16 +126,17 @@ def main() -> int:
         return 2
 
     errors = deployment_drift(worker, modal, health)
+    mt_revision = worker.get("models", {}).get("mt", {}).get("revision")
     result: dict[str, Any] = {
         "worker_catalog_revision": worker.get("revision"),
         "modal_catalog_revision": modal.get("revision"),
-        "mt_revision": worker.get("models", {}).get("mt", {}).get("revision"),
+        "mt_revision": mt_revision,
         "voice_profiles": len(enabled_voice_ids(worker)),
         "drift_errors": errors,
     }
     if not errors:
         fixtures, fixture_errors = verify_fixture_receipts(
-            modal_base, secret, str(worker_mt))
+            modal_base, secret, str(mt_revision))
         result["fixtures"] = fixtures
         errors.extend(fixture_errors)
     print(json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2))
