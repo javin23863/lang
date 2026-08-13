@@ -37,6 +37,7 @@ CHROME = os.environ.get(
 PORT = 9444
 BASE = os.environ.get("ROOM_BASE", f"http://localhost:{DEFAULT_PORT}").rstrip("/")
 ROOM = os.environ.get("ROOM_URL")
+FORCE_RELAY = os.environ.get("FORCE_RELAY") == "1"
 
 
 def create_room_url():
@@ -101,10 +102,23 @@ STATE = """(async () => {
     micLabel: document.getElementById('micBtn').textContent.trim(),
     remoteMuted: v.muted,
     voiceOn,
+    selectedLocalType: null,
+    selectedRemoteType: null,
+    selectedProtocol: null,
   };
-  (await pc.getStats()).forEach(r => {
+  const stats = await pc.getStats();
+  stats.forEach(r => {
     if (r.type === 'candidate-pair' && r.state === 'succeeded') out.succeeded++;
   });
+  const pair = [...stats.values()].find(r => r.type === 'candidate-pair'
+    && r.state === 'succeeded' && (r.nominated || r.selected));
+  if (pair) {
+    const local = stats.get(pair.localCandidateId);
+    const remote = stats.get(pair.remoteCandidateId);
+    out.selectedLocalType = local?.candidateType || null;
+    out.selectedRemoteType = remote?.candidateType || null;
+    out.selectedProtocol = local?.protocol || null;
+  }
   return out;
 })()"""
 
@@ -394,6 +408,16 @@ async def run():
                    Tab(pages[1]["webSocketDebuggerUrl"]) as b:
             for t in (a, b):
                 await t.call("Runtime.enable")
+                if FORCE_RELAY:
+                    await t.js("""(() => {
+                      const NativePeerConnection = window.RTCPeerConnection;
+                      window.RTCPeerConnection = new Proxy(NativePeerConnection, {
+                        construct(Target, args) {
+                          const config = {...(args[0] || {}), iceTransportPolicy: 'relay'};
+                          return Reflect.construct(Target, [config]);
+                        }
+                      });
+                    })()""")
             # Language is a required role decision now. Never let this harness
             # regress to the navigator-language default that made two devices
             # silently advertise the same source language in production.
@@ -435,6 +459,12 @@ async def run():
                 check(st["ice"] in ("connected", "completed"),
                       f"{name}: WebRTC connected (ice={st['ice']}, "
                       f"{st['succeeded']} succeeded candidate pairs)")
+                if FORCE_RELAY:
+                    check(st["selectedLocalType"] == "relay",
+                          f"{name}: selected local ICE candidate is relay "
+                          f"(local={st['selectedLocalType']}, "
+                          f"remote={st['selectedRemoteType']}, "
+                          f"protocol={st['selectedProtocol']})")
                 check(st["remoteVideo"] and st["remoteSize"] != "0x0",
                       f"{name}: remote video is playing ({st['remoteSize']})")
 
@@ -468,7 +498,8 @@ async def run():
             leave_arrived = await _wait_js(
                 a, "peers.size === 0 && $('participantCount').textContent.startsWith('1 / 4')")
             left_state = await b.js(
-                "({leaving, count:$('participantCount').textContent, ws:ws.readyState})")
+                "({leaving, count:$('participantCount').textContent, "
+                "ws:ws?.readyState ?? null})")
             check(leave_arrived and left_state["leaving"]
                   and left_state["count"].startswith("0 / 4"),
                   "leave: visible control immediately releases the peer and updates both counts "

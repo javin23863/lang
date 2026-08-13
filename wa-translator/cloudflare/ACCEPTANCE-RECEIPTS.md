@@ -1,6 +1,6 @@
 # Cloud caption-room acceptance receipts
 
-Status snapshot: **2026-08-13 13:14 +07:00**. A “live automated pass” below
+Status snapshot: **2026-08-13 13:44 +07:00**. A “live automated pass” below
 means the deployed `workers.dev` room was exercised through its public browser
 interfaces. It is not the human-audible receipt required by A11.
 
@@ -14,12 +14,12 @@ interfaces. It is not the human-audible receipt required by A11.
 | A6 | Live automated pass | Six alternating real English/Spanish utterances traversed browser microphone → Worker → Modal ASR/MT → receiving-browser captions with all semantic assertions passing. Exact model output is below. |
 | A7 | Offline security pass plus live auth check | Worker tests cover forged/expired/cross-room/origin/body/frame/rate boundaries. Worker health is public; unauthenticated Modal health remains fail-closed with HTTP 401. |
 | A8 | **Partial live** | The public room stayed healthy for a 140.1-second bilingual conversation and recovered both clients after a 35-second browser freeze. A live Modal replacement during an observed natural WebRTC call and an explicit Windows-host-off receipt are still required. |
-| A9 | **Unmet relay receipt** | Dynamic TURN and refresh contracts pass offline, but no Cloudflare Realtime subscription or TURN secrets were provisioned. The live run selected direct host↔host UDP; no relay claim is made. |
+| A9 | Live relay pass | Cloudflare Realtime TURN is subscribed and the long-term key stays in Worker secrets. A public two-client app run forced relay-only ICE; both selected pairs were relay↔relay UDP and carried 640×480 video plus microphone audio. |
 | A10 | Live automated pass | The explicit role gate rendered at 360×780 without horizontal overflow; screenshot hash and producing command are below. |
 | A11 | **Unmet human** | Real returned audio was decoded, played, copied from the exact playing Blob URL, and independently re-transcribed. Automation still cannot establish what a person heard in the Codex in-app browser. |
 | A12 | Live configuration pass | Pinned CUDA/runtime checks, one L4/max-one-container deployment, four stream inputs plus one bounded TTS input, scale-to-zero, persistent model cache, and one hibernating room Durable Object remain asserted by configuration tests. |
 
-Never change A8, A9, or A11 to pass without the remaining live receipts in
+Never change A8 or A11 to pass without the remaining live receipts in
 `DEPLOYMENT.md`.
 
 ## Current deployment
@@ -28,11 +28,28 @@ Never change A8, A9, or A11 to pass without the remaining live receipts in
 - Worker deployment `344cfa3e-6581-4b15-acd3-a12f8f61bf8b`, version
   `50d44efa-4f4e-4081-a147-f6107c5d37d3`, deployed from runtime source commit
   `87b0e6c` (`fix: keep bilingual rooms alive and explicit`).
+- Installing the encrypted TURN secrets produced current Worker version
+  `346ef629-eb72-412f-b478-7c26af3114eb`; application source is unchanged.
 - Modal URL: `https://m2747076--spoken-translation-compute-web.modal.run`, app
   `ap-BGN0rYSJePL3mDbezdmZOe`; this wave did not replace the Modal deployment.
-- Cloudflare currently has no `TURN_KEY_ID` or `TURN_API_TOKEN` secret. The
-  billing/subscription surface was not authorized, so `/api/turn` remains
-  fail-closed and A9 remains unmet.
+- Cloudflare Realtime TURN application `spoken-translation-room` is active.
+  `TURN_KEY_ID` and `TURN_API_TOKEN` exist only as encrypted Worker secrets;
+  no long-term key is in Git, the browser client, this receipt, or command logs.
+
+## Live TURN relay receipt
+
+At **2026-08-13 13:44 +07:00**, authenticated `GET /api/turn` returned HTTP
+200 with two ICE-server entries, one credentialed TURN entry, `stun:`, `turn:`,
+and `turns:` schemes, and a roughly one-hour expiry. The browser received only
+these short-lived credentials.
+
+`FORCE_RELAY=1` made the existing two-client browser acceptance wrap the native
+`RTCPeerConnection` with `iceTransportPolicy: 'relay'` before either role
+joined. Both app participants connected with one succeeded candidate pair;
+each selected local and remote candidate was `relay`, protocol `udp`. Both
+remote videos played at 640×480, microphone/mute and translated-voice lifecycle
+checks passed, explicit Leave updated both counts, and the command ended
+`browser_check PASS`.
 
 ## Real public bilingual conversation
 
@@ -125,6 +142,10 @@ Set-Location ..\..
 
 .\.venv\Scripts\python.exe wa-translator\probe_kokoro_tts.py --output "$env:TEMP\kokoro-probes"
 .\.venv\Scripts\python.exe wa-translator\windows\probe_stream.py
+.\.venv\Scripts\python.exe wa-translator\windows\browser_check.py
+$env:ROOM_BASE='https://spoken-translation-room.spoken-translation-cloudflare.workers.dev'
+$env:ROOM_URL='<fresh signed room URL from POST /api/rooms>'
+$env:FORCE_RELAY='1'
 .\.venv\Scripts\python.exe wa-translator\windows\browser_check.py
 
 Set-Location wa-translator
