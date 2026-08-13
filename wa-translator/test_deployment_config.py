@@ -36,6 +36,20 @@ class DeploymentConfigTests(unittest.TestCase):
         self.assertIn("MAX_STREAM_INPUTS = 4", MODAL)
         self.assertIn("MAX_TTS_INPUTS = 1", MODAL)
 
+    def test_modal_pins_cuda12_runtime_for_ctranslate2(self):
+        source = (ROOT / "modal-runtime-requirements.in").read_text(encoding="utf-8")
+        notices = (ROOT / "THIRD-PARTY-NOTICES.md").read_text(encoding="utf-8")
+        for artifact in (
+            "nvidia-cublas-cu12==12.9.2.10",
+            "nvidia-cudnn-cu12==9.16.0.29",
+        ):
+            self.assertIn(artifact, source)
+            self.assertIn(artifact, LOCK)
+            self.assertIn(artifact, notices)
+        self.assertIn('"LD_LIBRARY_PATH": "/usr/local/lib/python3.11/site-packages/nvidia/cublas/lib:/usr/local/lib/python3.11/site-packages/nvidia/cudnn/lib"', MODAL)
+        self.assertIn("ctypes.CDLL('libcublas.so.12')", MODAL)
+        self.assertIn("ctypes.CDLL('libcudnn.so.9')", MODAL)
+
     def test_compute_websocket_uses_fetch_upgrade_https_not_wss(self):
         docs = (ROOT / "cloudflare/DEPLOYMENT.md").read_text(encoding="utf-8")
         self.assertIn("`https://.../stream`", docs)

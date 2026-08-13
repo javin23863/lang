@@ -577,7 +577,12 @@ if modal is not None:  # pragma: no branch - false only in the local test venv
             "HOME": "/root",
             "HF_HOME": "/model-cache/huggingface",
             "LANG_ROOM_MODEL_ROOT": "/model-cache/lang-room",
+            "LD_LIBRARY_PATH": "/usr/local/lib/python3.11/site-packages/nvidia/cublas/lib:/usr/local/lib/python3.11/site-packages/nvidia/cudnn/lib",
         })
+        .run_commands(
+            "python -c \"import ctypes; ctypes.CDLL('libcublas.so.12'); "
+            "ctypes.CDLL('libcudnn.so.9')\""
+        )
         .add_local_file(str(Path(__file__)), "/root/wa-translator/modal_app.py")
         .add_local_file(str(Path(__file__).with_name("windows") / "asr_whisper.py"),
                         "/root/windows/asr_whisper.py")
