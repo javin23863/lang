@@ -67,12 +67,13 @@ class StreamPreloadTests(unittest.IsolatedAsyncioTestCase):
 
 
 class BrowserVoiceLatencyTests(unittest.TestCase):
-    def test_local_microphone_speech_end_uses_rms_not_noise_sensitive_peak(self):
+    def test_local_speech_end_uses_the_pcm_frames_sent_to_the_worker(self):
         self.assertIn("localSpeechEnds", OBSERVER)
-        self.assertIn("mediaStream.getAudioTracks()[0]", OBSERVER)
-        self.assertIn("sumSquares += centered * centered", OBSERVER)
-        self.assertIn("rms >= 2", OBSERVER)
-        self.assertNotIn("Math.max(peak", OBSERVER)
+        self.assertIn("const nativeSend = WebSocket.prototype.send", OBSERVER)
+        self.assertIn("payload instanceof ArrayBuffer", OBSERVER)
+        self.assertIn("const samples = new Int16Array(payload)", OBSERVER)
+        self.assertIn("rms >= 100", OBSERVER)
+        self.assertNotIn("createMediaStreamSource", OBSERVER)
 
     def test_same_host_browser_clocks_are_transformed_to_the_listener(self):
         listener = {"timeOrigin": 10_000.0}

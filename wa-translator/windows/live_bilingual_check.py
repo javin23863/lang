@@ -400,7 +400,6 @@ OBSERVER = r"""(() => {
     });
   });
   let observedSocket = null;
-  let observedLocalTrack = null;
   setInterval(() => {
     if (!ws || ws === observedSocket) return;
     observedSocket = ws;
@@ -408,41 +407,28 @@ OBSERVER = r"""(() => {
       code: event.code, reason: event.reason, at: performance.now()
     }));
   }, 100);
-  setInterval(() => {
-    if (!audioCtx || !mediaStream) return;
-    const track = mediaStream.getAudioTracks()[0];
-    if (!track || track === observedLocalTrack) return;
-    observedLocalTrack = track;
-    const source = audioCtx.createMediaStreamSource(new MediaStream([track]));
-    const analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 2048;
-    const silent = audioCtx.createGain();
-    silent.gain.value = 0;
-    source.connect(analyser).connect(silent).connect(audioCtx.destination);
-    const samples = new Uint8Array(analyser.fftSize);
-    let speaking = false;
-    let lastActiveAt = 0;
-    const meter = () => {
-      if (track.readyState === 'ended') return;
-      analyser.getByteTimeDomainData(samples);
+  let speaking = false;
+  let silentFrames = 0;
+  let lastActiveAt = 0;
+  const nativeSend = WebSocket.prototype.send;
+  WebSocket.prototype.send = function(payload) {
+    if (payload instanceof ArrayBuffer) {
+      const samples = new Int16Array(payload);
       let sumSquares = 0;
-      for (const sample of samples) {
-        const centered = sample - 128;
-        sumSquares += centered * centered;
-      }
+      for (const sample of samples) sumSquares += sample * sample;
       const rms = Math.sqrt(sumSquares / samples.length);
-      const now = performance.now();
-      if (rms >= 2) {
+      if (rms >= 100) {
         speaking = true;
-        lastActiveAt = now;
-      } else if (speaking && now - lastActiveAt >= 200) {
+        silentFrames = 0;
+        lastActiveAt = performance.now();
+      } else if (speaking && ++silentFrames >= 5) {
         window.__acceptance.localSpeechEnds.push({at: lastActiveAt});
         speaking = false;
+        silentFrames = 0;
       }
-      requestAnimationFrame(meter);
-    };
-    requestAnimationFrame(meter);
-  }, 100);
+    }
+    return nativeSend.call(this, payload);
+  };
   return true;
 })()"""
 
