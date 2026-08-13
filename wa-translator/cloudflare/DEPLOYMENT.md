@@ -24,8 +24,8 @@ system, native wrapper or custom domain.
   remains in Git and Modal deployment history for rollback, but must not be
   deployed alongside the AP function because each Function owns its own
   container ceiling.
-- A participant link is a deliberately replayable HMAC bearer for exactly 24
-  hours. Creation separately returns a domain-separated, room-bound host
+- A participant link is a deliberately replayable HMAC bearer for exactly 24 hours.
+  Creation separately returns a domain-separated, room-bound host
   bearer to the same-origin dashboard. It is stored only on that host device;
   it is never included in the participant URL. The host may inspect or revoke
   its room through `/api/room-control`; a missing, forged, cross-origin or
