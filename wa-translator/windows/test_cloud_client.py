@@ -128,6 +128,7 @@ class CloudClientContractTests(unittest.TestCase):
         self.assertIn("speech_end_to_voice_start_s", source)
         self.assertIn("final_to_voice_start_s", source)
         self.assertIn("assert_warm_voice_targets", source)
+        self.assertIn("if (!voiceOn) $('voiceBtn').click()", source)
         self.assertNotIn("handle(", source)
         self.assertNotIn("window.fetch =", source)
         self.assertNotIn("Network.getResponseBody", source)

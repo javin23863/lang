@@ -693,8 +693,25 @@ async def run(screenshot: Path | None) -> None:
                 "$('voiceBtn').click(); $('micBtn').click(); true",
                 user_gesture=True) for tab in tabs.values()))
             await asyncio.gather(*(_wait_js(
-                tab, "micOn && workletNode instanceof AudioWorkletNode && voiceOn")
+                tab, "micOn && workletNode instanceof AudioWorkletNode")
                 for tab in tabs.values()))
+            # A transient ICE disconnect fails translated voice closed while
+            # the room renegotiates.  Once both peers and microphones are
+            # stable, exercise the user's normal toggle once to restore it.
+            await asyncio.gather(*(tab.js(
+                "if (!voiceOn) $('voiceBtn').click(); voiceOn",
+                user_gesture=True) for tab in tabs.values()))
+            try:
+                await asyncio.gather(*(_wait_js(
+                    tab, "micOn && workletNode instanceof AudioWorkletNode && voiceOn")
+                    for tab in tabs.values()))
+            except TimeoutError as error:
+                capture_states = await asyncio.gather(*(tab.js(
+                    "({micOn, voiceOn, worklet:workletNode instanceof AudioWorkletNode, "
+                    "audioState:audioCtx && audioCtx.state, status:$('status').textContent})")
+                    for tab in tabs.values()))
+                raise AssertionError(
+                    f"browser capture did not start: {capture_states}") from error
             conversation_started = time.monotonic()
 
             deadline = conversation_started + SEMANTIC_TURNS[-1].at_s + 80
