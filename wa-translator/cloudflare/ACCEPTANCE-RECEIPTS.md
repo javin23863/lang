@@ -1,6 +1,6 @@
 # Cloud caption-room acceptance receipts
 
-Status snapshot: **2026-08-13 17:06 +07:00**. A “live automated pass” below
+Status snapshot: **2026-08-13 18:18 +07:00**. A “live automated pass” below
 means the deployed `workers.dev` room was exercised through its public browser
 interfaces. It is not the human-audible receipt required by A11.
 
@@ -25,11 +25,13 @@ Never change A8 or A11 to pass without the remaining live receipts in
 ## Current deployment
 
 - Worker creator URL: `https://spoken-translation-room.spoken-translation-cloudflare.workers.dev`
-- Worker deployment `32907533-71cc-4560-8da7-114b10e8db95`, version
-  `187a23af-3e91-4f89-ba7d-4b5520d48492`, deployed from runtime/asset source
-  commit `0617ca1`. It accepts validated WebRTC signalling up to 64 KiB while
-  ordinary control messages remain capped at 8 KiB, pauses local ASR before
-  translated playback, and defers natural-audio mute until `playing`.
+- Worker deployment `18af951a-6a11-41d9-a0b1-9aaf1a792559`, version
+  `1ed41773-0ccf-42e2-98f0-9ebe2934be26`, deployed from runtime/asset source
+  commit `f4376b8`. It includes the standalone host dashboard, separate
+  room-bound host control, terminal room revocation, and the participant-only
+  legacy redirect. It also accepts validated WebRTC signalling up to 64 KiB
+  while ordinary control messages remain capped at 8 KiB, pauses local ASR
+  before translated playback, and defers natural-audio mute until `playing`.
 - Active Modal ingress:
   `https://m2747076--spoken-translation-compute-web-ap-south.ap-south.modal.run`.
   App `ap-BGN0rYSJePL3mDbezdmZOe` is deployed at version `v16` from compute
