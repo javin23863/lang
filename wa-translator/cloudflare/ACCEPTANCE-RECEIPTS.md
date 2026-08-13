@@ -1,27 +1,48 @@
 # Cloud caption-room acceptance receipts
 
-Status snapshot: **2026-08-13**. “Offline pass” means the implementation was
-proved against the public local interface or a true network seam stub. It is
-not a live Cloudflare/Modal receipt.
+Status snapshot: **2026-08-13 11:02 +07:00**. “Live automated pass” means the
+deployed `workers.dev` room was exercised through its public interfaces. It is
+still not the human-audible receipt required by A11.
 
 | Row | Status | Receipt or remaining requirement |
 |---|---|---|
-| A1 | Offline pass | Two-tab Chrome check: captions-only default, remote natural audio unmuted, caption rendered, zero TTS starts. |
-| A2 | Offline pass | Two-tab Chrome check: enabling voice in A left B captions-only; captions rendered in both states. |
-| A3 | Offline pass | Deterministic metadata/override tests plus four real pinned Kokoro WAV probes; all RIFF/24 kHz. Exact producing command and hashes are below. |
-| A4 | Offline pass | Browser lifecycle proved pre-play mute and restoration on disable/TTS failure/watchdog/reconnect/peer leave. |
-| A5 | Offline pass | Browser worklet receipt showed ASR false→true around real WAV playback while the WebRTC audio sender stayed enabled. ASR pause and mic-off each sent exactly one `speech_end` before capture stopped; resume sent none. |
-| A6 | Offline pass | Modal public WebSocket smoke proves final FIFO and partial latest-wins. The public local room probe produced attributed finals and translations in both directions; producing command and dated latency snapshot are below. |
-| A7 | Offline pass | Worker public fetch/WebSocket security tests cover forged/expired/cross-room/origin/body/frame boundaries, valid-frame PCM flooding, live-participant TTS binding and the 12/minute room quota; Modal rejects missing/bad bearer. Local room creation rejects absent/cross-site Origin. |
-| A8 | **Unmet live** | Offline deterministic-DO/process-replacement tests pass. Needs permanent Worker URL, Modal cold-start/replacement and Windows-host-off receipt. |
+| A1 | Live automated pass | Public two-tab Chrome check: captions-only default, remote natural audio unmuted and no translated audio started. |
+| A2 | Live automated pass | Public two-tab Chrome check: enabling voice in A left B captions-only; captions remained visible in both states. |
+| A3 | Live automated pass | Public room returned valid RIFF/WAV for English/Spanish female/male (4/4); browser metadata/override checks passed. Exact offline hashes remain below. |
+| A4 | Live automated pass | Public browser lifecycle proved pre-play mute and restoration on TTS failure/watchdog/reconnect/peer leave. |
+| A5 | Live automated pass | Public browser worklet showed ASR false→true around WAV playback while the WebRTC audio sender stayed enabled; mic-off emitted one `speech_end`. |
+| A6 | Live automated pass | Public Worker→Modal path produced attributed final captions and non-empty translations for English→Spanish and Spanish→English. Modal queue tests cover latest-wins partials and retained finals. |
+| A7 | Offline security pass plus live auth check | Worker security suites cover forged/expired/cross-room/origin/body/frame/rate boundaries. Public unauthenticated Modal health returned 401; Worker health returned 200. |
+| A8 | **Partial live** | Permanent Worker/Modal URLs, public health, room creation and both cold caption directions pass. Still needs a Modal replacement while an active natural WebRTC call is observed and an explicit Windows-host-off receipt. |
 | A9 | **Unmet relay receipt** | Dynamic short-lived TURN config, pre-expiry refresh and peer ICE-restart contracts pass; the long-term secret is server-only. Needs selected `relay` candidate-pair browser receipt. |
-| A10 | Offline pass | 360 CSS-pixel assertion passed with seven controls and no overflow; screenshot: `%TEMP%\\room_check_360.png`. |
+| A10 | Live automated pass | Public room at 360 CSS pixels exposed all seven controls without overflow; screenshot: `%TEMP%\\room_check_360.png`. |
 | A11 | **Unmet human** | Automation decoded and played audio but cannot satisfy human-audible Codex in-app-browser acceptance. |
-| A12 | Offline configuration pass | One L4/max-one-container/four stream inputs plus one bounded TTS input/scale-zero/Volume and one hibernating DO are asserted; operational ceilings are in `DEPLOYMENT.md`. |
+| A12 | Live configuration pass | The deployed image passed its pinned CUDA-library load gate; one L4/max-one-container/four stream inputs plus one bounded TTS input/scale-zero/Volume and one hibernating DO remain asserted in configuration. |
 
 Exact final command counts and the current CLI authentication result belong in
-the implementation handoff. Never change A8, A9 or A11 to pass without the
-live receipts described in `DEPLOYMENT.md`.
+the implementation handoff. Never change A8, A9 or A11 to pass without their
+remaining live receipts described in `DEPLOYMENT.md`.
+
+## Fresh live deployment receipt
+
+- Worker: `https://spoken-translation-room.spoken-translation-cloudflare.workers.dev`,
+  current version `e71b1ea7-7b74-42ac-82e3-006d56094cd7`; public `/health`
+  returned HTTP 200 with `status=ok`.
+- Modal: `https://m2747076--spoken-translation-compute-web.modal.run`, app
+  `ap-BGN0rYSJePL3mDbezdmZOe`; unauthenticated `/health` returned HTTP 401.
+- A bounded public two-participant probe joined two sockets, sent the checked-in
+  English and Spanish fixtures, observed two attributed finals with both target
+  translations, and received valid RIFF/WAV responses from all four TTS routes.
+  It printed no transcript or credential.
+- With `ROOM_URL` set to the live private invite and UTF-8 console mode,
+  `browser_check.py` ended in `browser_check PASS`: WebRTC connected in both
+  tabs with three succeeded candidate pairs per tab and 640×480 remote video.
+  This is automated evidence only, not A11.
+- `Get-FileHash -Algorithm SHA256 "$env:TEMP\\room_check_360.png"` produced
+  `b4c421aebc901ada76df63d45c573e128a02cc5be2400f37d28d1460f32a4afd`
+  for the 19,436-byte live 360×800 screenshot.
+- Cloudflare currently has no `TURN_KEY_ID` or `TURN_API_TOKEN` secret. Wrangler
+  OAuth lacks Calls Write, so `/api/turn` remains fail-closed and A9 is unmet.
 
 ## Durable offline receipt commands
 

@@ -43,8 +43,10 @@ peer connection's ICE configuration, and restart ICE.
 
 ## Dependency and license gate
 
-`modal-runtime-requirements.txt` is a Linux/Python 3.11 lock of all 134 resolved
+`modal-runtime-requirements.txt` is a Linux/Python 3.11 lock of all 137 resolved
 packages with hashes. The Modal image installs it with `--require-hashes`.
+The lock includes explicit CUDA 12 cuBLAS/cuDNN compatibility libraries for
+CTranslate2, and the image build loads both shared objects before deployment.
 Model downloads use immutable Hugging Face revisions; Kokoro's main weight is
 also checked against its LFS SHA-256 before loading. Review
 `../THIRD-PARTY-NOTICES.md` and `../licenses/Apache-2.0.txt` before a release.
@@ -52,7 +54,7 @@ also checked against its LFS SHA-256 before loading. Review
 Regenerate the lock only as an audited dependency change:
 
 ```powershell
-uv pip compile --python-version 3.11 --python-platform linux --generate-hashes `
+uv pip compile --python 3.11 --python-platform x86_64-manylinux_2_28 --generate-hashes `
   --output-file wa-translator/modal-runtime-requirements.txt `
   wa-translator/modal-runtime-requirements.in
 ```
@@ -69,8 +71,10 @@ No secret value belongs in git, a URL, browser code or logs. Before deployment:
 3. Put `ROOM_SIGNING_KEY` (at least 32 random bytes), `TURN_KEY_ID`, and
    `TURN_API_TOKEN` into Cloudflare secrets. The TURN long-term API token must
    never be returned to the browser.
-4. Deploy Modal with `modal deploy wa-translator/modal_app.py`. Record the ASGI
-   HTTPS URL. Put its `https://.../stream` and `https://.../tts` endpoints into
+4. Deploy Modal with
+   `modal deploy wa-translator/modal_app.py::modal_application`. On Windows,
+   set `PYTHONUTF8=1` and `PYTHONIOENCODING=utf-8` for the CLI process. Record
+   the ASGI HTTPS URL. Put its `https://.../stream` and `https://.../tts` endpoints into
    Cloudflare as `MODAL_WS_URL` and `MODAL_TTS_URL` secrets.
    `MODAL_WS_URL` is deliberately HTTPS: the Worker performs an HTTP fetch with
    `Upgrade: websocket`; a `wss://` request URL is rejected as configuration.
