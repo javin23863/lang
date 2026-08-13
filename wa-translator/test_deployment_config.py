@@ -11,6 +11,7 @@ WORKER = (ROOT / "cloudflare/src/worker.ts").read_text(encoding="utf-8")
 WRANGLER = json.loads((ROOT / "cloudflare/wrangler.jsonc").read_text(encoding="utf-8"))
 LOCK = (ROOT / "modal-runtime-requirements.txt").read_text(encoding="utf-8")
 RECEIPTS = (ROOT / "cloudflare/ACCEPTANCE-RECEIPTS.md").read_text(encoding="utf-8")
+MT = (ROOT / "windows/mt_ct2.py").read_text(encoding="utf-8")
 
 
 class DeploymentConfigTests(unittest.TestCase):
@@ -24,6 +25,11 @@ class DeploymentConfigTests(unittest.TestCase):
         self.assertIn('"HF_HOME": "/model-cache/huggingface"', MODAL)
         self.assertIn('"LANG_ROOM_MODEL_ROOT": "/model-cache/lang-room"', MODAL)
         self.assertNotIn('"HOME": "/model-cache/', MODAL)
+        for helper in ("asr_whisper.py", "cuda_dlls.py", "endpointer.py", "mt_ct2.py"):
+            self.assertIn(f'"/root/windows/{helper}"', MODAL)
+        self.assertNotIn('"/root/wa-translator/windows/', MODAL)
+        self.assertNotIn('os.chdir("/root/wa-translator")', MODAL)
+        self.assertIn('os.environ.get("LANG_ROOM_MODEL_ROOT")', MT)
         self.assertIn('Volume.from_name("spoken-translation-model-cache"', MODAL)
         self.assertIn("KOKORO_REVISION =", MODAL)
         self.assertIn("WHISPER_REVISION =", MODAL)

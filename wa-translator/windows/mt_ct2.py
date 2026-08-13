@@ -166,7 +166,9 @@ class CTranslate2MT:
             return self._model_dir
         # Default cache location
         revision = MODEL_REVISIONS.get(self.pair, "unversioned")[:12]
-        cache = (Path.home() / ".cache" / "wa-translator" / "mt_models"
+        root = Path(os.environ.get("LANG_ROOM_MODEL_ROOT")
+                    or Path.home() / ".cache" / "wa-translator")
+        cache = (root / "mt_models"
                  / f"ct2-{self.pair}-{revision}-int8")
         if cache.exists() and any(f.endswith(".bin") for f in os.listdir(cache)):
             return str(cache)

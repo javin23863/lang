@@ -544,13 +544,13 @@ if modal is not None:  # pragma: no branch - false only in the local test venv
         })
         .add_local_file(str(Path(__file__)), "/root/wa-translator/modal_app.py")
         .add_local_file(str(Path(__file__).with_name("windows") / "asr_whisper.py"),
-                        "/root/wa-translator/windows/asr_whisper.py")
+                        "/root/windows/asr_whisper.py")
         .add_local_file(str(Path(__file__).with_name("windows") / "cuda_dlls.py"),
-                        "/root/wa-translator/windows/cuda_dlls.py")
+                        "/root/windows/cuda_dlls.py")
         .add_local_file(str(Path(__file__).with_name("windows") / "endpointer.py"),
-                        "/root/wa-translator/windows/endpointer.py")
+                        "/root/windows/endpointer.py")
         .add_local_file(str(Path(__file__).with_name("windows") / "mt_ct2.py"),
-                        "/root/wa-translator/windows/mt_ct2.py")
+                        "/root/windows/mt_ct2.py")
     )
     modal_volume = modal.Volume.from_name("spoken-translation-model-cache",
                                           create_if_missing=True)
@@ -569,7 +569,6 @@ if modal is not None:  # pragma: no branch - false only in the local test venv
     @modal.concurrent(max_inputs=5, target_inputs=5)
     @modal.asgi_app()
     def web() -> FastAPI:
-        os.chdir("/root/wa-translator")
         return create_api()
 else:
     modal_image = None
