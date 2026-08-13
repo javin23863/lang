@@ -547,12 +547,14 @@ async function requestFallbackSpeech(item) {
       if (item.settled || item !== activeSpeech
           || item.generation !== speechGeneration || !voiceOn) return;
       setNaturalAudioMuted(true);
-      setAsrPaused(true);
     };
     fallbackAudio.onended = () => finishSpeech(item);
     fallbackAudio.onerror = () => finishSpeech(item, 'Could not play spoken translation');
     item.playTimer = setTimeout(
       () => finishSpeech(item, 'Spoken translation playback timed out'), 60000);
+    // Pause only the local caption feed before translated audio can enter the
+    // room. Natural peer audio stays live until the playback event itself.
+    setAsrPaused(true);
     await fallbackAudio.play();
   } catch (error) {
     if (error.name === 'AbortError' && item.settled) return;

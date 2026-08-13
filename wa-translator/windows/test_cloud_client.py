@@ -63,6 +63,12 @@ class CloudClientContractTests(unittest.TestCase):
         playing_start = HTML.index("fallbackAudio.onplaying")
         playing_end = HTML.index("\n    };", playing_start)
         self.assertIn("setNaturalAudioMuted(true)", HTML[playing_start:playing_end])
+        self.assertNotIn("setAsrPaused(true)", HTML[playing_start:playing_end])
+        request_start = HTML.index("async function requestFallbackSpeech")
+        play_start = HTML.index("await fallbackAudio.play()", request_start)
+        self.assertLess(
+            HTML.index("setAsrPaused(true)", request_start), play_start,
+        )
         finish_start = HTML.index("function finishSpeech")
         finish_end = HTML.index("\n}", finish_start)
         self.assertIn("setNaturalAudioMuted(false)", HTML[finish_start:finish_end])
