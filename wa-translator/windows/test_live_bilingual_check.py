@@ -1,8 +1,12 @@
 import contextlib
+import base64
 import io
 import unittest
+import wave
 
-from live_bilingual_check import _assert_caption_semantics
+import numpy as np
+
+from live_bilingual_check import _assert_caption_semantics, _assert_tts
 
 
 ORIGINALS = (
@@ -42,6 +46,37 @@ class LiveBilingualReceiptTests(unittest.TestCase):
         captions[0]["sub"] = "Hola Maria hoy"
         with self.assertRaisesRegex(AssertionError, "outbound translation"):
             _assert_caption_semantics(captions, "en")
+
+    def test_tts_receipt_uses_the_real_playing_blob_bytes(self):
+        output = io.BytesIO()
+        with wave.open(output, "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(24000)
+            wav_file.writeframes(np.full(7200, 500, dtype="<i2").tobytes())
+        audio = base64.b64encode(output.getvalue()).decode()
+
+        class Network:
+            errors = []
+            responses = {
+                str(index): {
+                    "body": {"text": f"phrase {index}", "lang": "en",
+                             "voice_style": "female"},
+                    "status": 200,
+                    "mime": "audio/wav",
+                }
+                for index in range(3)
+            }
+
+        plays = []
+        for _ in range(3):
+            plays.append({"type": "playing", "audio_base64": audio})
+            plays.append({"type": "ended", "duration": 0.3, "currentTime": 0.3})
+        with contextlib.redirect_stdout(io.StringIO()):
+            receipts = _assert_tts(Network(), plays, "en")
+        self.assertEqual(len(receipts), 3)
+        self.assertTrue(all(receipt["audio"].startswith(b"RIFF")
+                            for receipt in receipts))
 
 
 if __name__ == "__main__":

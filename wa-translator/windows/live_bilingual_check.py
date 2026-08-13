@@ -105,7 +105,8 @@ def _room() -> tuple[str, str]:
 
 
 def _wav_metadata(data: bytes) -> dict[str, Any]:
-    assert data.startswith(b"RIFF"), "response is not a RIFF WAV"
+    assert data.startswith(b"RIFF"), (
+        f"response is not a RIFF WAV (bytes={len(data)}, prefix={data[:8].hex()})")
     with wave.open(io.BytesIO(data), "rb") as source:
         assert source.getnchannels() == 1
         assert source.getsampwidth() == 2
@@ -289,9 +290,23 @@ OBSERVER = r"""(() => {
   new MutationObserver(scan).observe(document.getElementById('captions'), {
     childList: true, subtree: true, characterData: true, attributes: true
   });
-  fallbackAudio.addEventListener('playing', () => {
+  fallbackAudio.addEventListener('playing', async () => {
     if (!fallbackAudio.src.startsWith('blob:')) return;
-    window.__acceptance.plays.push({type: 'playing', at: performance.now()});
+    const event = {type: 'playing', at: performance.now(), audio_base64: null};
+    window.__acceptance.plays.push(event);
+    try {
+      // Clone the already-created production Blob URL. This does not replace
+      // the network fetch or media playback, and unlike DevTools response-body
+      // capture it works through the page's no-store Service Worker.
+      const bytes = new Uint8Array(await (await fetch(fallbackAudio.src)).arrayBuffer());
+      let binary = '';
+      for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+        binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+      }
+      event.audio_base64 = btoa(binary);
+    } catch (error) {
+      event.audio_error = error.name;
+    }
   });
   fallbackAudio.addEventListener('ended', () => {
     if (!fallbackAudio.src.startsWith('blob:')) return;
@@ -351,16 +366,7 @@ class NetworkTTS:
                 self.requests[request_id]["status"] = response.get("status")
                 self.requests[request_id]["mime"] = response.get("mimeType")
             elif method == "Network.loadingFinished" and request_id in self.requests:
-                try:
-                    body = await self.tab.call(
-                        "Network.getResponseBody", requestId=request_id)
-                    raw = (base64.b64decode(body["body"])
-                           if body.get("base64Encoded") else body["body"].encode())
-                    self.responses[request_id] = {
-                        **self.requests[request_id], "audio": raw,
-                    }
-                except Exception as error:  # bounded receipt, no response text
-                    self.errors.append(type(error).__name__)
+                self.responses[request_id] = self.requests[request_id]
 
 
 def _launch_chrome(profile: Path, port: int, room_url: str,
@@ -464,7 +470,11 @@ def _assert_tts(network: NetworkTTS, plays: list[dict[str, Any]],
         assert record.get("status") == 200 and record.get("mime") == "audio/wav"
         assert request.get("lang") == listener_lang
         assert isinstance(request.get("text"), str) and request["text"]
-        metadata = _wav_metadata(record["audio"])
+        playing_event = playing[index - 1]
+        assert not playing_event.get("audio_error")
+        assert playing_event.get("audio_base64"), "playing Blob WAV was not copied"
+        audio = base64.b64decode(playing_event["audio_base64"], validate=True)
+        metadata = _wav_metadata(audio)
         play = ended[index - 1]
         assert play["duration"] > 0.25 and play["currentTime"] > 0.20
         value = {
@@ -474,7 +484,7 @@ def _assert_tts(network: NetworkTTS, plays: list[dict[str, Any]],
             "played_duration_s": round(play["currentTime"], 3),
             **{key: metadata[key] for key in
                ("sample_rate", "frames", "duration_s", "rms", "sha256")},
-            "audio": record["audio"],
+            "audio": audio,
         }
         print(json.dumps({key: value[key] for key in value if key != "audio"},
                          ensure_ascii=False), flush=True)

@@ -103,7 +103,8 @@ class CloudClientContractTests(unittest.TestCase):
     def test_live_acceptance_uses_real_browser_audio_and_server_results(self):
         source = LIVE_CHECK_PATH.read_text(encoding="utf-8")
         self.assertIn("--use-file-for-fake-audio-capture", source)
-        self.assertIn("Network.getResponseBody", source)
+        self.assertIn("fetch(fallbackAudio.src)", source)
+        self.assertIn("audio_base64", source)
         self.assertIn("AudioWorkletNode", source)
         self.assertIn("Page.setWebLifecycleState", source)
         self.assertIn("SEMANTIC_TURNS", source)
@@ -113,6 +114,7 @@ class CloudClientContractTests(unittest.TestCase):
         self.assertIn("fallbackAudio.src.startsWith('blob:')", source)
         self.assertNotIn("handle(", source)
         self.assertNotIn("window.fetch =", source)
+        self.assertNotIn("Network.getResponseBody", source)
         self.assertNotIn("CONTROLLED_TTS_SPY", source)
 
 
