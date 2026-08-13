@@ -704,7 +704,10 @@ def create_api(
                         await websocket.close(code=1011, reason="compute stream failed")
                     except RuntimeError:
                         pass
-        except WebSocketDisconnect:
+        except (WebSocketDisconnect, asyncio.CancelledError):
+            # ASGI transports may cancel the handler while closing a peer. The
+            # stream has no durable work to preserve; release its capacity in
+            # ``finally`` and do not surface a normal close as compute failure.
             return
         finally:
             input_capacity.release_stream()
