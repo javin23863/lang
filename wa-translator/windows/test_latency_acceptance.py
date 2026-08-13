@@ -6,7 +6,11 @@ from latency_acceptance import (
     prime_stream_for_preload,
     send_heartbeat,
 )
-from live_bilingual_check import _voice_latency_records, assert_warm_voice_targets
+from live_bilingual_check import (
+    OBSERVER,
+    _voice_latency_records,
+    assert_warm_voice_targets,
+)
 
 
 class LatencyAcceptanceTests(unittest.TestCase):
@@ -62,6 +66,11 @@ class StreamPreloadTests(unittest.IsolatedAsyncioTestCase):
 
 
 class BrowserVoiceLatencyTests(unittest.TestCase):
+    def test_remote_speech_end_uses_rms_not_noise_sensitive_peak(self):
+        self.assertIn("sumSquares += centered * centered", OBSERVER)
+        self.assertIn("rms >= 2", OBSERVER)
+        self.assertNotIn("Math.max(peak", OBSERVER)
+
     def test_browser_events_produce_same_clock_voice_stages_and_gate(self):
         acceptance = {
             "remoteSpeechEnds": [{"at": 1000}, {"at": 5000}, {"at": 9000}],

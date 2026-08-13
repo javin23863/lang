@@ -408,10 +408,14 @@ OBSERVER = r"""(() => {
     const meter = () => {
       if (track.readyState === 'ended') return;
       analyser.getByteTimeDomainData(samples);
-      let peak = 0;
-      for (const sample of samples) peak = Math.max(peak, Math.abs(sample - 128));
+      let sumSquares = 0;
+      for (const sample of samples) {
+        const centered = sample - 128;
+        sumSquares += centered * centered;
+      }
+      const rms = Math.sqrt(sumSquares / samples.length);
       const now = performance.now();
-      if (peak >= 4) {
+      if (rms >= 2) {
         speaking = true;
         lastActiveAt = now;
       } else if (speaking && now - lastActiveAt >= 200) {
