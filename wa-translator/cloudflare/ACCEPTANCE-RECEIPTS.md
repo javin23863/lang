@@ -9,7 +9,7 @@ interfaces. It is not the human-audible receipt required by A11.
 | A1 | Live automated pass | Public two-client Chrome checks kept translated voice off by default while the natural WebRTC call remained connected and audible-state-unmuted. |
 | A2 | Live automated pass | Voice remained a per-device choice; captions persisted with voice both off and on. The language gate now explains that translated voice is incoming-only. |
 | A3 | Live automated pass | The no-stub bilingual run received and played three English and three Spanish Kokoro WAVs. All six were 24 kHz mono PCM, longer than 1.9 seconds, and non-silent; exact hashes are below. |
-| A4 | Live automated pass | Public browser lifecycle checks proved pre-play natural-audio mute and restoration on TTS failure, watchdog, reconnect, and peer leave. |
+| A4 | Live automated pass | Public browser lifecycle checks proved natural-audio mute only when translated playback begins, plus restoration on TTS failure, watchdog, reconnect, and peer leave. Local ASR pauses immediately before `play()` to prevent feedback. |
 | A5 | Live automated pass | The real acceptance path used browser microphone capture through `AudioWorkletNode` while the WebRTC sender remained live. Mic-off/pause flush and translated-playback ASR suppression remain covered by red-capable tests. |
 | A6 | Live automated pass | Six alternating real English/Spanish utterances traversed browser microphone → Worker → Modal ASR/MT → receiving-browser captions with all semantic assertions passing. Exact model output is below. |
 | A7 | Offline security pass plus live auth check | Worker tests cover forged/expired/cross-room/origin/body/frame/rate boundaries. Worker health is public; unauthenticated Modal health remains fail-closed with HTTP 401. |
@@ -25,10 +25,11 @@ Never change A8 or A11 to pass without the remaining live receipts in
 ## Current deployment
 
 - Worker creator URL: `https://spoken-translation-room.spoken-translation-cloudflare.workers.dev`
-- Worker deployment `8c54de84-8745-4bff-9b34-06d532121aa1`, version
-  `86f03b7f-181f-441b-a358-617cd0815f0e`, deployed from runtime source commit
-  `015d374`. It accepts validated WebRTC signalling up to 64 KiB while ordinary
-  control messages remain capped at 8 KiB.
+- Worker deployment `32907533-71cc-4560-8da7-114b10e8db95`, version
+  `187a23af-3e91-4f89-ba7d-4b5520d48492`, deployed from runtime/asset source
+  commit `0617ca1`. It accepts validated WebRTC signalling up to 64 KiB while
+  ordinary control messages remain capped at 8 KiB, pauses local ASR before
+  translated playback, and defers natural-audio mute until `playing`.
 - Active Modal ingress:
   `https://m2747076--spoken-translation-compute-web-ap-south.ap-south.modal.run`.
   App `ap-BGN0rYSJePL3mDbezdmZOe` is deployed at version `v15` from compute

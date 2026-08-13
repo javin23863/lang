@@ -111,12 +111,14 @@ its default English voice. When the requested language is missing, the client
 POSTs the final caption to authenticated `/tts` and plays the returned binary
 WAV through one reusable, user-unlocked audio element.
 
-The fallback is intentionally CPU-only: `sherpa-onnx` runs
-`en_US-ljspeech-medium` and `es_ES-carlfm-x_low`, leaving Whisper's GPU and the
-caption WebSocket untouched. Model data is public-domain and the runtime is
-Apache-2.0. The two model directories total about 115 MB; they download on the
-first host run and are cached locally. HTTP keeps audio ownership, cancellation,
-and backpressure separate from ordered captions and WebRTC signalling.
+The local Windows fallback is CPU-only: `sherpa-onnx` runs
+`en_US-ljspeech-medium` and `es_ES-carlfm-x_low`. The deployed cloud path uses
+revision-pinned Kokoro on the same Modal L4 service as Whisper and MT, with one
+bounded TTS input separate from the four caption streams. The local model data
+is public-domain and the runtime is Apache-2.0; its two model directories total
+about 115 MB and are cached after first download. HTTP keeps audio ownership,
+cancellation, and backpressure separate from ordered captions and WebRTC
+signalling in both paths.
 
 **The feedback loop is the hazard, not the synthesis.** Your speaker is
 centimetres from your microphone: left alone, the translation is transcribed as
