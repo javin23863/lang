@@ -206,6 +206,7 @@ class KokoroTTS:
                 return
             from huggingface_hub import snapshot_download
             from kokoro import KModel, KPipeline
+            import torch
 
             local_dir = MODEL_ROOT / "kokoro" / KOKORO_REVISION
             local_dir.mkdir(parents=True, exist_ok=True)
@@ -225,11 +226,19 @@ class KokoroTTS:
                 if not (local_dir / "voices" / f"{voice}.pt").is_file():
                     raise RuntimeError(f"Kokoro voice missing: {voice}")
 
+            device = "cuda" if torch.cuda.is_available() else "cpu"
             self._model = KModel(
                 repo_id=str(local_dir),
                 config=str(local_dir / "config.json"),
                 model=str(model_file),
-            )
+            ).to(device).eval()
+            actual_device = next(self._model.parameters()).device.type
+            if actual_device != device:
+                raise RuntimeError(
+                    f"Kokoro model placement failed: expected {device}, got {actual_device}")
+            if os.environ.get("MODAL_IS_REMOTE") == "1" and actual_device != "cuda":
+                raise RuntimeError("Kokoro CUDA unavailable in deployed L4 container")
+            print(f"[tts] Kokoro model ready device={actual_device}", flush=True)
             self._snapshot = local_dir
             self._pipelines = {
                 "en": KPipeline(lang_code="a", repo_id=str(local_dir),

@@ -1,9 +1,15 @@
 """Public-interface security and queue tests for the Modal compute adapter."""
 
 import contextlib
+import hashlib
 import io
 import json
+import pathlib
+import sys
+import tempfile
+import types
 import unittest
+from unittest import mock
 
 import numpy as np
 from fastapi.testclient import TestClient
@@ -165,6 +171,66 @@ class ModalStreamTests(unittest.TestCase):
 
 
 class ModalTTSTests(unittest.TestCase):
+    def test_synthesis_places_supplied_model_on_available_cuda_and_eval(self):
+        models = []
+
+        class FakeModel:
+            def __init__(self, **_kwargs):
+                self.device = "cpu"
+                self.training = True
+                models.append(self)
+
+            def to(self, device):
+                self.device = device
+                return self
+
+            def eval(self):
+                self.training = False
+                return self
+
+            def parameters(self):
+                return iter((types.SimpleNamespace(
+                    device=types.SimpleNamespace(type=self.device)),
+                ))
+
+        class FakePipeline:
+            def __init__(self, **_kwargs):
+                pass
+
+            def __call__(self, _text, *, voice):
+                self.voice = voice
+                return [types.SimpleNamespace(audio=np.ones(24, dtype=np.float32))]
+
+        model_bytes = b"test-kokoro-model"
+        hub = types.ModuleType("huggingface_hub")
+        hub.snapshot_download = lambda *_args, **_kwargs: None
+        kokoro = types.ModuleType("kokoro")
+        kokoro.KModel = FakeModel
+        kokoro.KPipeline = FakePipeline
+        torch = types.ModuleType("torch")
+        torch.cuda = types.SimpleNamespace(is_available=lambda: True)
+
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            snapshot = root / "kokoro" / modal_app.KOKORO_REVISION
+            (snapshot / "voices").mkdir(parents=True)
+            (snapshot / "config.json").write_text("{}", encoding="utf-8")
+            (snapshot / "kokoro-v1_0.pth").write_bytes(model_bytes)
+            for voice in modal_app.VOICE_ROUTES.values():
+                (snapshot / "voices" / f"{voice}.pt").write_bytes(b"voice")
+            with mock.patch.object(modal_app, "MODEL_ROOT", root), \
+                    mock.patch.object(
+                        modal_app, "KOKORO_MODEL_SHA256",
+                        hashlib.sha256(model_bytes).hexdigest(),
+                    ), mock.patch.dict(sys.modules, {
+                        "huggingface_hub": hub, "kokoro": kokoro, "torch": torch,
+                    }):
+                audio = modal_app.KokoroTTS().synthesize("hello", "en", "female")
+
+        self.assertTrue(audio.startswith(b"RIFF"))
+        self.assertEqual(models[0].device, "cuda")
+        self.assertFalse(models[0].training)
+
     def test_tts_auth_caps_and_four_controlled_routes(self):
         client, _compute, tts = client_fixture()
         self.assertEqual(client.post("/tts", json={}).status_code, 401)
