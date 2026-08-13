@@ -100,6 +100,18 @@ function fromBase64url(value: string): Uint8Array {
   return Uint8Array.from(binary, character => character.charCodeAt(0));
 }
 
+function canonicalBase64url(value: string): Uint8Array | null {
+  try {
+    const decoded = fromBase64url(value);
+    // HMAC verification is over bytes. Without re-encoding, distinct terminal
+    // Base64URL characters can decode to the same bytes through unused padding
+    // bits and turn one bearer into multiple textual representations.
+    return base64url(decoded) === value ? decoded : null;
+  } catch {
+    return null;
+  }
+}
+
 async function signingKey(secret: string, usage: ("sign" | "verify")[]): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     "raw",
@@ -143,12 +155,14 @@ async function verifyRoom(token: string, secret: string): Promise<VerifiedRoom |
   const [id, expiresRaw, signature] = parts;
   if (!ROOM_ID_PATTERN.test(id) || !/^\d{10}$/.test(expiresRaw)
       || !SIGNATURE_PATTERN.test(signature)) return null;
+  const signatureBytes = canonicalBase64url(signature);
+  if (!signatureBytes) return null;
   const expiresAt = Number(expiresRaw);
   if (!Number.isSafeInteger(expiresAt) || expiresAt <= Math.floor(Date.now() / 1000)) return null;
   const valid = await crypto.subtle.verify(
     "HMAC",
     await signingKey(secret, ["verify"]),
-    fromBase64url(signature).buffer as ArrayBuffer,
+    signatureBytes.buffer as ArrayBuffer,
     new TextEncoder().encode(`${id}.${expiresRaw}`)
   );
   return valid ? { id, expiresAt } : null;
@@ -161,13 +175,15 @@ async function verifyHostControl(token: string, secret: string): Promise<Verifie
   const [prefix, id, expiresRaw, signature] = parts;
   if (prefix !== HOST_CONTROL_PREFIX || !ROOM_ID_PATTERN.test(id)
       || !/^\d{10}$/.test(expiresRaw) || !SIGNATURE_PATTERN.test(signature)) return null;
+  const signatureBytes = canonicalBase64url(signature);
+  if (!signatureBytes) return null;
   const expiresAt = Number(expiresRaw);
   if (!Number.isSafeInteger(expiresAt) || expiresAt <= Math.floor(Date.now() / 1000)) return null;
   const payload = `${HOST_CONTROL_PURPOSE}.${id}.${expiresRaw}`;
   const valid = await crypto.subtle.verify(
     "HMAC",
     await signingKey(secret, ["verify"]),
-    fromBase64url(signature).buffer as ArrayBuffer,
+    signatureBytes.buffer as ArrayBuffer,
     new TextEncoder().encode(payload)
   );
   return valid ? { id, expiresAt } : null;

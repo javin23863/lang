@@ -3,6 +3,7 @@ import { runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
 const ORIGIN = "https://room.test";
+const BASE64URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 const SECRET = "test-only-room-signing-key-32-bytes";
 
 type CreatedRoom = {
@@ -76,6 +77,14 @@ async function join(client: SocketClient): Promise<Record<string, unknown>> {
   return client.next();
 }
 
+function nonCanonicalSignatureAlias(token: string): string {
+  const last = token.at(-1)!;
+  const index = BASE64URL_ALPHABET.indexOf(last);
+  expect(index).toBeGreaterThanOrEqual(0);
+  expect(index % 4).toBe(0);
+  return `${token.slice(0, -1)}${BASE64URL_ALPHABET[index + 1]}`;
+}
+
 describe("host room-control interface", () => {
   it("mints a distinct, room-bound host bearer and rejects forgery, participant bearers, cross-origin use, and expiry", async () => {
     const created = await createRoom();
@@ -101,6 +110,7 @@ describe("host room-control interface", () => {
     for (const [token, origin] of [
       [participantToken, ORIGIN],
       [forgedSignature, ORIGIN],
+      [nonCanonicalSignatureAlias(created.host_control), ORIGIN],
       [expired, ORIGIN],
       [created.host_control, "https://attacker.test"]
     ]) {

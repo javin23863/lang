@@ -2,6 +2,7 @@ import { exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 
 const ORIGIN = "https://room.test";
+const BASE64URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 async function token(): Promise<string> {
   const response = await exports.default.fetch(`${ORIGIN}/api/rooms`, {
@@ -12,6 +13,17 @@ async function token(): Promise<string> {
 
 function auth(roomToken: string, origin = ORIGIN): HeadersInit {
   return { Origin: origin, Authorization: `Bearer ${roomToken}` };
+}
+
+function nonCanonicalSignatureAlias(token: string): string {
+  const last = token.at(-1)!;
+  const index = BASE64URL_ALPHABET.indexOf(last);
+  // A 32-byte HMAC encodes to 43 Base64URL characters. Its final two bits
+  // are padding, so this produces different text which decodes to the same
+  // bytes unless the verifier requires a canonical representation.
+  expect(index).toBeGreaterThanOrEqual(0);
+  expect(index % 4).toBe(0);
+  return `${token.slice(0, -1)}${BASE64URL_ALPHABET[index + 1]}`;
 }
 
 async function join(
@@ -70,7 +82,7 @@ describe("TURN and translated-voice edge interfaces", () => {
       { Authorization: `Bearer ${roomToken}` },
       { Authorization: `Bearer ${roomToken}`, "Sec-Fetch-Site": "cross-site" },
       auth(roomToken, "https://attacker.test"),
-      auth(roomToken.slice(0, -1) + "A")
+      auth(nonCanonicalSignatureAlias(roomToken))
     ]) {
       expect((await exports.default.fetch(`${ORIGIN}/api/turn`, { headers })).status).toBe(403);
     }
