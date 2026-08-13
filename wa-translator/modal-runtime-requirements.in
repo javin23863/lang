@@ -15,6 +15,11 @@ huggingface-hub==1.26.0
 transformers==5.14.1
 torch==2.13.0
 kokoro==0.9.4
+# Japanese is an advertised Kokoro voice language.  Kokoro initializes all
+# advertised language pipelines, so include Misaki's official Japanese extra
+# (fugashi/jaconv/mojimoji/pyopenjtalk/unidic) in the immutable image rather
+# than attempting an unsupported runtime install.
+misaki[ja]==0.9.4
 modal==1.5.4
 # Kokoro's English frontend otherwise installs this mutable wheel on first use.
 en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl

@@ -10,6 +10,7 @@ MODAL = (ROOT / "modal_app.py").read_text(encoding="utf-8")
 WORKER = (ROOT / "cloudflare/src/worker.ts").read_text(encoding="utf-8")
 WRANGLER = json.loads((ROOT / "cloudflare/wrangler.jsonc").read_text(encoding="utf-8"))
 LOCK = (ROOT / "modal-runtime-requirements.txt").read_text(encoding="utf-8")
+RUNTIME_INPUT = (ROOT / "modal-runtime-requirements.in").read_text(encoding="utf-8")
 RECEIPTS = (ROOT / "cloudflare/ACCEPTANCE-RECEIPTS.md").read_text(encoding="utf-8")
 MT = (ROOT / "windows/mt_ct2.py").read_text(encoding="utf-8")
 VERIFIER = (ROOT / "verify_multilingual_deployment.py").read_text(encoding="utf-8")
@@ -104,6 +105,14 @@ class DeploymentConfigTests(unittest.TestCase):
             "en_core_web_sm-3.8.0",
             "1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85",
         ):
+            self.assertIn(artifact, LOCK)
+
+    def test_enabled_japanese_voice_pipeline_has_its_explicit_misaki_frontend(self):
+        # Kokoro constructs every advertised language pipeline at first use.  The
+        # Japanese voices are therefore only truthful when the misaki ``ja``
+        # extra (and its pyopenjtalk frontend) is in the immutable image lock.
+        self.assertIn("misaki[ja]==0.9.4", RUNTIME_INPUT)
+        for artifact in ("fugashi==", "jaconv==", "mojimoji==", "pyopenjtalk==", "unidic=="):
             self.assertIn(artifact, LOCK)
 
     def test_deployment_docs_disclose_required_operational_ceiling(self):
