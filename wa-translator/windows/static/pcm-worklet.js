@@ -26,7 +26,16 @@ class PCMWorklet extends AudioWorkletProcessor {
   process(inputs) {
     const chan = inputs[0] && inputs[0][0];
     if (!chan) return true;
-    if (this.muted) { this.consumed += chan.length; return true; }
+    if (this.muted) {
+      // Retire muted input completely. Leaving `pos` behind makes the first
+      // callback after unmute replay the whole muted interval as a burst of
+      // zero/stale PCM frames; the public room then correctly closes the
+      // socket for exceeding its microphone byte-rate ceiling.
+      this.consumed += chan.length;
+      this.pos = this.consumed;
+      this.n = 0;
+      return true;
+    }
 
     // Linear interpolation between the two nearest input samples. Plain
     // decimation aliases badly on speech and whisper hears the artefacts.

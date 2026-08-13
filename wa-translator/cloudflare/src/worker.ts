@@ -32,7 +32,10 @@ const TURN_TTL_MAX_SECONDS = 48 * 60 * 60;
 const MAX_PARTICIPANTS = 4;
 const MAX_PENDING_SOCKETS = 8;
 const PRESENCE_HEARTBEAT_MS = 10_000;
-const PRESENCE_LEASE_MS = 30_000;
+// Hidden mobile browsers may coalesce timers to one wake per minute. Keep the
+// heartbeat cheap at 10s, but leave enough margin that the foreground peer's
+// heartbeat cannot evict a still-open background peer before its next wake.
+const PRESENCE_LEASE_MS = 90_000;
 const PCM_RATE_BYTES_PER_SECOND = 40_000;
 const PCM_BURST_BYTES = 64_000;
 const TTS_WINDOW_MS = 60_000;

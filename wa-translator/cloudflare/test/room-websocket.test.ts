@@ -208,7 +208,7 @@ describe("public room WebSocket interface", () => {
     replacement.socket.close(1000, "done");
   });
 
-  it("reclaims silent half-open slots after the documented 30 second lease", async () => {
+  it("reclaims silent half-open slots after the documented 90 second lease", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       const joinedAt = Date.now();
@@ -219,13 +219,13 @@ describe("public room WebSocket interface", () => {
         held.push(client);
         expect(await join(client, "en", `Silent${index}`, "female")).toMatchObject({
           type: "welcome",
-          presence_lease_ms: 30_000,
+          presence_lease_ms: 90_000,
           heartbeat_interval_ms: 10_000
         });
         for (const earlier of held.slice(0, -1)) await earlier.next();
       }
 
-      vi.setSystemTime(joinedAt + 30_001);
+      vi.setSystemTime(joinedAt + 90_001);
       const replacement = await openSocket(room);
       expect(await join(replacement, "es", "Replacement", "male")).toMatchObject({
         type: "welcome", peers: [], participant_count: 1
@@ -233,6 +233,36 @@ describe("public room WebSocket interface", () => {
 
       for (const client of held) client.socket.close(1000, "done");
       replacement.socket.close(1000, "done");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not evict a background mobile client at a one-minute timer cadence", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const joinedAt = Date.now();
+      const room = await createRoom();
+      const foreground = await openSocket(room);
+      await join(foreground, "en", "Foreground", "female");
+      const background = await openSocket(room);
+      await join(background, "es", "Background", "male");
+      await foreground.next(); // peer_join
+
+      // Hidden mobile browsers commonly coalesce timers to one wake per minute.
+      // A foreground heartbeat must not sweep that still-connected peer first.
+      vi.setSystemTime(joinedAt + 60_000);
+      foreground.socket.send(JSON.stringify({ type: "heartbeat" }));
+      expect(await foreground.next()).toMatchObject({
+        type: "presence", participant_count: 2
+      });
+      background.socket.send(JSON.stringify({ type: "heartbeat" }));
+      expect(await background.next()).toMatchObject({
+        type: "presence", participant_count: 2
+      });
+
+      foreground.socket.close(1000, "done");
+      background.socket.close(1000, "done");
     } finally {
       vi.useRealTimers();
     }
@@ -249,13 +279,13 @@ describe("public room WebSocket interface", () => {
       const silentWelcome = await join(silent, "es", "Silent", "male");
       await active.next(); // peer_join
 
-      vi.setSystemTime(joinedAt + 20_000);
+      vi.setSystemTime(joinedAt + 60_000);
       active.socket.send(JSON.stringify({ type: "heartbeat" }));
       expect(await active.next()).toMatchObject({
         type: "presence", participant_count: 2
       });
 
-      vi.setSystemTime(joinedAt + 30_001);
+      vi.setSystemTime(joinedAt + 90_001);
       active.socket.send(JSON.stringify({ type: "heartbeat" }));
       expect(await active.next()).toMatchObject({
         type: "peer_leave", id: silentWelcome.id, participant_count: 1
@@ -278,7 +308,7 @@ describe("public room WebSocket interface", () => {
     }
   });
 
-  it("reclaims eight abandoned pre-join sockets after the same 30 second lease", async () => {
+  it("reclaims eight abandoned pre-join sockets after the same 90 second lease", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       const openedAt = Date.now();
@@ -287,7 +317,7 @@ describe("public room WebSocket interface", () => {
         Array.from({ length: 8 }, () => openSocket(room))
       );
 
-      vi.setSystemTime(openedAt + 30_001);
+      vi.setSystemTime(openedAt + 90_001);
       const replacement = await openSocket(room);
       expect(await join(replacement, "en", "Replacement", "female")).toMatchObject({
         type: "welcome", peers: [], participant_count: 1

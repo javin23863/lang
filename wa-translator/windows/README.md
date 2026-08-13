@@ -79,6 +79,8 @@ refuses to start if anything already answers on the port; pass `--port` to move.
 | `static/mictest.html` | the `/test` diagnostic page |
 | `probe_stream.py` | abuse guards + real-time caption latency, against a running server |
 | `browser_check.py` | two real Chrome tabs: WebRTC, peer media, and audible translated WAV playback |
+| `live_bilingual_check.py` | deployed six-turn semantic room, real browser mic/AudioWorklet, real Kokoro playback, background/resume |
+| `test_pcm_worklet.cjs` | audio-thread mute/unmute cursor and bounded-frame regression |
 | `test_room.py` | room plumbing: private links/isolation, queue coalescing, caption shape, ingest gating |
 
 Requires a CUDA GPU for usable latency. Without one both models fall back to CPU
@@ -102,6 +104,8 @@ Against a running server (`run_room.py --local` in another window):
 ```powershell
 & $py probe_stream.py          # abuse guards, then real-time latency
 & $py browser_check.py         # two real Chrome tabs: video, and what the peer hears
+& $py live_bilingual_check.py  # public-only, slow: six real bilingual turns and real TTS
+node --test test_pcm_worklet.cjs
 ```
 
 Two of these earn their keep in ways the others cannot:
@@ -116,6 +120,15 @@ Two of these earn their keep in ways the others cannot:
   asserts the peer media across Start and mute, and requires English and Spanish
   fallback audio to resolve, enter `playing`, advance, and end without error. It
   also checks native/WhatsApp sharing and every control at a 360 px phone width.
+- `live_bilingual_check.py` is the deployment acceptance gate. Unlike the fast
+  browser check, it never injects a caption or replaces `fetch`: revision-pinned
+  Kokoro phrases enter two Chrome processes as microphone input, the real room
+  produces six semantically checked ASR/MT finals, and each listener must decode
+  and finish three non-silent production TTS WAVs in their selected language.
+  It keeps the call alive beyond the presence lease, records the selected ICE
+  candidate type, and freezes/resumes one client. This proves observable media
+  events, not that a human heard the sound; human-audible acceptance remains a
+  separate manual check.
 
 ### Measured (RTX 3080 Laptop, 8 GB)
 

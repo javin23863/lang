@@ -62,21 +62,53 @@ button{border:none;border-radius:20px;font-size:14px;font-weight:600;
         font-size:11px;color:#e9edef;background:rgba(0,0,0,.55);z-index:5}
 #participantCount{position:absolute;top:29px;left:8px;padding:4px 7px;border-radius:10px;
         font-size:11px;color:#e9edef;background:rgba(0,0,0,.55);z-index:5}
+#roleGate{position:fixed;inset:0;z-index:50;display:flex;align-items:center;
+          justify-content:center;padding:18px;background:rgba(11,20,26,.96)}
+#roleGate[hidden]{display:none}
+.roleCard{width:min(100%,420px);background:#111b21;border:1px solid #2a3942;
+          border-radius:16px;padding:20px;box-shadow:0 12px 36px rgba(0,0,0,.5)}
+.roleCard h1{font-size:22px;line-height:1.2;margin-bottom:8px}
+.roleCard>p{color:#aebac1;font-size:14px;line-height:1.45}
+.roleChoices{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:18px 0 14px}
+.roleChoice{background:#075e54;color:#fff;border-radius:12px;text-align:left;padding:14px}
+.roleChoice strong,.roleChoice span{display:block}
+.roleChoice strong{font-size:17px;margin-bottom:4px}
+.roleChoice span{font-size:12px;font-weight:400;line-height:1.35}
+.routeNote{padding-top:12px;border-top:1px solid #2a3942}
+#roleSummary{grid-column:1/-1;color:#aebac1;font-size:11px;line-height:1.35;
+             padding:1px 2px 0}
 @media(max-width:380px){
   #stage{height:31vh;min-height:160px}
   #captions{padding:8px 10px 6px}
   #bar{padding-left:7px;padding-right:7px;gap:5px;grid-template-columns:minmax(90px,1fr) repeat(4,38px)}
   .icon{width:38px;padding:7px}.setting select{font-size:11px;padding:7px 3px}
+  .roleCard{padding:16px}.roleChoices{grid-template-columns:1fr;margin:14px 0 12px}
 }
 </style>
 </head>
 <body>
 
+<div id="roleGate" role="dialog" aria-modal="true" aria-labelledby="roleTitle">
+  <div class="roleCard">
+    <h1 id="roleTitle">What language will you speak?</h1>
+    <p>Choose for this device before joining. Do not choose the other person's language.</p>
+    <div class="roleChoices">
+      <button class="roleChoice" data-lang="en">
+        <strong>English</strong><span>I will speak English on this device</span>
+      </button>
+      <button class="roleChoice" data-lang="es">
+        <strong>Español</strong><span>Hablaré español en este dispositivo</span>
+      </button>
+    </div>
+    <p class="routeNote">Your own translated words play on the other device. Translated voice on this device is only for incoming speech.</p>
+  </div>
+</div>
+
 <div id="stage">
   <video id="remoteVideo" autoplay playsinline></video>
   <div id="videoNote">Waiting for the other person to join…</div>
   <div id="selfWrap"><video id="selfVideo" autoplay playsinline muted></video></div>
-  <div id="status">Connecting…</div>
+  <div id="status">Choose your language</div>
   <div id="participantCount" aria-live="polite">0 / 4 people</div>
 </div>
 
@@ -90,7 +122,7 @@ button{border:none;border-radius:20px;font-size:14px;font-weight:600;
   <button id="leaveBtn" class="icon" title="Leave this room" aria-label="Leave room">🚪</button>
   <div id="settings">
     <label class="setting">I speak<select id="langSel"></select></label>
-    <label class="setting">I hear<select id="listenVoiceSel">
+    <label class="setting">Voice I hear<select id="listenVoiceSel">
       <option value="match">Match speaker</option>
       <option value="female">Female</option>
       <option value="male">Male</option>
@@ -99,6 +131,7 @@ button{border:none;border-radius:20px;font-size:14px;font-weight:600;
       <option value="female">Female</option>
       <option value="male">Male</option>
     </select></label>
+    <div id="roleSummary" aria-live="polite"></div>
   </div>
 </div>
 
@@ -107,13 +140,13 @@ const LANG_NAMES = {en: 'English', es: 'Español'};
 const $ = (id) => document.getElementById(id);
 const roomId = location.pathname.split('/').filter(Boolean).pop();
 
-let ws, myId = null, ttsToken = null, myLang = (navigator.language || 'en').slice(0, 2);
-if (!(myLang in LANG_NAMES)) myLang = 'en';
+let ws, myId = null, ttsToken = null, myLang = null;
 let myVoiceStyle = 'female', listenVoiceStyle = 'match';
 
 let mediaStream = null, audioCtx = null, workletNode = null;
 let micOn = false, camOn = true, roomFull = false, reconnectFailures = 0;
 let terminalRoom = false, leaving = false, turnRefreshTimer = null, iceRefreshPromise = null;
+let explicitLeave = false;
 let presenceHeartbeatTimer = null;
 let iceServers = [{urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302']}];
 let iceExpiresAt = 0;
@@ -134,6 +167,29 @@ function scheduleTurnRefresh(delay) {
   turnRefreshTimer = setTimeout(() => refreshIceServers(true),
                                 Math.max(1000, Math.min(delay, 2147483647)));
 }
+
+function updateRoleSummary() {
+  if (myLang === 'en') {
+    $('roleSummary').textContent = 'Incoming Spanish becomes English on this device. Your English is translated for a Spanish listener.';
+  } else if (myLang === 'es') {
+    $('roleSummary').textContent = 'Incoming English becomes Spanish on this device. Your Spanish is translated for an English listener.';
+  }
+}
+
+let roleChosen = false;
+function chooseLanguage(lang) {
+  if (roleChosen || !(lang in LANG_NAMES)) return;
+  roleChosen = true;
+  myLang = lang;
+  $('roleGate').hidden = true;
+  updateRoleSummary();
+  setStatus('Joining as an ' + LANG_NAMES[lang] + ' speaker…', true);
+  connect();
+}
+
+document.querySelectorAll('.roleChoice').forEach(button => {
+  button.onclick = () => chooseLanguage(button.dataset.lang);
+});
 
 function updateParticipantCount(serverCount) {
   const derived = myId === null ? 0 : peers.size + 1;
@@ -263,21 +319,56 @@ function send(obj) {
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
 }
 
-function leaveRoom() {
+function disconnectRoom(notifyServer) {
   if (leaving) return;
   leaving = true;
   stopPresenceHeartbeat();
   clearTimeout(turnRefreshTimer);
   setMicEnabled(false);
-  send({type: 'leave'});
-  if (ws && ws.readyState === WebSocket.OPEN) ws.close(1000, 'left room');
+  if (notifyServer) send({type: 'leave'});
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.close(1000, notifyServer ? 'left room' : 'page suspended');
+  }
   failVoice();
   peers.forEach(p => p.pc.close());
   peers.clear();
   if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
+  mediaStream = null;
+  mediaPromise = null;
+  workletNode = null;
+  if (audioCtx) audioCtx.close().catch(() => {});
+  audioCtx = null;
+  ws = null;
+  ttsToken = null;
   updateParticipantCount(0);
+}
+
+function leaveRoom() {
+  explicitLeave = true;
+  disconnectRoom(true);
   setStatus('You left this room', true);
   showVideoNote('You left this private room.');
+}
+
+function suspendRoom() {
+  if (explicitLeave) return;
+  // A BFCache navigation is not a user Leave. Closing the socket still frees
+  // the server slot immediately, while pageshow.persisted can create a fresh
+  // connection when the cached page is restored.
+  disconnectRoom(false);
+}
+
+function restoreSuspendedRoom(event) {
+  if (!event.persisted || explicitLeave) return;
+  leaving = false;
+  roomFull = false;
+  reconnectFailures = 0;
+  myId = null;
+  updateParticipantCount(0);
+  if (!roleChosen || terminalRoom) return;
+  setStatus('Rejoining this room…', true);
+  showVideoNote('Reconnecting to the other person…');
+  connect();
 }
 
 $('leaveBtn').onclick = leaveRoom;
@@ -326,8 +417,8 @@ async function handle(m) {
     // retries forever, looking like the server is down.
     roomFull = true;
     updateParticipantCount(m.participant_count);
-    setStatus('Room is full (' + m.limit + ' people) — closed devices clear within 30 seconds', true);
-    showVideoNote('Room is full. If someone just closed it, try again in 30 seconds.');
+    setStatus('Room is full (' + m.limit + ' people) — closed devices clear within 90 seconds', true);
+    showVideoNote('Room is full. If someone just closed it, try again within 90 seconds.');
   }
 }
 
@@ -738,6 +829,7 @@ function renderLangs(langs) {
     cancelSpeech();
     sendSpeechEnd();
     myLang = sel.value;
+    updateRoleSummary();
     send({type: 'set_lang', lang: myLang});
   };
 }
@@ -835,8 +927,8 @@ async function onSignal(from, data) {
   }
 }
 
-connect();
-window.addEventListener('pagehide', leaveRoom);
+window.addEventListener('pagehide', suspendRoom);
+window.addEventListener('pageshow', restoreSuspendedRoom);
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('/sw.js', {scope: '/'}).catch(() => {});
 }

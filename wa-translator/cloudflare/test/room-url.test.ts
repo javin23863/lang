@@ -58,7 +58,11 @@ describe("public room URL interface", () => {
     });
     expect(preflight.status).toBe(204);
 
-    const forged = path.slice(0, -1) + (path.endsWith("A") ? "B" : "A");
+    // Mutating the final base64url character can change only discarded pad
+    // bits and still decode to the same HMAC. Change a full signature sextet so
+    // this negative is deterministic rather than intermittently equivalent.
+    const [prefix, signature] = path.split(/\.(?=[^.]+$)/);
+    const forged = `${prefix}.${signature[0] === "A" ? "B" : "A"}${signature.slice(1)}`;
     const denied = await exports.default.fetch(`${ORIGIN}${forged}`);
     expect(denied.status).toBe(404);
     expect(await denied.text()).not.toContain("signature");

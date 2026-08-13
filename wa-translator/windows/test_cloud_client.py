@@ -10,6 +10,7 @@ import unittest
 
 HTML = pathlib.Path(__file__).with_name("static").joinpath("room.html").read_text(
     encoding="utf-8")
+LIVE_CHECK_PATH = pathlib.Path(__file__).with_name("live_bilingual_check.py")
 
 
 class CloudClientContractTests(unittest.TestCase):
@@ -68,8 +69,47 @@ class CloudClientContractTests(unittest.TestCase):
         self.assertIn("heartbeat_interval_ms", HTML)
         self.assertIn("send({type: 'heartbeat'})", HTML)
         self.assertIn("send({type: 'leave'})", HTML)
-        self.assertIn("window.addEventListener('pagehide', leaveRoom)", HTML)
-        self.assertIn("closed devices clear within 30 seconds", HTML)
+        self.assertIn("if (notifyServer) send({type: 'leave'})", HTML)
+        self.assertIn("window.addEventListener('pagehide', suspendRoom)", HTML)
+        self.assertIn("closed devices clear within 90 seconds", HTML)
+
+    def test_language_role_is_explicit_before_the_room_connects(self):
+        self.assertIn('id="roleGate"', HTML)
+        self.assertIn('role="dialog"', HTML)
+        self.assertIn('data-lang="en"', HTML)
+        self.assertIn('data-lang="es"', HTML)
+        self.assertIn("let ws, myId = null, ttsToken = null, myLang = null", HTML)
+        self.assertNotIn("navigator.language", HTML)
+        self.assertIn("function chooseLanguage(lang)", HTML)
+        self.assertIn("chooseLanguage(button.dataset.lang)", HTML)
+        self.assertNotIn("\nconnect();\n", HTML)
+
+    def test_role_copy_explains_incoming_only_translated_voice(self):
+        self.assertIn('id="roleSummary"', HTML)
+        self.assertIn("Your own translated words play on the other device", HTML)
+        self.assertIn("Incoming Spanish becomes English on this device", HTML)
+        self.assertIn("Incoming English becomes Spanish on this device", HTML)
+
+    def test_bfcache_restore_rejoins_but_explicit_leave_stays_terminal(self):
+        self.assertIn("let explicitLeave = false", HTML)
+        self.assertIn("function suspendRoom()", HTML)
+        self.assertIn("function restoreSuspendedRoom(event)", HTML)
+        self.assertIn("if (!event.persisted || explicitLeave)", HTML)
+        self.assertIn("disconnectRoom(false)", HTML)
+        self.assertIn("disconnectRoom(true)", HTML)
+        self.assertIn("window.addEventListener('pageshow', restoreSuspendedRoom)", HTML)
+        self.assertIn("window.addEventListener('pagehide', suspendRoom)", HTML)
+
+    def test_live_acceptance_uses_real_browser_audio_and_server_results(self):
+        source = LIVE_CHECK_PATH.read_text(encoding="utf-8")
+        self.assertIn("--use-file-for-fake-audio-capture", source)
+        self.assertIn("Network.getResponseBody", source)
+        self.assertIn("AudioWorkletNode", source)
+        self.assertIn("Page.setWebLifecycleState", source)
+        self.assertIn("SEMANTIC_TURNS", source)
+        self.assertNotIn("handle(", source)
+        self.assertNotIn("window.fetch =", source)
+        self.assertNotIn("CONTROLLED_TTS_SPY", source)
 
 
 if __name__ == "__main__":

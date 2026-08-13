@@ -8,6 +8,10 @@ system, native wrapper or custom domain.
 ## Fixed beta ceilings
 
 - English and Spanish only; four participants per room.
+- Each browser must explicitly choose the language spoken on that device before
+  it joins. Translated voice is incoming-only: an English-speaking device hears
+  English for incoming Spanish, while its own Spanish translation plays on the
+  Spanish listener's device.
 - One L4 Modal container has five total concurrent inputs: four stream slots
   reserved for long-lived participant WebSockets and one TTS slot. A second
   simultaneous TTS request fails fast instead of taking a stream slot. The
@@ -25,7 +29,7 @@ system, native wrapper or custom domain.
 - The client renews its presence lease every 10 seconds. Leave and a delivered
   WebSocket close free a slot immediately. If a phone disappears without a
   close handshake, another live heartbeat or the next join removes it once the
-  30-second lease has elapsed; it no longer counts toward the four-person cap.
+  90-second lease has elapsed; it no longer counts toward the four-person cap.
   An unjoined socket also stops counting toward the eight-pending-socket guard
   after that same lease.
 - A Modal process restart loses decoder/endpointer state by design. Cloudflare
@@ -44,7 +48,7 @@ byte PCM frames, 300-character captions and TTS text, 2 KiB TTS request bodies,
 participants, a 40,000-byte/second microphone rate with a 64,000-byte burst,
 12 TTS phrases per room per 60 seconds, an eight-second maximum compute
 reconnect delay, and TURN TTL clamped to 60–172,800 seconds (configured to
-3,600 seconds). Presence heartbeats run every 10 seconds with a 30-second
+3,600 seconds). Presence heartbeats run every 10 seconds with a 90-second
 lease. Browsers refresh TURN one minute before expiry, replace every peer
 connection's ICE configuration, and restart ICE.
 

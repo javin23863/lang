@@ -394,8 +394,11 @@ async def run():
                    Tab(pages[1]["webSocketDebuggerUrl"]) as b:
             for t in (a, b):
                 await t.call("Runtime.enable")
-            await b.js("(()=>{const s=document.getElementById('langSel');"
-                       "s.value='es';s.dispatchEvent(new Event('change'));return s.value})()")
+            # Language is a required role decision now. Never let this harness
+            # regress to the navigator-language default that made two devices
+            # silently advertise the same source language in production.
+            await a.js("chooseLanguage('en')")
+            await b.js("chooseLanguage('es')")
 
             def check(cond, msg):
                 print(("  ok   " if cond else "  FAIL ") + msg)

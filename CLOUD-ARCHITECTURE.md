@@ -107,9 +107,9 @@ ephemeral.
 - Joined browsers send a hibernation-safe presence heartbeat every 10 seconds.
   A clean close or the visible Leave control releases the slot immediately; a
   silent half-open mobile connection is removed at the next heartbeat or join
-  once its 30-second lease has elapsed. The four-person cap counts only live
+  once its 90-second lease has elapsed. The four-person cap counts only live
   leases, and an unjoined socket cannot occupy one of the eight pending slots
-  beyond the same 30-second attachment lease.
+  beyond the same 90-second attachment lease.
 - TURN credentials are short-lived; the long-lived TURN key and room-signing key
   exist only as Cloudflare/Modal secrets and never enter git or the browser.
 
