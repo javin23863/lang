@@ -47,6 +47,7 @@ ASR_RATE = 16_000
 FRAME_SAMPLES = 1_600
 BACKGROUND_SECONDS = 35
 MIN_CONVERSATION_SECONDS = 95
+PROBE_USER_AGENT = "spoken-translation-live-acceptance/1.0"
 
 
 @dataclass(frozen=True)
@@ -96,7 +97,7 @@ def _has_concepts(value: str, concepts: tuple[tuple[str, ...], ...]) -> bool:
 def _room() -> tuple[str, str]:
     request = urllib.request.Request(
         f"{PUBLIC_BASE}/api/rooms", method="POST", data=b"",
-        headers={"Origin": PUBLIC_BASE})
+        headers={"Origin": PUBLIC_BASE, "User-Agent": PROBE_USER_AGENT})
     with urllib.request.urlopen(request, timeout=15) as response:
         path = json.load(response)["path"]
     token = path.rsplit("/", 1)[-1]
@@ -157,6 +158,7 @@ def _tts_request(token: str, participant_id: str, turn: SemanticTurn) -> bytes:
         f"{PUBLIC_BASE}/tts", method="POST", data=payload,
         headers={
             "Origin": PUBLIC_BASE,
+            "User-Agent": PROBE_USER_AGENT,
             "Authorization": f"Bearer {token}",
             "X-Participant-ID": participant_id,
             "Content-Type": "application/json",
