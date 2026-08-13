@@ -21,6 +21,7 @@ const ROOM_TOKEN_TTL_SECONDS = 24 * 60 * 60;
 const ROOM_ID_PATTERN = /^[A-Za-z0-9_-]{24}$/;
 const SIGNATURE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const CONTROL_MESSAGE_BYTES = 8192;
+const SIGNAL_MESSAGE_BYTES = 64 * 1024;
 const MAX_PCM_FRAME_BYTES = 32000;
 const MAX_COMPUTE_MESSAGE_BYTES = 8192;
 const MAX_CAPTION_CHARS = 300;
@@ -839,7 +840,8 @@ export class Room extends DurableObject<Env> {
       // memory and latency; natural peer audio remains independent and live.
       return;
     }
-    if (new TextEncoder().encode(message).byteLength > CONTROL_MESSAGE_BYTES) {
+    const messageBytes = new TextEncoder().encode(message).byteLength;
+    if (messageBytes > SIGNAL_MESSAGE_BYTES) {
       socket.close(1009, "control message too large");
       return;
     }
@@ -850,6 +852,10 @@ export class Room extends DurableObject<Env> {
       data = parsed as Record<string, unknown>;
     } catch {
       return this.policyClose(socket, "invalid JSON control message");
+    }
+    if (messageBytes > CONTROL_MESSAGE_BYTES && data.type !== "signal") {
+      socket.close(1009, "control message too large");
+      return;
     }
 
     if (!meta.joined) {

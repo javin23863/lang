@@ -62,7 +62,11 @@ describe("public room WebSocket interface", () => {
       headers: { Origin: "https://attacker.test", Upgrade: "websocket" }
     });
     expect(wrongOrigin.status).toBe(403);
-    const forged = await exports.default.fetch(`${ORIGIN}${wsPath.slice(0, -1)}A`, {
+    const signatureStart = wsPath.lastIndexOf(".") + 1;
+    const forgedSignatureHead = wsPath[signatureStart] === "A" ? "B" : "A";
+    const forgedPath = `${wsPath.slice(0, signatureStart)}${forgedSignatureHead}`
+      + wsPath.slice(signatureStart + 1);
+    const forged = await exports.default.fetch(`${ORIGIN}${forgedPath}`, {
       headers: { Origin: ORIGIN, Upgrade: "websocket" }
     });
     expect(forged.status).toBe(401);
@@ -131,6 +135,49 @@ describe("public room WebSocket interface", () => {
     a1.socket.close(1000, "done");
     a2.socket.close(1000, "done");
     b1.socket.close(1000, "done");
+  });
+
+  it("allows bounded WebRTC SDP while retaining strict control-message caps", async () => {
+    const room = await createRoom();
+    const sender = await openSocket(room);
+    const senderWelcome = await join(sender, "en", "Sender", "female");
+    const receiver = await openSocket(room);
+    const receiverWelcome = await join(receiver, "es", "Receiver", "male");
+    await sender.next(); // peer_join
+
+    const sdp = `v=0\r\n${"a=x:".repeat(2200)}`;
+    sender.socket.send(JSON.stringify({
+      type: "signal", to: receiverWelcome.id,
+      data: { description: { type: "offer", sdp } }
+    }));
+    expect(await receiver.next()).toMatchObject({
+      type: "signal", from: senderWelcome.id,
+      data: { description: { type: "offer", sdp } }
+    });
+    sender.socket.send(JSON.stringify({ type: "heartbeat" }));
+    expect(await sender.next()).toMatchObject({ type: "presence" });
+
+    const oversizedControl = await openSocket(room);
+    await join(oversizedControl, "en", "Control", "female");
+    const controlClosed = new Promise<CloseEvent>(resolve =>
+      oversizedControl.socket.addEventListener("close", resolve));
+    oversizedControl.socket.send(JSON.stringify({
+      type: "heartbeat", padding: "x".repeat(9000)
+    }));
+    expect((await controlClosed).code).toBe(1009);
+
+    const oversizedSignal = await openSocket(room);
+    await join(oversizedSignal, "en", "Signal", "female");
+    const signalClosed = new Promise<CloseEvent>(resolve =>
+      oversizedSignal.socket.addEventListener("close", resolve));
+    oversizedSignal.socket.send(JSON.stringify({
+      type: "signal", to: receiverWelcome.id,
+      data: { description: { type: "offer", sdp: "x".repeat(65536) } }
+    }));
+    expect((await signalClosed).code).toBe(1009);
+
+    sender.socket.close(1000, "done");
+    receiver.socket.close(1000, "done");
   });
 
   it("caps a room at four joined participants", async () => {
