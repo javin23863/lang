@@ -426,19 +426,22 @@ def _assert_caption_semantics(captions: list[dict[str, Any]], device_lang: str) 
         f"{device_lang} device received {len(captions)} finals, expected 6")
     for index, (caption, turn) in enumerate(zip(captions, SEMANTIC_TURNS), 1):
         if turn.lang == device_lang:
-            original, translated = caption["lead"], caption["sub"]
+            original, translated = caption["lead"], ""
             assert caption["mine"], f"turn {index} should be local on {device_lang}"
+            assert not caption["sub"], (
+                f"turn {index} leaked an outbound translation onto its own device")
         else:
             translated, original = caption["lead"], caption["sub"]
             assert not caption["mine"], f"turn {index} should be incoming on {device_lang}"
         assert _has_concepts(original, turn.original_concepts), (
             f"turn {index} ASR semantic mismatch: {original!r}")
-        assert _has_concepts(translated, turn.translation_concepts), (
-            f"turn {index} MT semantic mismatch: {translated!r}")
+        if turn.lang != device_lang:
+            assert _has_concepts(translated, turn.translation_concepts), (
+                f"turn {index} MT semantic mismatch: {translated!r}")
         print(json.dumps({
             "event": "caption", "turn": index, "speaker_lang": turn.lang,
             "device_lang": device_lang, "original": original,
-            "translation": translated,
+            "incoming_translation": translated,
         }, ensure_ascii=False), flush=True)
 
 
