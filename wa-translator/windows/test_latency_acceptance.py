@@ -5,6 +5,7 @@ from latency_acceptance import (
     measurement_schedule,
     prime_stream_for_preload,
     send_heartbeat,
+    join_selection,
     tts_payload,
 )
 from live_bilingual_check import (
@@ -17,6 +18,7 @@ from live_bilingual_check import (
 
 class LatencyAcceptanceTests(unittest.TestCase):
     def test_tts_probe_uses_current_locale_and_explicit_voice_profile_contract(self):
+        self.assertEqual(join_selection("en_to_ja"), ("ja-JP", "ja-jf-alpha"))
         payload = tts_payload("en_to_ja")
         self.assertEqual(payload["locale"], "ja-JP")
         self.assertEqual(payload["voice_profile"], "ja-jf-alpha")

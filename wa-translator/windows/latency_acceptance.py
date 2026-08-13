@@ -113,6 +113,12 @@ def tts_payload(direction: str) -> dict[str, str]:
     }
 
 
+def join_selection(direction: str) -> tuple[str, str]:
+    """Return the listener identity the Worker will authorize for this route."""
+    fixture = FIXTURES[direction]
+    return fixture["locale"], fixture["voice_profile"]
+
+
 async def _heartbeats(socket: Any) -> None:
     while True:
         await asyncio.sleep(8)
@@ -154,26 +160,29 @@ async def run(
     preload_wait_s: float | None = None,
 ) -> list[dict[str, Any]]:
     token, _path = await asyncio.to_thread(_room, base)
-    socket, participant_id = await _join(base, token, "en-US", "en-us-af-heart")
-    heartbeat = asyncio.create_task(_heartbeats(socket))
     records = []
-    try:
-        if preload_wait_s is not None:
-            await prime_stream_for_preload(socket, preload_wait_s)
-            print(json.dumps({
-                "event": "stream_preload_probe", "wait_s": preload_wait_s,
-            }, sort_keys=True), flush=True)
-        for record_phase, direction, sample in measurement_schedule(
-                phase, directions, samples):
+    preloaded = False
+    for record_phase, direction, sample in measurement_schedule(
+            phase, directions, samples):
+        locale, voice_profile = join_selection(direction)
+        socket, participant_id = await _join(base, token, locale, voice_profile)
+        heartbeat = asyncio.create_task(_heartbeats(socket))
+        try:
+            if preload_wait_s is not None and not preloaded:
+                await prime_stream_for_preload(socket, preload_wait_s)
+                print(json.dumps({
+                    "event": "stream_preload_probe", "wait_s": preload_wait_s,
+                }, sort_keys=True), flush=True)
+                preloaded = True
             record = await asyncio.to_thread(
                 _request, base, token, participant_id,
                 direction, record_phase, sample)
             records.append(record)
             print(json.dumps(record, sort_keys=True), flush=True)
-    finally:
-        heartbeat.cancel()
-        await asyncio.gather(heartbeat, return_exceptions=True)
-        await socket.close(1000, "latency fixture complete")
+        finally:
+            heartbeat.cancel()
+            await asyncio.gather(heartbeat, return_exceptions=True)
+            await socket.close(1000, "latency fixture complete")
     assert_warm_targets(records)
     return records
 
