@@ -125,7 +125,7 @@ def client_fixture():
 
 
 class ModalStreamTests(unittest.TestCase):
-    def test_valid_stream_starts_one_nonblocking_compute_and_tts_preload(self):
+    def test_valid_stream_starts_one_nonblocking_sequential_model_preload(self):
         compute = BlockingPreloadCompute()
         tts = BlockingPreloadTTS()
         api = modal_app.create_api(
@@ -143,6 +143,9 @@ class ModalStreamTests(unittest.TestCase):
                     "source_lang": "en", "target_lang": "es",
                 })
                 self.assertTrue(compute.preload_started.wait(timeout=1))
+                if stream_id == "participant-1":
+                    self.assertFalse(tts.preload_started.wait(timeout=0.05))
+                    compute.preload_release.set()
                 self.assertTrue(tts.preload_started.wait(timeout=1))
                 ws.send_bytes(np.full(1600, 1000, dtype=np.int16).tobytes())
                 ws.send_json({"type": "speech_end"})
@@ -150,7 +153,6 @@ class ModalStreamTests(unittest.TestCase):
             if stream_id == "participant-1":
                 # Let the background seam finish before opening a second stream;
                 # the assertion remains that only one preload is ever launched.
-                compute.preload_release.set()
                 tts.preload_release.set()
         try:
             self.assertEqual(compute.preload_calls, 1)

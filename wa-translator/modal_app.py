@@ -486,26 +486,30 @@ def create_api(
     tts_engine = tts or KokoroTTS()
     input_capacity = capacity or InputCapacity()
     preload_lock = threading.Lock()
-    preloads_started: set[str] = set()
+    preload_started = False
 
-    def start_preload(name: str, engine: object) -> None:
-        preload = getattr(engine, "preload", None)
-        if not callable(preload):
-            return
+    def start_model_preload() -> None:
+        nonlocal preload_started
         with preload_lock:
-            if name in preloads_started:
+            if preload_started:
                 return
-            preloads_started.add(name)
+            preload_started = True
 
         def run() -> None:
-            try:
-                preload()
-            except Exception as error:
-                print(f"[{name}] preload {_bounded_diagnostic(error, secret)}",
-                      file=sys.stderr, flush=True)
+            # Import and initialize the two GPU stacks serially.  Concurrent
+            # cold imports can expose partially initialized extension modules.
+            for name, engine in (("compute", compute_engine), ("tts", tts_engine)):
+                preload = getattr(engine, "preload", None)
+                if not callable(preload):
+                    continue
+                try:
+                    preload()
+                except Exception as error:
+                    print(f"[{name}] preload {_bounded_diagnostic(error, secret)}",
+                          file=sys.stderr, flush=True)
 
         threading.Thread(
-            target=run, name=f"{name}-preload", daemon=True,
+            target=run, name="model-preload", daemon=True,
         ).start()
     if endpointer_factory is None:
         windows_dir = Path(__file__).with_name("windows")
@@ -538,8 +542,7 @@ def create_api(
             if start is None:
                 await websocket.close(code=1008, reason="invalid start message")
                 return
-            start_preload("compute", compute_engine)
-            start_preload("tts", tts_engine)
+            start_model_preload()
             state = StreamState(
                 **start,
                 endpointer=endpointer_factory(),
