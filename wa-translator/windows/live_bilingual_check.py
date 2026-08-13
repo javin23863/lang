@@ -48,6 +48,7 @@ FRAME_SAMPLES = 1_600
 BACKGROUND_SECONDS = 35
 MIN_CONVERSATION_SECONDS = 95
 PROBE_USER_AGENT = "spoken-translation-live-acceptance/1.0"
+VOICE_WARM_TARGET_S = 3.0
 
 
 @dataclass(frozen=True)
@@ -92,6 +93,44 @@ def _has_concepts(value: str, concepts: tuple[tuple[str, ...], ...]) -> bool:
     normalized = _normalize(value)
     return all(any(_normalize(choice) in normalized for choice in alternatives)
                for alternatives in concepts)
+
+
+def _voice_latency_records(
+    acceptance: dict[str, Any], listener_lang: str,
+) -> list[dict[str, Any]]:
+    speech_ends = acceptance["remoteSpeechEnds"]
+    captions = [caption for caption in acceptance["captions"] if not caption["mine"]]
+    playing = [event for event in acceptance["plays"] if event["type"] == "playing"]
+    assert len(speech_ends) == len(captions) == len(playing) == 3, (
+        f"{listener_lang} latency events were speech_end={len(speech_ends)}, "
+        f"final={len(captions)}, playing={len(playing)}")
+    records = []
+    turn_numbers = (2, 4, 6) if listener_lang == "en" else (1, 3, 5)
+    for turn, speech_end, caption, play in zip(
+            turn_numbers, speech_ends, captions, playing):
+        assert speech_end["at"] <= caption["at"] <= play["at"], (
+            f"turn {turn} browser event order was invalid")
+        record = {
+            "event": "voice_latency", "phase": "warm", "turn": turn,
+            "speaker_lang": "es" if listener_lang == "en" else "en",
+            "listener_lang": listener_lang,
+            "speech_end_to_final_s": round(
+                (caption["at"] - speech_end["at"]) / 1_000, 3),
+            "final_to_voice_start_s": round(
+                (play["at"] - caption["at"]) / 1_000, 3),
+            "speech_end_to_voice_start_s": round(
+                (play["at"] - speech_end["at"]) / 1_000, 3),
+        }
+        records.append(record)
+    return records
+
+
+def assert_warm_voice_targets(records: list[dict[str, Any]]) -> None:
+    for record in records:
+        assert record["speech_end_to_voice_start_s"] <= VOICE_WARM_TARGET_S, (
+            f'turn {record["turn"]} warm voice '
+            f'{record["speech_end_to_voice_start_s"]:.3f}s exceeded '
+            f'{VOICE_WARM_TARGET_S:.1f}s')
 
 
 def _room() -> tuple[str, str]:
@@ -275,7 +314,7 @@ class Tab:
 
 
 OBSERVER = r"""(() => {
-  window.__acceptance = {captions: [], plays: [], closes: []};
+  window.__acceptance = {captions: [], plays: [], closes: [], remoteSpeechEnds: []};
   const seen = new WeakSet();
   const scan = () => document.querySelectorAll('.msg:not(.live)').forEach(node => {
     if (seen.has(node)) return;
@@ -319,12 +358,44 @@ OBSERVER = r"""(() => {
     });
   });
   let observedSocket = null;
+  let observedRemoteTrack = null;
   setInterval(() => {
     if (!ws || ws === observedSocket) return;
     observedSocket = ws;
     ws.addEventListener('close', event => window.__acceptance.closes.push({
       code: event.code, reason: event.reason, at: performance.now()
     }));
+  }, 100);
+  setInterval(() => {
+    if (!audioCtx || !$('remoteVideo').srcObject) return;
+    const track = $('remoteVideo').srcObject.getAudioTracks()[0];
+    if (!track || track === observedRemoteTrack) return;
+    observedRemoteTrack = track;
+    const source = audioCtx.createMediaStreamSource(new MediaStream([track]));
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    const silent = audioCtx.createGain();
+    silent.gain.value = 0;
+    source.connect(analyser).connect(silent).connect(audioCtx.destination);
+    const samples = new Uint8Array(analyser.fftSize);
+    let speaking = false;
+    let lastActiveAt = 0;
+    const meter = () => {
+      if (track.readyState === 'ended') return;
+      analyser.getByteTimeDomainData(samples);
+      let peak = 0;
+      for (const sample of samples) peak = Math.max(peak, Math.abs(sample - 128));
+      const now = performance.now();
+      if (peak >= 4) {
+        speaking = true;
+        lastActiveAt = now;
+      } else if (speaking && now - lastActiveAt >= 200) {
+        window.__acceptance.remoteSpeechEnds.push({at: lastActiveAt});
+        speaking = false;
+      }
+      requestAnimationFrame(meter);
+    };
+    requestAnimationFrame(meter);
   }, 100);
   return true;
 })()"""
@@ -630,6 +701,15 @@ async def run(screenshot: Path | None) -> None:
             }
             for lang in ("en", "es"):
                 _assert_caption_semantics(page_results[lang]["captions"], lang)
+
+            latency_records = [
+                record
+                for lang in ("en", "es")
+                for record in _voice_latency_records(page_results[lang], lang)
+            ]
+            for record in sorted(latency_records, key=lambda value: value["turn"]):
+                print(json.dumps(record, sort_keys=True), flush=True)
+            assert_warm_voice_targets(latency_records)
 
             tts_outputs: dict[str, list[dict[str, Any]]] = {}
             for lang in ("en", "es"):
