@@ -377,11 +377,12 @@ def _launch_chrome(profile: Path, port: int, room_url: str,
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-async def _wait_devtools(port: int) -> dict[str, Any]:
+async def _wait_devtools(port: int, room_url: str) -> dict[str, Any]:
     for _ in range(80):
         try:
             pages = [page for page in _devtools(port, "/json/list")
-                     if page.get("type") == "page"]
+                     if page.get("type") == "page"
+                     and page.get("url", "").startswith(room_url)]
             if pages:
                 return pages[0]
         except Exception:
@@ -528,7 +529,8 @@ async def run(screenshot: Path | None) -> None:
             _launch_chrome(temp_root / "profile-es", ports[1], room_url,
                            microphones["es"], 480),
         ]
-        pages = await asyncio.gather(*(_wait_devtools(port) for port in ports))
+        pages = await asyncio.gather(*(
+            _wait_devtools(port, room_url) for port in ports))
         async with Tab(pages[0]["webSocketDebuggerUrl"]) as english, \
                    Tab(pages[1]["webSocketDebuggerUrl"]) as spanish:
             tabs = {"en": english, "es": spanish}
@@ -537,7 +539,8 @@ async def run(screenshot: Path | None) -> None:
                 await tab.call("Runtime.enable")
                 await tab.call("Page.enable")
                 await _wait_js(tab,
-                    "document.readyState === 'complete' && $('captions') && $('roleGate')")
+                    "document.readyState === 'complete' && typeof $ === 'function' "
+                    "&& !!$('captions') && !!$('roleGate')")
                 await tab.js(OBSERVER)
             await asyncio.gather(*(network.start() for network in networks.values()))
 
