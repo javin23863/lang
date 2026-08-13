@@ -20,6 +20,9 @@ const ROOM_ID_BYTES = 18;
 const ROOM_TOKEN_TTL_SECONDS = 24 * 60 * 60;
 const ROOM_ID_PATTERN = /^[A-Za-z0-9_-]{24}$/;
 const SIGNATURE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const HOST_CONTROL_PREFIX = "hc1";
+const HOST_CONTROL_PURPOSE = "host-control.v1";
+const ROOM_CLOSED_CLOSE_CODE = 4001;
 const CONTROL_MESSAGE_BYTES = 8192;
 const SIGNAL_MESSAGE_BYTES = 64 * 1024;
 const MAX_PCM_FRAME_BYTES = 32000;
@@ -115,6 +118,16 @@ async function signRoom(roomId: string, expiresAt: number, secret: string): Prom
 
 type VerifiedRoom = { id: string; expiresAt: number };
 
+async function signHostControl(roomId: string, expiresAt: number, secret: string): Promise<string> {
+  const payload = `${HOST_CONTROL_PURPOSE}.${roomId}.${expiresAt}`;
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    await signingKey(secret, ["sign"]),
+    new TextEncoder().encode(payload)
+  );
+  return `${HOST_CONTROL_PREFIX}.${roomId}.${expiresAt}.${base64url(signature)}`;
+}
+
 async function verifyRoom(token: string, secret: string): Promise<VerifiedRoom | null> {
   if (!signingSecretIsValid(secret)) return null;
   const parts = token.split(".");
@@ -129,6 +142,25 @@ async function verifyRoom(token: string, secret: string): Promise<VerifiedRoom |
     await signingKey(secret, ["verify"]),
     fromBase64url(signature).buffer as ArrayBuffer,
     new TextEncoder().encode(`${id}.${expiresRaw}`)
+  );
+  return valid ? { id, expiresAt } : null;
+}
+
+async function verifyHostControl(token: string, secret: string): Promise<VerifiedRoom | null> {
+  if (!signingSecretIsValid(secret)) return null;
+  const parts = token.split(".");
+  if (parts.length !== 4) return null;
+  const [prefix, id, expiresRaw, signature] = parts;
+  if (prefix !== HOST_CONTROL_PREFIX || !ROOM_ID_PATTERN.test(id)
+      || !/^\d{10}$/.test(expiresRaw) || !SIGNATURE_PATTERN.test(signature)) return null;
+  const expiresAt = Number(expiresRaw);
+  if (!Number.isSafeInteger(expiresAt) || expiresAt <= Math.floor(Date.now() / 1000)) return null;
+  const payload = `${HOST_CONTROL_PURPOSE}.${id}.${expiresRaw}`;
+  const valid = await crypto.subtle.verify(
+    "HMAC",
+    await signingKey(secret, ["verify"]),
+    fromBase64url(signature).buffer as ArrayBuffer,
+    new TextEncoder().encode(payload)
   );
   return valid ? { id, expiresAt } : null;
 }
@@ -165,24 +197,37 @@ function deniedRoom(): Response {
   });
 }
 
-async function createRoomResponse(request: Request, env: Env, redirect: boolean): Promise<Response> {
+async function createRoomResponse(request: Request, env: Env): Promise<Response> {
   if (!sameOrigin(request, env)) return new Response("Forbidden", { status: 403 });
   if (!signingSecretIsValid(env.ROOM_SIGNING_KEY)) {
     return new Response("Room service is unavailable", { status: 503 });
   }
   const roomBytes = crypto.getRandomValues(new Uint8Array(ROOM_ID_BYTES));
   const expiresAt = Math.floor(Date.now() / 1000) + ROOM_TOKEN_TTL_SECONDS;
-  const token = await signRoom(base64url(roomBytes), expiresAt, env.ROOM_SIGNING_KEY);
+  const roomId = base64url(roomBytes);
+  const token = await signRoom(roomId, expiresAt, env.ROOM_SIGNING_KEY);
   const path = `/room/${token}`;
-  if (redirect) return Response.redirect(new URL(path, request.url).toString(), 303);
-  return Response.json({ path }, { status: 201, headers: privateHeaders() });
+  const hostControl = await signHostControl(roomId, expiresAt, env.ROOM_SIGNING_KEY);
+  return Response.json({ path, host_control: hostControl, expires_at: expiresAt }, {
+    status: 201, headers: privateHeaders()
+  });
 }
 
 async function roomPage(request: Request, env: Env, token: string): Promise<Response> {
-  if (!await verifyRoom(token, env.ROOM_SIGNING_KEY)) return deniedRoom();
+  const room = await verifyRoom(token, env.ROOM_SIGNING_KEY);
+  if (!room || !await roomIsAvailable(room, env)) return deniedRoom();
   const headers = privateHeaders();
   headers.set("Content-Type", "text/html; charset=utf-8");
   return new Response(roomHtml, { headers });
+}
+
+async function roomIsAvailable(room: VerifiedRoom, env: Env): Promise<boolean> {
+  const response = await env.ROOMS.get(env.ROOMS.idFromName(room.id)).fetch(
+    new Request("https://room.internal/status", {
+      headers: { "X-Room-Expires": String(room.expiresAt) }
+    })
+  );
+  return response.status === 204;
 }
 
 async function authorizedRoom(
@@ -194,7 +239,9 @@ async function authorizedRoom(
   const authorization = request.headers.get("Authorization") || "";
   if (!authorization.startsWith("Bearer ")) return null;
   const token = authorization.slice("Bearer ".length);
-  return token && !token.includes(" ") ? verifyRoom(token, env.ROOM_SIGNING_KEY) : null;
+  const room = token && !token.includes(" ")
+    ? await verifyRoom(token, env.ROOM_SIGNING_KEY) : null;
+  return room && await roomIsAvailable(room, env) ? room : null;
 }
 
 async function roomPreflight(request: Request, env: Env): Promise<Response> {
@@ -203,12 +250,59 @@ async function roomPreflight(request: Request, env: Env): Promise<Response> {
   const authorization = request.headers.get("Authorization") || "";
   const token = authorization.startsWith("Bearer ")
     ? authorization.slice("Bearer ".length) : "";
-  if (!token || token.includes(" ") || !await verifyRoom(token, env.ROOM_SIGNING_KEY)) {
+  const room = token && !token.includes(" ")
+    ? await verifyRoom(token, env.ROOM_SIGNING_KEY) : null;
+  if (!room) {
     return new Response("Room expired or unavailable", {
       status: 401, headers: privateHeaders()
     });
   }
+  if (!await roomIsAvailable(room, env)) {
+    return new Response("Room expired or unavailable", {
+      status: 410, headers: privateHeaders()
+    });
+  }
   return new Response(null, { status: 204, headers: privateHeaders() });
+}
+
+async function authorizedHostControl(
+  request: Request, env: Env, allowBrowserGet = false
+): Promise<VerifiedRoom | null> {
+  if (!(allowBrowserGet ? sameOriginBrowserGet(request, env) : sameOrigin(request, env))) {
+    return null;
+  }
+  const authorization = request.headers.get("Authorization") || "";
+  if (!authorization.startsWith("Bearer ")) return null;
+  const token = authorization.slice("Bearer ".length);
+  return token && !token.includes(" ") ? verifyHostControl(token, env.ROOM_SIGNING_KEY) : null;
+}
+
+async function hostRoomStatus(request: Request, env: Env): Promise<Response> {
+  if (request.method !== "GET") return new Response("Method Not Allowed", { status: 405 });
+  const room = await authorizedHostControl(request, env, true);
+  if (!room) return new Response("Forbidden", { status: 403, headers: privateHeaders() });
+  const response = await env.ROOMS.get(env.ROOMS.idFromName(room.id)).fetch(
+    new Request("https://room.internal/host-status", {
+      headers: { "X-Room-Expires": String(room.expiresAt) }
+    })
+  );
+  return new Response(response.body, {
+    status: response.status, headers: privateHeaders(response.headers)
+  });
+}
+
+async function closeHostRoom(request: Request, env: Env): Promise<Response> {
+  if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
+  const room = await authorizedHostControl(request, env);
+  if (!room) return new Response("Forbidden", { status: 403, headers: privateHeaders() });
+  const response = await env.ROOMS.get(env.ROOMS.idFromName(room.id)).fetch(
+    new Request("https://room.internal/close", {
+      method: "POST", headers: { "X-Room-Expires": String(room.expiresAt) }
+    })
+  );
+  return new Response(response.body, {
+    status: response.status, headers: privateHeaders(response.headers)
+  });
 }
 
 function httpsEndpoint(value: string): URL | null {
@@ -487,6 +581,27 @@ export class Room extends DurableObject<Env> {
   private broadcast(message: object, exclude?: WebSocket): void {
     for (const { socket } of this.participants()) {
       if (socket !== exclude) this.send(socket, message);
+    }
+  }
+
+  private closeRoom(): void {
+    // Mark every attachment first. Close callbacks then cannot broadcast stale
+    // presence after the terminal message, and no compute stream survives a
+    // host revocation.
+    for (const socket of this.ctx.getWebSockets("browser")) {
+      const meta = this.attachment(socket);
+      if (meta) {
+        meta.joined = false;
+        socket.serializeAttachment(meta);
+        this.closeCompute(meta.id);
+        this.pcmBudgets.delete(meta.id);
+      }
+    }
+    for (const id of [...this.compute.keys()]) this.closeCompute(id);
+    this.pcmBudgets.clear();
+    for (const socket of this.ctx.getWebSockets("browser")) {
+      this.send(socket, { type: "room_closed" });
+      try { socket.close(ROOM_CLOSED_CLOSE_CODE, "room closed"); } catch { /* already closed */ }
     }
   }
 
@@ -775,6 +890,30 @@ export class Room extends DurableObject<Env> {
     }
 
     const url = new URL(request.url);
+    const closedAt = await this.ctx.storage.get<number>("closedAt");
+    if (request.method === "GET" && url.pathname === "/host-status") {
+      this.sweepExpiredSockets(Date.now());
+      const participantCount = closedAt === undefined ? this.participants().length : 0;
+      return Response.json({
+        state: closedAt === undefined ? (participantCount ? "open" : "ready") : "closed",
+        participant_count: participantCount,
+        participant_limit: MAX_PARTICIPANTS
+      });
+    }
+    if (request.method === "POST" && url.pathname === "/close") {
+      if (closedAt === undefined) {
+        await this.ctx.storage.put("closedAt", Date.now());
+        this.closeRoom();
+      }
+      return Response.json({
+        state: "closed", participant_count: 0, participant_limit: MAX_PARTICIPANTS
+      });
+    }
+    if (closedAt !== undefined) return new Response("Room expired or unavailable", { status: 410 });
+    if (request.method === "GET" && url.pathname === "/status") {
+      this.sweepExpiredSockets(Date.now());
+      return new Response(null, { status: 204 });
+    }
     if (request.method === "POST" && url.pathname === "/tts-quota") {
       const participantId = request.headers.get("X-Participant-ID") || "";
       const result = this.consumeTts(participantId);
@@ -997,11 +1136,10 @@ export default {
     if (url.pathname === "/api/room") return roomPreflight(request, env);
     if (url.pathname === "/api/turn") return turnCredentials(request, env);
     if (url.pathname === "/tts") return translatedVoice(request, env);
+    if (url.pathname === "/api/room-control") return hostRoomStatus(request, env);
+    if (url.pathname === "/api/room-control/close") return closeHostRoom(request, env);
     if (request.method === "POST" && url.pathname === "/api/rooms") {
-      return createRoomResponse(request, env, false);
-    }
-    if (request.method === "POST" && url.pathname === "/rooms") {
-      return createRoomResponse(request, env, true);
+      return createRoomResponse(request, env);
     }
     const roomMatch = url.pathname.match(/^\/room\/([^/]+)$/);
     if (request.method === "GET" && roomMatch) {
@@ -1025,6 +1163,10 @@ export default {
       return stub.fetch(new Request("https://room.internal/socket", { headers }));
     }
     if (request.method !== "GET") return new Response("Method Not Allowed", { status: 405 });
+    if (url.pathname === "/" || url.pathname === "/index.html") {
+      const asset = await env.ASSETS.fetch(request);
+      return new Response(asset.body, { status: asset.status, headers: privateHeaders(asset.headers) });
+    }
     // FastAPI mounts the shared files at /static; Workers assets expose the
     // contents of that directory at /. Rewrite only that compatibility prefix.
     if (url.pathname.startsWith("/static/")) {

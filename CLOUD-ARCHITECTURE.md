@@ -34,13 +34,17 @@ WhatsApp invitation
         v
 Cloudflare Worker + static assets (always available)
   - creates and validates 24-hour signed bearer room links
-  - serves the installable phone web app
+  - returns a separate, domain-separated host-control bearer only to the
+    same-origin creator dashboard
+  - serves the installable phone and Windows host dashboard web app
   - issues short-lived Cloudflare TURN credentials
         |
         | signed room token
         v
 one Cloudflare Durable Object per room
   - owns presence, WebRTC signalling and caption fan-out
+  - records a closed tombstone through room expiry and terminally closes
+    current browser sockets on host revocation
   - terminates browser WebSockets and survives hibernation
   - adds server-only credentials to Modal requests
         |
@@ -118,12 +122,14 @@ ephemeral.
 The user confirmed these user-facing seams by approving the room controls and
 saying `begin`:
 
-1. **Room URL interface:** create, open, expire and reject a bearer room.
-2. **Room WebSocket interface:** join, signal, stream microphone PCM and receive
+1. **Room URL interface:** create, open, expire, revoke and reject a bearer room.
+2. **Host-control interface:** inspect and close exactly one room through a
+   same-origin, separate host bearer; the participant URL cannot close it.
+3. **Room WebSocket interface:** join, signal, stream microphone PCM and receive
    room-scoped captions without cross-room leakage.
-3. **Participant listening interface:** captions-only default, independent voice
+4. **Participant listening interface:** captions-only default, independent voice
    toggle, remote-audio routing, voice selection and failure recovery.
-4. **Deployment interface:** a permanent Cloudflare URL reaches a scale-to-zero
+5. **Deployment interface:** a permanent Cloudflare URL reaches a scale-to-zero
    Modal backend without the Windows computer running.
 
 Tests exercise these interfaces, not private helpers. External Cloudflare,
@@ -145,6 +151,7 @@ Modal and TURN calls may be replaced only at their true network seams.
 | A10 | Phone layout at 360 CSS pixels exposes Share, Leave, microphone, camera, translated-voice mode and voice choice without horizontal overflow. | Browser viewport assertion and screenshot |
 | A11 | A real two-person Codex in-app-browser run shows video, carries natural audio in captions-only mode, displays English/Spanish captions, and audibly exercises both male and female translated voices. Automation alone cannot satisfy this row. | Human-observable acceptance receipt |
 | A12 | Modal has a one-container/four-participant beta ceiling, concurrent WebSocket configuration, scale-to-zero and persistent model cache. The Durable Object uses hibernation attachments and stores no media/caption history. Documentation states cold-start, short-utterance voice quality, licensing and cost ceilings. | Configuration assertions and deployment documentation |
+| A13 | The installed host dashboard creates, copies/shares, opens, persists and terminally closes a room. Host control is never in the participant URL; close disconnects current sockets and makes future page, preflight and WebSocket access fail through expiry. | Worker host-control tests, fresh-public-browser flow and Windows shortcut receipt |
 
 ## Deliberate ceilings
 
@@ -154,11 +161,11 @@ Modal and TURN calls may be replaced only at their true network seams.
 - The first release supports English and Spanish only.
 - Voice identity is a selected synthesized style, not gender detection and not
   voice cloning.
-- A `workers.dev` address is sufficient. A custom domain and app-store wrapper
-  are later distribution work.
-- The signed URL is deliberately a replayable 24-hour bearer invitation. Room
-  revocation and single-use participant invitations require an account model and
-  are not implied by this release.
+- A `workers.dev` address and native Edge app-mode shortcut are sufficient. A
+  custom domain, account system and app-store wrapper are later distribution work.
+- The signed participant URL is deliberately replayable for up to 24 hours, but
+  its creator can revoke it from the device-local host dashboard. Single-use
+  participant invitations still require an account model.
 - Cloud deployment requires local Wrangler and Modal authentication. Code and
   offline tests may be complete before those interactive account grants exist,
   but A8, A9 and A11 remain visibly unmet until their live receipts exist.

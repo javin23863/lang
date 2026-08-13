@@ -24,11 +24,17 @@ system, native wrapper or custom domain.
   remains in Git and Modal deployment history for rollback, but must not be
   deployed alongside the AP function because each Function owns its own
   container ceiling.
-- A room link is a deliberately replayable HMAC bearer for exactly 24 hours.
-  Anyone holding it can rejoin during that period. There is no revocation or
-  single-use invite without adding an account model.
-- The Durable Object stores only the room expiry. Presence and selected voice
-  style and the small per-room TTS quota counters live in hibernation
+- A participant link is a deliberately replayable HMAC bearer for exactly 24
+  hours. Creation separately returns a domain-separated, room-bound host
+  bearer to the same-origin dashboard. It is stored only on that host device;
+  it is never included in the participant URL. The host may inspect or revoke
+  its room through `/api/room-control`; a missing, forged, cross-origin or
+  expired host bearer fails closed.
+- The Durable Object stores expiry and, after revocation, a closed tombstone
+  through that expiry. It sends `room_closed` and close code 4001 to current
+  sockets, cancels compute, and refuses later participant page, preflight and
+  WebSocket access. Presence and selected voice style and the small per-room
+  TTS quota counters otherwise live in hibernation
   attachments; captions and media are never stored.
   Ordinary memory is disposable. An active outbound Modal WebSocket prevents
   Durable Object hibernation while that compute stream is open.
@@ -120,6 +126,31 @@ They are instructions, not a claim that deployment occurred.
    hear natural audio in captions-only mode, see both translation directions,
    then audibly exercise both female and male translated voices. Automated
    playback counters do not satisfy this human-observable gate.
+
+## Windows standalone host dashboard
+
+The root page is a standalone PWA/Edge app-mode host dashboard. It creates one
+room at a time, persists the separate host bearer only in same-device
+`localStorage`, shares/copies only the participant link, visibly reports ready,
+open, closed, or expired state, and asks before replacing an active room. A
+host who clears that device's browser storage loses its control bearer; this is
+a deliberate no-account ceiling, not participant access or media persistence.
+
+On 2026-08-13, the checked Windows shortcut receipt was:
+
+- `C:\Users\MSI\Desktop\Live Translator.lnk`
+- target: `C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`
+- arguments: `--app=https://spoken-translation-room.spoken-translation-cloudflare.workers.dev`
+- icon: `C:\Users\MSI\AppData\Local\LiveTranslator\LiveTranslator.ico,0`
+- launch evidence: Edge process PID 19772 had window title `Live Translator`
+  and command line
+  `"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --app=https://spoken-translation-room.spoken-translation-cloudflare.workers.dev`.
+
+This proves the inspected shortcut target and a separately launched Edge app
+window, not an independent visual URL read: Windows Computer Use stopped before
+it could determine the current browser URL, so no further app UI action was
+taken. Re-run the non-invasive shortcut-property inspection and visible
+app-window check after changing its target or Edge installation.
 
 ## Cost ceiling
 

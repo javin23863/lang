@@ -25,6 +25,23 @@ number; WhatsApp chooses the recipient.
 Full runbook, checks and measured latency: [`wa-translator/windows/README.md`](wa-translator/windows/README.md).
 Architecture and the rules the implementation is held to: [`SPEC-v7.md`](SPEC-v7.md).
 
+## Windows host dashboard
+
+The permanent cloud dashboard is
+`https://spoken-translation-room.spoken-translation-cloudflare.workers.dev/`.
+It creates a participant link, copies or natively shares it, opens the room, and
+can terminally close it. A host-control bearer is separate from the participant
+URL, stays only in the dashboard's same-device browser storage, and is never
+placed in the shared URL, cache, or room history. Closing a room immediately
+disconnects callers and keeps a tombstone through the link expiry, so the same
+participant URL cannot rejoin.
+
+On this Windows host, the Desktop shortcut is
+`C:\Users\MSI\Desktop\Live Translator.lnk`. It launches Edge app mode directly
+at the permanent origin; it does not depend on the Codex browser. The shortcut
+is device-local: clearing that app's browser storage loses the host control on
+this device, but never exposes it to a participant.
+
 ## What it does
 
 - **Live captions, not turn-taking.** Text appears ~1.7s after you start

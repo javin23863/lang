@@ -46,25 +46,36 @@ because the other person's phone is also carrying the video uplink.
 
 ## Private invitations
 
-`POST /rooms` or `POST /api/rooms` creates a 144-bit URL-safe bearer id. The
-room URL is `/room/<id>` and its WebSocket is `/ws/<id>`; the path—not a
+The local adapter creates a 144-bit URL-safe participant bearer; the permanent
+Worker creates an HMAC-signed participant bearer. The room URL is
+`/room/<token>` and its WebSocket is `/ws/<token>`; the path—not a
 client-supplied join field—is authoritative. Peer discovery, signalling,
 language targets, captions, updates and leave events are all filtered by that
-id. Globally unique participant ids remain useful, but knowing an id in another
-room does not make it a valid signalling target.
+room identity. Globally unique participant ids remain useful, but knowing an id
+in another room does not make it a valid signalling target.
 
-The room UI shares its exact URL through `navigator.share`, which lets the phone
-choose WhatsApp and the contact. Browsers without native sharing open a
-pre-filled `wa.me` invitation; if that popup is blocked, the URL is copied when
-clipboard permission is available, otherwise the UI asks the user to copy it.
-Neither path sends a telephone number to this server.
+Creation also returns a distinct room-bound host-control bearer to the
+same-origin dashboard only. It uses a domain-separated signature in the Worker
+and is stored locally on the creator device; it is never embedded in the
+participant URL. The authenticated `GET /api/room-control` and
+`POST /api/room-control/close` interfaces inspect or revoke only that one room.
+Revocation closes active sockets with `room_closed`/code 4001, cancels compute,
+and retains a tombstone through expiry so later page, preflight, and WebSocket
+access cannot resurrect the participant link.
 
-Rooms live in memory for a hard 24 hours. Unknown and expired HTTP URLs return
-the same generic 404; their WebSockets close with policy code 1008 and the client
-stops reconnecting. Existing connected calls may finish after expiry. A process
-restart invalidates every room, and the quick-tunnel hostname can disappear
-sooner. Room pages are `no-store` and use `Referrer-Policy: no-referrer` because
-the path itself grants access.
+The host dashboard shares its participant URL through `navigator.share`, which
+lets the device choose WhatsApp and the contact when that native facility is
+available. Its fallback copies the link; neither path sends a telephone number
+to this server.
+
+The local development adapter keeps rooms in memory for a hard 24 hours.
+Unknown and expired HTTP URLs return the same generic 404; their WebSockets
+close with policy code 1008 and the client stops reconnecting. Existing
+connected local calls may finish after expiry. A process restart invalidates
+every local room, and the quick-tunnel hostname can disappear sooner. Permanent
+Worker revocations instead retain their Durable Object tombstone through expiry.
+Room pages are `no-store` and use `Referrer-Policy: no-referrer` because the
+path itself grants access.
 
 ## Captions
 

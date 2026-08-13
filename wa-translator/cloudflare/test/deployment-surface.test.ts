@@ -12,7 +12,10 @@ describe("permanent deployment surface", () => {
 
     const manifest = await exports.default.fetch(`${ORIGIN}/manifest.webmanifest`);
     expect(manifest.status).toBe(200);
-    expect((await manifest.json<any>()).display).toBe("standalone");
+    expect(await manifest.json<any>()).toMatchObject({
+      name: "Live Translator", short_name: "Translator", display: "standalone",
+      start_url: "/", icons: [expect.objectContaining({ src: "/icon.svg" })]
+    });
 
     const worklet = await exports.default.fetch(`${ORIGIN}/static/pcm-worklet.js`);
     expect(worklet.status).toBe(200);

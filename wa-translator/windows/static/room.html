@@ -295,6 +295,10 @@ async function connect() {
   ws.onclose = (event) => {
     stopPresenceHeartbeat();
     if (leaving) return;
+    if (event.code === 4001) {
+      closeByHost();
+      return;
+    }
     failVoice('Natural audio restored while reconnecting');
     ttsToken = null;
     if (terminalRoom) return;
@@ -319,14 +323,14 @@ function send(obj) {
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
 }
 
-function disconnectRoom(notifyServer) {
+function disconnectRoom(notifyServer, preserveServerClose = false) {
   if (leaving) return;
   leaving = true;
   stopPresenceHeartbeat();
   clearTimeout(turnRefreshTimer);
   setMicEnabled(false);
   if (notifyServer) send({type: 'leave'});
-  if (ws && ws.readyState === WebSocket.OPEN) {
+  if (!preserveServerClose && ws && ws.readyState === WebSocket.OPEN) {
     ws.close(1000, notifyServer ? 'left room' : 'page suspended');
   }
   failVoice();
@@ -341,6 +345,14 @@ function disconnectRoom(notifyServer) {
   ws = null;
   ttsToken = null;
   updateParticipantCount(0);
+}
+
+function closeByHost() {
+  if (terminalRoom) return;
+  terminalRoom = true;
+  disconnectRoom(false, true);
+  setStatus('This private room has been closed', true);
+  showVideoNote('This private room has been closed by its host.');
 }
 
 function leaveRoom() {
@@ -412,6 +424,8 @@ async function handle(m) {
     await onSignal(m.from, m.data);
   } else if (m.type === 'caption') {
     renderCaption(m);
+  } else if (m.type === 'room_closed') {
+    closeByHost();
   } else if (m.type === 'room_full') {
     // Say which wall was hit. Otherwise the socket just closes and the page
     // retries forever, looking like the server is down.

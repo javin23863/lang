@@ -106,6 +106,11 @@ class Participant:
 
 participants: dict[int, Participant] = {}
 rooms: dict[str, float] = {}  # room id -> expiry; deliberately memory-only
+# Host controls are intentionally separate from participant invitations. They
+# stay only in this local process; the permanent Worker signs an equivalent
+# room-bound bearer with its existing HMAC key.
+host_controls: dict[str, str] = {}  # control bearer -> room id
+closed_rooms: dict[str, float] = {}  # room id -> original expiry tombstone
 _next_id = 1
 _id_lock = threading.Lock()
 
@@ -123,6 +128,10 @@ def _prune_rooms(now: float | None = None):
     for room_id, expiry in list(rooms.items()):
         if expiry <= now and room_id not in active:
             rooms.pop(room_id, None)
+            closed_rooms.pop(room_id, None)
+            for control, controlled_room in list(host_controls.items()):
+                if controlled_room == room_id:
+                    host_controls.pop(control, None)
 
 
 def create_room() -> str:
@@ -139,10 +148,40 @@ def create_room() -> str:
 
 def room_is_live(room_id: str) -> bool:
     expiry = rooms.get(room_id)
-    if expiry is None or expiry <= time.time():
+    if room_id in closed_rooms or expiry is None or expiry <= time.time():
         _prune_rooms()
         return False
     return True
+
+
+def room_is_closed(room_id: str) -> bool:
+    expiry = closed_rooms.get(room_id)
+    if expiry is None:
+        return False
+    if expiry <= time.time():
+        _prune_rooms()
+        return False
+    return True
+
+
+def create_host_control(room_id: str) -> str:
+    """Mint a local-only host bearer that never appears in the room URL."""
+    while True:
+        control = secrets.token_urlsafe(32)
+        if control not in host_controls:
+            host_controls[control] = room_id
+            return control
+
+
+def controlled_room(token: str) -> str | None:
+    """Return an unexpired live or tombstoned room for its exact host bearer."""
+    if not token or " " in token:
+        return None
+    for control, room_id in host_controls.items():
+        if secrets.compare_digest(control, token):
+            expiry = rooms.get(room_id)
+            return room_id if expiry is not None and expiry > time.time() else None
+    return None
 
 
 def request_is_same_origin(request: Request) -> bool:
@@ -153,6 +192,25 @@ def request_is_same_origin(request: Request) -> bool:
     if not origin or not host or scheme not in ("http", "https"):
         return False
     return origin == f"{scheme}://{host}"
+
+
+def control_request_is_same_origin(request: Request) -> bool:
+    if request_is_same_origin(request):
+        return True
+    # Same-origin fetch GETs do not consistently carry Origin. Fetch Metadata
+    # is browser-set and lets the installed dashboard refresh safely without
+    # accepting a cross-site control request.
+    return (request.method == "GET"
+            and request.headers.get("sec-fetch-site") == "same-origin"
+            and request.headers.get("sec-fetch-mode") in ("cors", "same-origin"))
+
+
+def control_room_from_request(request: Request) -> str | None:
+    if not control_request_is_same_origin(request):
+        return None
+    authorization = request.headers.get("authorization", "")
+    token = authorization.removeprefix("Bearer ") if authorization.startswith("Bearer ") else ""
+    return controlled_room(token)
 
 
 def room_participants(room_id: str) -> list[Participant]:
@@ -380,7 +438,9 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 @app.get("/")
 async def index():
     with open(os.path.join(STATIC, "index.html"), encoding="utf-8") as f:
-        return HTMLResponse(f.read(), headers={"Cache-Control": "no-store"})
+        return HTMLResponse(f.read(), headers={
+            "Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
+        })
 
 
 @app.get("/manifest.webmanifest")
@@ -422,8 +482,13 @@ async def new_room(request: Request):
         room_id = create_room()
     except RuntimeError:
         return JSONResponse({"error": "room capacity reached"}, status_code=503)
-    return JSONResponse({"path": f"/room/{room_id}"}, status_code=201,
-                        headers={"Cache-Control": "no-store"})
+    return JSONResponse({
+        "path": f"/room/{room_id}",
+        "host_control": create_host_control(room_id),
+        "expires_at": int(rooms[room_id]),
+    }, status_code=201, headers={
+        "Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
+    })
 
 
 @app.get("/room/{room_id}")
@@ -442,9 +507,68 @@ async def room_page(room_id: str):
 async def room_preflight(request: Request):
     authorization = request.headers.get("authorization", "")
     room_id = authorization.removeprefix("Bearer ") if authorization.startswith("Bearer ") else ""
+    if room_is_closed(room_id):
+        return Response(status_code=410, headers={"Cache-Control": "no-store",
+                                                   "Referrer-Policy": "no-referrer"})
     if not room_id or " " in room_id or not room_is_live(room_id):
-        return Response(status_code=401, headers={"Cache-Control": "no-store"})
-    return Response(status_code=204, headers={"Cache-Control": "no-store"})
+        return Response(status_code=401, headers={"Cache-Control": "no-store",
+                                                   "Referrer-Policy": "no-referrer"})
+    return Response(status_code=204, headers={"Cache-Control": "no-store",
+                                               "Referrer-Policy": "no-referrer"})
+
+
+def host_room_state(room_id: str) -> dict:
+    count = 0 if room_is_closed(room_id) else len(room_participants(room_id))
+    return {
+        "state": "closed" if room_is_closed(room_id) else ("open" if count else "ready"),
+        "participant_count": count,
+        "participant_limit": MAX_PARTICIPANTS,
+    }
+
+
+async def revoke_room(room_id: str) -> None:
+    """Terminally disconnect a room without deleting its expiry tombstone."""
+    if room_is_closed(room_id):
+        return
+    expiry = rooms.get(room_id)
+    if expiry is None or expiry <= time.time():
+        return
+    closed_rooms[room_id] = expiry
+    closing = room_participants(room_id)
+    # Remove first: close callbacks cannot fan stale presence to a peer after
+    # the terminal message, and queued compute is cancelled before the socket.
+    for participant in closing:
+        participants.pop(participant.id, None)
+        jobs.drop_speaker(participant.id)
+    for participant in closing:
+        try:
+            await participant.ws.send_text(json.dumps({"type": "room_closed"}))
+            await participant.ws.close(code=4001, reason="room closed")
+        except Exception:
+            pass
+
+
+@app.get("/api/room-control")
+async def room_control_status(request: Request):
+    room_id = control_room_from_request(request)
+    if room_id is None:
+        return JSONResponse({"error": "forbidden"}, status_code=403,
+                            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+    return JSONResponse(host_room_state(room_id), headers={
+        "Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
+    })
+
+
+@app.post("/api/room-control/close")
+async def close_room(request: Request):
+    room_id = control_room_from_request(request)
+    if room_id is None:
+        return JSONResponse({"error": "forbidden"}, status_code=403,
+                            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+    await revoke_room(room_id)
+    return JSONResponse(host_room_state(room_id), headers={
+        "Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
+    })
 
 
 @app.get("/test")
@@ -534,7 +658,8 @@ async def tts_audio(request: Request):
 async def ws_endpoint(ws: WebSocket, room_id: str):
     await ws.accept()
     if not room_is_live(room_id):
-        await ws.close(code=1008)
+        await ws.close(code=4001 if room_is_closed(room_id) else 1008,
+                       reason="room closed" if room_is_closed(room_id) else "room unavailable")
         return
     p = Participant(id=_new_id(), ws=ws, room=room_id)
     # A socket occupies a slot only once it has joined. Counting connections

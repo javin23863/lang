@@ -132,7 +132,9 @@ def test_private_room_http_flow():
 
     rooms_before = len(srv.rooms)
     landing = client.get("/")
-    assert landing.status_code == 200 and 'action="/rooms"' in landing.text
+    assert landing.status_code == 200
+    assert 'id="createBtn"' in landing.text and 'id="closeBtn"' in landing.text
+    assert "localStorage" in landing.text and "navigator.share" in landing.text
     assert len(srv.rooms) == rooms_before, "a GET allocated a private room"
     opened = client.post("/rooms", headers=SAME_ORIGIN, follow_redirects=False)
     assert opened.status_code == 303
@@ -160,6 +162,59 @@ def test_private_room_http_flow():
     assert client.post("/api/rooms", headers={"Origin": "https://attacker.test"}).status_code == 403
     assert client.post("/rooms", headers={"Origin": "https://attacker.test"}).status_code == 403
     assert len(srv.rooms) == before, "cross-site room creation consumed local room capacity"
+
+
+def test_local_host_control_closes_only_its_room_and_preserves_the_tombstone():
+    """The dashboard's host bearer is separate from a participant invitation."""
+    srv.participants.clear()
+    srv.rooms.clear()
+    srv.host_controls.clear()
+    srv.closed_rooms.clear()
+    client = TestClient(srv.app)
+
+    created = client.post("/api/rooms", headers=SAME_ORIGIN)
+    assert created.status_code == 201
+    body = created.json()
+    room_id = body["path"].split("/")[-1]
+    assert re.fullmatch(r"[A-Za-z0-9_-]{24}", room_id)
+    assert re.fullmatch(r"[A-Za-z0-9_-]{43}", body["host_control"])
+    assert room_id not in body["host_control"]
+    assert created.headers["cache-control"] == "no-store"
+    assert created.headers["referrer-policy"] == "no-referrer"
+
+    control = {**SAME_ORIGIN, "Authorization": f"Bearer {body['host_control']}"}
+    participant = {**SAME_ORIGIN, "Authorization": f"Bearer {room_id}"}
+    assert client.get("/api/room-control", headers=control).json() == {
+        "state": "ready", "participant_count": 0, "participant_limit": 4
+    }
+    assert client.get("/api/room-control", headers=participant).status_code == 403
+    assert client.get("/api/room-control", headers={
+        "Origin": "https://attacker.test", "Authorization": f"Bearer {body['host_control']}"
+    }).status_code == 403
+
+    other = client.post("/api/rooms", headers=SAME_ORIGIN).json()
+    with client.websocket_connect(f"/ws/{room_id}") as joined:
+        joined.send_json({"type": "join", "lang": "en", "name": "host",
+                          "voice_style": "female"})
+        assert joined.receive_json()["type"] == "welcome"
+        assert client.get("/api/room-control", headers=control).json()["state"] == "open"
+        closed = client.post("/api/room-control/close", headers=control)
+        assert closed.status_code == 200
+        assert closed.json() == {"state": "closed", "participant_count": 0,
+                                 "participant_limit": 4}
+        assert joined.receive_json() == {"type": "room_closed"}
+        try:
+            joined.receive_json()
+            raise AssertionError("host-closed room WebSocket stayed open")
+        except WebSocketDisconnect as exc:
+            assert exc.code == 4001
+
+    assert client.get(body["path"]).status_code == 404
+    assert client.get("/api/room", headers={"Authorization": f"Bearer {room_id}"}).status_code == 410
+    assert client.get(other["path"]).status_code == 200
+    assert room_id in srv.closed_rooms, "close must retain the participant-link tombstone"
+    srv.rooms[room_id] = time.time() - 1
+    assert client.get("/api/room-control", headers=control).status_code == 403
 
 
 def test_speech_end_after_browser_mute_finalizes_pending_audio():

@@ -3,19 +3,284 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Private Translator Room</title>
+<meta name="theme-color" content="#111b21">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<title>Live Translator</title>
 <style>
-*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;
-font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0b141a;
-color:#e9edef;padding:24px}.card{width:min(420px,100%);background:#111b21;border-radius:18px;
-padding:28px;box-shadow:0 12px 36px #0008}h1{font-size:26px;margin:0 0 10px}p{color:#aebac1;
-line-height:1.5;margin:0 0 22px}button{width:100%;border:0;border-radius:24px;padding:14px;
-font:700 16px inherit;background:#00a884;color:#fff;cursor:pointer}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:#0b141a;color:#e9edef;
+font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:24px;
+display:grid;place-items:center}.card{width:min(680px,100%);background:#111b21;border:1px solid #2a3942;
+border-radius:18px;padding:clamp(20px,4vw,32px);box-shadow:0 12px 36px #0008}h1{font-size:clamp(24px,4vw,32px);
+margin:0 0 8px}.intro,.muted{color:#aebac1;line-height:1.5}.intro{margin:0 0 22px}.state{border-radius:12px;
+padding:12px 14px;background:#202c33;margin:0 0 18px;font-weight:700}.state[data-state="open"]{background:#075e54}
+.state[data-state="closed"],.state[data-state="expired"],.state[data-state="error"]{background:#5b2525}.room{display:grid;
+gap:12px;border-top:1px solid #2a3942;padding-top:20px}.field{display:grid;gap:6px;color:#aebac1;font-size:13px}
+input{width:100%;min-width:0;border:1px solid #53616a;border-radius:10px;background:#0b141a;color:#e9edef;
+font:14px ui-monospace,SFMono-Regular,Consolas,monospace;padding:12px}.actions{display:grid;
+grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}button{border:0;border-radius:12px;min-height:44px;
+padding:10px 12px;font:700 14px inherit;cursor:pointer;background:#202c33;color:#e9edef}button.primary{background:#00a884;
+color:#062b22}button.danger{background:#d74747;color:#fff}button:focus-visible,input:focus-visible{outline:3px solid #53bdeb;
+outline-offset:2px}button:disabled{cursor:wait;opacity:.65}.notice{min-height:20px;margin:2px 0 0;color:#aebac1;font-size:13px}
+.footnote{font-size:12px;margin:18px 0 0}.create{width:100%;margin-top:20px;font-size:16px}
+@media(max-width:500px){body{padding:12px}.card{border-radius:14px}.actions{grid-template-columns:1fr 1fr}}
+@media(max-width:380px){body{padding:8px}.card{padding:16px}.actions{gap:7px}button{font-size:13px;padding:9px 7px}
+input{font-size:12px}.intro{font-size:14px}}
 </style>
 </head>
-<body><main class="card">
-  <h1>Private translated call</h1>
-  <p>Create a private link, then share it with your WhatsApp contact. The link expires after 24 hours.</p>
-  <form method="post" action="/rooms"><button type="submit">Create private room</button></form>
-</main></body>
+<body>
+<main class="card" aria-labelledby="title">
+  <h1 id="title">Live Translator</h1>
+  <p class="intro">Create a private English–Spanish call, share its link, and close it from this device when the call is over.</p>
+  <p id="roomState" class="state" data-state="idle" aria-live="polite">No active room on this device.</p>
+  <section id="roomPanel" class="room" hidden aria-label="Current private room">
+    <label class="field" for="shareLink">Participant link
+      <input id="shareLink" type="url" readonly spellcheck="false" autocomplete="off">
+    </label>
+    <div class="actions">
+      <button id="copyBtn" type="button">Copy link</button>
+      <button id="shareBtn" type="button">Share</button>
+      <button id="openBtn" type="button">Open room</button>
+      <button id="closeBtn" class="danger" type="button">Close room</button>
+    </div>
+  </section>
+  <p id="roomNotice" class="notice" role="status" aria-live="polite"></p>
+  <button id="createBtn" class="primary create" type="button">Create Room</button>
+  <p class="muted footnote">Room control stays only on this device. Closing a room disconnects everyone and permanently disables its shared link.</p>
+</main>
+<script>
+const STORAGE_KEY = "live-translator.host-room.v1";
+const $ = id => document.getElementById(id);
+let currentRoom = null;
+let statusTimer = null;
+let busy = false;
+
+function roomUrl(room) {
+  return new URL(room.path, location.origin).toString();
+}
+
+function validRoom(value) {
+  return value && typeof value.path === "string" && typeof value.host_control === "string"
+    && Number.isSafeInteger(value.expires_at);
+}
+
+function loadRoom() {
+  try {
+    const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+    return validRoom(value) ? value : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function saveRoom(room) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(room));
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function forgetRoom() {
+  try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
+}
+
+function setNotice(text) {
+  $("roomNotice").textContent = text || "";
+}
+
+function setState(state, text) {
+  $("roomState").dataset.state = state;
+  $("roomState").textContent = text;
+}
+
+function renderRoom(state, participantCount) {
+  $("roomPanel").hidden = !currentRoom;
+  $("createBtn").textContent = currentRoom ? "Create New Room" : "Create Room";
+  if (!currentRoom) return;
+  $("shareLink").value = roomUrl(currentRoom);
+  const count = Number.isInteger(participantCount) ? participantCount : 0;
+  setState(state, state === "open"
+    ? "Room open — " + count + " participant" + (count === 1 ? "" : "s") + "."
+    : "Room ready — no participants joined yet.");
+}
+
+function setBusy(value) {
+  busy = value;
+  for (const id of ["createBtn", "copyBtn", "shareBtn", "openBtn", "closeBtn"]) {
+    $(id).disabled = value;
+  }
+}
+
+function stopPolling() {
+  clearInterval(statusTimer);
+  statusTimer = null;
+}
+
+function startPolling() {
+  stopPolling();
+  if (!currentRoom) return;
+  statusTimer = setInterval(() => {
+    if (document.visibilityState === "visible") refreshStatus();
+  }, 15000);
+}
+
+async function refreshStatus() {
+  if (!currentRoom || busy) return;
+  try {
+    const response = await fetch("/api/room-control", {
+      headers: {Authorization: "Bearer " + currentRoom.host_control, Accept: "application/json"}
+    });
+    if (response.status === 403) {
+      forgetRoom();
+      currentRoom = null;
+      stopPolling();
+      $("roomPanel").hidden = true;
+      $("createBtn").textContent = "Create Room";
+      setState("expired", "This room has expired or is no longer controlled by this device.");
+      return;
+    }
+    if (!response.ok) throw new Error("status unavailable");
+    const value = await response.json();
+    if (value.state === "closed") {
+      forgetRoom();
+      currentRoom = null;
+      stopPolling();
+      $("roomPanel").hidden = true;
+      $("createBtn").textContent = "Create Room";
+      setState("closed", "This room is closed.");
+      return;
+    }
+    if (value.state !== "ready" && value.state !== "open") throw new Error("invalid room state");
+    renderRoom(value.state, value.participant_count);
+    setNotice("");
+  } catch (_) {
+    setState("error", "Room status is temporarily unavailable. The control stays saved on this device.");
+  }
+}
+
+async function createRoom() {
+  if (busy) return;
+  if (currentRoom) {
+    if (!window.confirm("Close the active room and create a new one? Everyone in it will be disconnected.")) return;
+    await closeRoom(false);
+    if (currentRoom) return;
+  }
+  setBusy(true);
+  setNotice("");
+  try {
+    const response = await fetch("/api/rooms", {
+      method: "POST", headers: {Accept: "application/json"}
+    });
+    if (!response.ok) throw new Error("creation failed");
+    const room = await response.json();
+    if (!validRoom(room) || !saveRoom(room)) throw new Error("storage unavailable");
+    currentRoom = room;
+    renderRoom("ready", 0);
+    startPolling();
+    setNotice("Private participant link is ready to share.");
+  } catch (_) {
+    setState("error", "Could not create and save a private room on this device.");
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function copyLink() {
+  if (!currentRoom || busy) return;
+  const link = roomUrl(currentRoom);
+  try {
+    if (navigator.clipboard) await navigator.clipboard.writeText(link);
+    else {
+      $("shareLink").focus();
+      $("shareLink").select();
+      if (!document.execCommand("copy")) throw new Error("copy failed");
+    }
+    setNotice("Participant link copied.");
+  } catch (_) {
+    $("shareLink").focus();
+    $("shareLink").select();
+    setNotice("Select and copy the participant link.");
+  }
+}
+
+async function shareLink() {
+  if (!currentRoom || busy) return;
+  const link = roomUrl(currentRoom);
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title: "Private translated video call",
+        text: "Join my private English–Spanish video call.",
+        url: link
+      });
+      setNotice("Participant link shared.");
+      return;
+    } catch (error) {
+      if (error && error.name === "AbortError") return;
+    }
+  }
+  await copyLink();
+}
+
+function openRoom() {
+  if (!currentRoom || busy) return;
+  // `noopener` makes Chromium correctly return null even when it opened the
+  // tab, which used to show a false "blocked" message. A blank tab created by
+  // this click gives us a handle to sever before navigating to the bearer URL.
+  const opened = window.open("about:blank", "_blank");
+  if (!opened) {
+    setNotice("Opening was blocked. Copy the participant link instead.");
+    return;
+  }
+  opened.opener = null;
+  opened.location.replace(roomUrl(currentRoom));
+}
+
+async function closeRoom(withConfirmation = true) {
+  if (!currentRoom || busy) return;
+  if (withConfirmation && !window.confirm("Close this room now? Everyone will be disconnected and the participant link will stop working.")) return;
+  setBusy(true);
+  try {
+    const response = await fetch("/api/room-control/close", {
+      method: "POST",
+      headers: {Authorization: "Bearer " + currentRoom.host_control, Accept: "application/json"}
+    });
+    if (!response.ok) throw new Error("close failed");
+    forgetRoom();
+    currentRoom = null;
+    stopPolling();
+    $("roomPanel").hidden = true;
+    $("createBtn").textContent = "Create Room";
+    setState("closed", "This room is closed. Its participant link no longer works.");
+    setNotice("");
+  } catch (_) {
+    setState("error", "Could not close the room. It remains saved on this device.");
+  } finally {
+    setBusy(false);
+  }
+}
+
+$("createBtn").onclick = createRoom;
+$("copyBtn").onclick = copyLink;
+$("shareBtn").onclick = shareLink;
+$("openBtn").onclick = openRoom;
+$("closeBtn").onclick = () => closeRoom(true);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") refreshStatus();
+});
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+currentRoom = loadRoom();
+if (currentRoom && currentRoom.expires_at * 1000 > Date.now()) {
+  renderRoom("ready", 0);
+  startPolling();
+  refreshStatus();
+} else if (currentRoom) {
+  forgetRoom();
+  currentRoom = null;
+  setState("expired", "This room has expired.");
+}
+</script>
+</body>
 </html>
