@@ -36,6 +36,18 @@ async function createRoom(): Promise<string> {
 }
 
 describe("public room URL interface", () => {
+  it("keeps the legacy form route as a participant-only redirect", async () => {
+    const response = await exports.default.fetch(new Request(`${ORIGIN}/rooms`, {
+      method: "POST", headers: { Origin: ORIGIN }, redirect: "manual"
+    }));
+
+    expect(response.status).toBe(303);
+    const location = response.headers.get("Location");
+    expect(location).toMatch(/^\/room\/[A-Za-z0-9_-]{24}\.\d{10}\.[A-Za-z0-9_-]{43}$/);
+    expect(location).not.toContain("hc1.");
+    expect((await exports.default.fetch(`${ORIGIN}${location}`)).status).toBe(200);
+  });
+
   it("creates a signed 24-hour bearer and serves only a verified room", async () => {
     const path = await createRoom();
     const match = path.match(/^\/room\/([A-Za-z0-9_-]{24})\.(\d{10})\.([A-Za-z0-9_-]{43})$/);

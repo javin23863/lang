@@ -21,6 +21,10 @@ describe("installed host dashboard client", () => {
     expect(html).toContain('fetch("/api/rooms"');
     expect(html).toContain('fetch("/api/room-control"');
     expect(html).toContain('fetch("/api/room-control/close"');
+    expect(html).toContain("function clearCurrentRoom(state, message)");
+    expect(html).toContain('clearCurrentRoom("expired", "This room has expired or is no longer controlled by this device.")');
+    expect(html).toContain('clearCurrentRoom("closed", "This room is closed.")');
+    expect(html).toContain('clearCurrentRoom("closed", "This room is closed. Its participant link no longer works.")');
     expect(html).toContain('window.open("about:blank", "_blank")');
     expect(html).toContain("opened.opener = null");
     expect(html).toContain("@media(max-width:380px)");

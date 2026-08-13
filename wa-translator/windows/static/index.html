@@ -118,6 +118,15 @@ function stopPolling() {
   statusTimer = null;
 }
 
+function clearCurrentRoom(state, message) {
+  forgetRoom();
+  currentRoom = null;
+  stopPolling();
+  $("roomPanel").hidden = true;
+  $("createBtn").textContent = "Create Room";
+  setState(state, message);
+}
+
 function startPolling() {
   stopPolling();
   if (!currentRoom) return;
@@ -133,23 +142,13 @@ async function refreshStatus() {
       headers: {Authorization: "Bearer " + currentRoom.host_control, Accept: "application/json"}
     });
     if (response.status === 403) {
-      forgetRoom();
-      currentRoom = null;
-      stopPolling();
-      $("roomPanel").hidden = true;
-      $("createBtn").textContent = "Create Room";
-      setState("expired", "This room has expired or is no longer controlled by this device.");
+      clearCurrentRoom("expired", "This room has expired or is no longer controlled by this device.");
       return;
     }
     if (!response.ok) throw new Error("status unavailable");
     const value = await response.json();
     if (value.state === "closed") {
-      forgetRoom();
-      currentRoom = null;
-      stopPolling();
-      $("roomPanel").hidden = true;
-      $("createBtn").textContent = "Create Room";
-      setState("closed", "This room is closed.");
+      clearCurrentRoom("closed", "This room is closed.");
       return;
     }
     if (value.state !== "ready" && value.state !== "open") throw new Error("invalid room state");
@@ -248,12 +247,7 @@ async function closeRoom(withConfirmation = true) {
       headers: {Authorization: "Bearer " + currentRoom.host_control, Accept: "application/json"}
     });
     if (!response.ok) throw new Error("close failed");
-    forgetRoom();
-    currentRoom = null;
-    stopPolling();
-    $("roomPanel").hidden = true;
-    $("createBtn").textContent = "Create Room";
-    setState("closed", "This room is closed. Its participant link no longer works.");
+    clearCurrentRoom("closed", "This room is closed. Its participant link no longer works.");
     setNotice("");
   } catch (_) {
     setState("error", "Could not close the room. It remains saved on this device.");

@@ -213,6 +213,15 @@ async function createRoomResponse(request: Request, env: Env): Promise<Response>
   });
 }
 
+async function createRoomRedirect(request: Request, env: Env): Promise<Response> {
+  const created = await createRoomResponse(request, env);
+  if (!created.ok) return created;
+  const { path } = await created.json<{ path: string }>();
+  const headers = privateHeaders();
+  headers.set("Location", path);
+  return new Response(null, { status: 303, headers });
+}
+
 async function roomPage(request: Request, env: Env, token: string): Promise<Response> {
   const room = await verifyRoom(token, env.ROOM_SIGNING_KEY);
   if (!room || !await roomIsAvailable(room, env)) return deniedRoom();
@@ -1140,6 +1149,9 @@ export default {
     if (url.pathname === "/api/room-control/close") return closeHostRoom(request, env);
     if (request.method === "POST" && url.pathname === "/api/rooms") {
       return createRoomResponse(request, env);
+    }
+    if (request.method === "POST" && url.pathname === "/rooms") {
+      return createRoomRedirect(request, env);
     }
     const roomMatch = url.pathname.match(/^\/room\/([^/]+)$/);
     if (request.method === "GET" && roomMatch) {
