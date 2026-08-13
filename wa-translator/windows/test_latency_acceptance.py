@@ -72,10 +72,16 @@ class BrowserVoiceLatencyTests(unittest.TestCase):
                 {"at": 9700, "mine": False},
             ],
             "plays": [
-                {"at": 2900, "type": "playing"},
+                {"at": 2900, "type": "playing", "tts": {
+                    "start": 1710, "responseStart": 2800, "responseEnd": 2850,
+                }},
                 {"at": 4000, "type": "ended"},
-                {"at": 6900, "type": "playing"},
-                {"at": 10900, "type": "playing"},
+                {"at": 6900, "type": "playing", "tts": {
+                    "start": 5710, "responseStart": 6800, "responseEnd": 6850,
+                }},
+                {"at": 10900, "type": "playing", "tts": {
+                    "start": 9710, "responseStart": 10800, "responseEnd": 10850,
+                }},
             ],
         }
         records = _voice_latency_records(acceptance, "es")
@@ -83,6 +89,11 @@ class BrowserVoiceLatencyTests(unittest.TestCase):
         self.assertEqual(records[0]["speech_end_to_final_s"], 0.7)
         self.assertEqual(records[0]["final_to_voice_start_s"], 1.2)
         self.assertEqual(records[0]["speech_end_to_voice_start_s"], 1.9)
+        self.assertEqual(records[0]["final_to_tts_request_s"], 0.01)
+        self.assertEqual(records[0]["tts_request_to_response_s"], 1.14)
+        self.assertEqual(records[0]["tts_response_to_voice_start_s"], 0.05)
+        self.assertEqual(records[0]["phase"], "cold")
+        self.assertEqual(records[1]["phase"], "warm")
         assert_warm_voice_targets(records)
 
         records[-1]["speech_end_to_voice_start_s"] = 3.001

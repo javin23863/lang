@@ -111,7 +111,8 @@ def _voice_latency_records(
         assert speech_end["at"] <= caption["at"] <= play["at"], (
             f"turn {turn} browser event order was invalid")
         record = {
-            "event": "voice_latency", "phase": "warm", "turn": turn,
+            "event": "voice_latency",
+            "phase": "cold" if turn == 1 else "warm", "turn": turn,
             "speaker_lang": "es" if listener_lang == "en" else "en",
             "listener_lang": listener_lang,
             "speech_end_to_final_s": round(
@@ -121,12 +122,26 @@ def _voice_latency_records(
             "speech_end_to_voice_start_s": round(
                 (play["at"] - speech_end["at"]) / 1_000, 3),
         }
+        tts = play.get("tts")
+        if tts:
+            record.update({
+                "final_to_tts_request_s": round(
+                    (tts["start"] - caption["at"]) / 1_000, 3),
+                "tts_request_to_response_s": round(
+                    (tts["responseEnd"] - tts["start"]) / 1_000, 3),
+                "tts_first_byte_s": round(
+                    (tts["responseStart"] - tts["start"]) / 1_000, 3),
+                "tts_response_to_voice_start_s": round(
+                    (play["at"] - tts["responseEnd"]) / 1_000, 3),
+            })
         records.append(record)
     return records
 
 
 def assert_warm_voice_targets(records: list[dict[str, Any]]) -> None:
     for record in records:
+        if record["phase"] != "warm":
+            continue
         assert record["speech_end_to_voice_start_s"] <= VOICE_WARM_TARGET_S, (
             f'turn {record["turn"]} warm voice '
             f'{record["speech_end_to_voice_start_s"]:.3f}s exceeded '
@@ -334,7 +349,17 @@ OBSERVER = r"""(() => {
   });
   fallbackAudio.addEventListener('playing', async () => {
     if (!fallbackAudio.src.startsWith('blob:')) return;
-    const event = {type: 'playing', at: performance.now(), audio_base64: null};
+    const entries = performance.getEntriesByType('resource').filter(entry => {
+      try { return new URL(entry.name).pathname === '/tts'; } catch (_) { return false; }
+    });
+    const timing = entries.at(-1);
+    const event = {
+      type: 'playing', at: performance.now(), audio_base64: null,
+      tts: timing && {
+        start: timing.startTime, responseStart: timing.responseStart,
+        responseEnd: timing.responseEnd
+      }
+    };
     window.__acceptance.plays.push(event);
     try {
       // Clone the already-created production Blob URL. This does not replace
