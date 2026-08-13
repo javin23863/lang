@@ -22,6 +22,12 @@ system, native wrapper or custom domain.
   attachments; captions and media are never stored.
   Ordinary memory is disposable. An active outbound Modal WebSocket prevents
   Durable Object hibernation while that compute stream is open.
+- The client renews its presence lease every 10 seconds. Leave and a delivered
+  WebSocket close free a slot immediately. If a phone disappears without a
+  close handshake, another live heartbeat or the next join removes it once the
+  30-second lease has elapsed; it no longer counts toward the four-person cap.
+  An unjoined socket also stops counting toward the eight-pending-socket guard
+  after that same lease.
 - A Modal process restart loses decoder/endpointer state by design. Cloudflare
   reconnects each participant's compute stream independently and drops PCM
   while reconnecting instead of buffering stale speech. The browser's natural
@@ -38,8 +44,9 @@ byte PCM frames, 300-character captions and TTS text, 2 KiB TTS request bodies,
 participants, a 40,000-byte/second microphone rate with a 64,000-byte burst,
 12 TTS phrases per room per 60 seconds, an eight-second maximum compute
 reconnect delay, and TURN TTL clamped to 60–172,800 seconds (configured to
-3,600 seconds). Browsers refresh TURN one minute before expiry, replace every
-peer connection's ICE configuration, and restart ICE.
+3,600 seconds). Presence heartbeats run every 10 seconds with a 30-second
+lease. Browsers refresh TURN one minute before expiry, replace every peer
+connection's ICE configuration, and restart ICE.
 
 ## Dependency and license gate
 

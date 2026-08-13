@@ -1,6 +1,6 @@
 import { env, exports } from "cloudflare:workers";
 import { runDurableObjectAlarm, runInDurableObject } from "cloudflare:test";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 const ORIGIN = "https://room.test";
 
@@ -144,10 +144,160 @@ describe("public room WebSocket interface", () => {
     }
     const fifth = await openSocket(room);
     fifth.socket.send(JSON.stringify({ type: "join", lang: "en", name: "P4", voice_style: "male" }));
-    expect(await fifth.next()).toEqual({ type: "room_full", limit: 4 });
+    expect(await fifth.next()).toEqual({
+      type: "room_full", limit: 4, participant_count: 4
+    });
     const closed = new Promise<CloseEvent>(resolve => fifth.socket.addEventListener("close", resolve));
     expect((await closed).code).toBe(1013);
     for (const client of held) client.socket.close(1000, "done");
+  });
+
+  it("releases an explicit Leave immediately and reports the new participant count", async () => {
+    const room = await createRoom();
+    const a = await openSocket(room);
+    const aWelcome = await join(a, "en", "A", "female");
+    expect(aWelcome).toMatchObject({
+      type: "welcome", participant_count: 1, participant_limit: 4
+    });
+
+    const b = await openSocket(room);
+    const bWelcome = await join(b, "es", "B", "male");
+    expect(bWelcome).toMatchObject({ type: "welcome", participant_count: 2 });
+    expect(await a.next()).toMatchObject({
+      type: "peer_join", id: bWelcome.id, participant_count: 2
+    });
+
+    const bClosed = new Promise<CloseEvent>(resolve =>
+      b.socket.addEventListener("close", resolve));
+    b.socket.send(JSON.stringify({ type: "leave" }));
+    expect(await a.next()).toMatchObject({
+      type: "peer_leave", id: bWelcome.id, participant_count: 1
+    });
+    expect((await bClosed).code).toBe(1000);
+
+    const replacement = await openSocket(room);
+    expect(await join(replacement, "es", "Replacement", "female")).toMatchObject({
+      type: "welcome",
+      participant_count: 2,
+      peers: [expect.objectContaining({ id: aWelcome.id })]
+    });
+    a.socket.close(1000, "done");
+    replacement.socket.close(1000, "done");
+  });
+
+  it("releases a normal browser WebSocket close immediately", async () => {
+    const room = await createRoom();
+    const survivor = await openSocket(room);
+    const survivorWelcome = await join(survivor, "en", "Survivor", "female");
+    const closing = await openSocket(room);
+    const closingWelcome = await join(closing, "es", "Closing", "male");
+    await survivor.next(); // peer_join
+
+    closing.socket.close(1000, "page closed");
+    expect(await survivor.next()).toMatchObject({
+      type: "peer_leave", id: closingWelcome.id, participant_count: 1
+    });
+
+    const replacement = await openSocket(room);
+    expect(await join(replacement, "es", "Replacement", "female")).toMatchObject({
+      type: "welcome",
+      participant_count: 2,
+      peers: [expect.objectContaining({ id: survivorWelcome.id })]
+    });
+    survivor.socket.close(1000, "done");
+    replacement.socket.close(1000, "done");
+  });
+
+  it("reclaims silent half-open slots after the documented 30 second lease", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const joinedAt = Date.now();
+      const room = await createRoom();
+      const held: SocketClient[] = [];
+      for (let index = 0; index < 4; index++) {
+        const client = await openSocket(room);
+        held.push(client);
+        expect(await join(client, "en", `Silent${index}`, "female")).toMatchObject({
+          type: "welcome",
+          presence_lease_ms: 30_000,
+          heartbeat_interval_ms: 10_000
+        });
+        for (const earlier of held.slice(0, -1)) await earlier.next();
+      }
+
+      vi.setSystemTime(joinedAt + 30_001);
+      const replacement = await openSocket(room);
+      expect(await join(replacement, "es", "Replacement", "male")).toMatchObject({
+        type: "welcome", peers: [], participant_count: 1
+      });
+
+      for (const client of held) client.socket.close(1000, "done");
+      replacement.socket.close(1000, "done");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("renews an active participant heartbeat while reclaiming a silent peer", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const joinedAt = Date.now();
+      const room = await createRoom();
+      const active = await openSocket(room);
+      const activeWelcome = await join(active, "en", "Active", "female");
+      const silent = await openSocket(room);
+      const silentWelcome = await join(silent, "es", "Silent", "male");
+      await active.next(); // peer_join
+
+      vi.setSystemTime(joinedAt + 20_000);
+      active.socket.send(JSON.stringify({ type: "heartbeat" }));
+      expect(await active.next()).toMatchObject({
+        type: "presence", participant_count: 2
+      });
+
+      vi.setSystemTime(joinedAt + 30_001);
+      active.socket.send(JSON.stringify({ type: "heartbeat" }));
+      expect(await active.next()).toMatchObject({
+        type: "peer_leave", id: silentWelcome.id, participant_count: 1
+      });
+      expect(await active.next()).toMatchObject({
+        type: "presence", participant_count: 1
+      });
+
+      const replacement = await openSocket(room);
+      expect(await join(replacement, "es", "Replacement", "female")).toMatchObject({
+        type: "welcome",
+        participant_count: 2,
+        peers: [expect.objectContaining({ id: activeWelcome.id })]
+      });
+      active.socket.close(1000, "done");
+      silent.socket.close(1000, "done");
+      replacement.socket.close(1000, "done");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reclaims eight abandoned pre-join sockets after the same 30 second lease", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const openedAt = Date.now();
+      const room = await createRoom();
+      const pending = await Promise.all(
+        Array.from({ length: 8 }, () => openSocket(room))
+      );
+
+      vi.setSystemTime(openedAt + 30_001);
+      const replacement = await openSocket(room);
+      expect(await join(replacement, "en", "Replacement", "female")).toMatchObject({
+        type: "welcome", peers: [], participant_count: 1
+      });
+
+      for (const client of pending) client.socket.close(1000, "done");
+      replacement.socket.close(1000, "done");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("alarms at token expiry and removes the Durable Object expiry record", async () => {

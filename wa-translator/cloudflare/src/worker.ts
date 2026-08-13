@@ -31,6 +31,8 @@ const MAX_TTS_CHARS = 300;
 const TURN_TTL_MAX_SECONDS = 48 * 60 * 60;
 const MAX_PARTICIPANTS = 4;
 const MAX_PENDING_SOCKETS = 8;
+const PRESENCE_HEARTBEAT_MS = 10_000;
+const PRESENCE_LEASE_MS = 30_000;
 const PCM_RATE_BYTES_PER_SECOND = 40_000;
 const PCM_BURST_BYTES = 64_000;
 const TTS_WINDOW_MS = 60_000;
@@ -53,6 +55,7 @@ type ParticipantAttachment = {
   lang: Language;
   name: string;
   voiceStyle: VoiceStyle;
+  lastSeenAt: number;
   ttsWindowStart: number;
   ttsCount: number;
 };
@@ -430,6 +433,70 @@ export class Room extends DurableObject<Env> {
     }
   }
 
+  private removeParticipant(
+    socket: WebSocket,
+    meta: ParticipantAttachment,
+    reason: string,
+    closeSocket: boolean
+  ): void {
+    if (!meta.joined) return;
+    meta.joined = false;
+    socket.serializeAttachment(meta);
+    this.closeCompute(meta.id);
+    this.pcmBudgets.delete(meta.id);
+    this.broadcast({
+      type: "peer_leave",
+      id: meta.id,
+      participant_count: this.participants().length,
+      participant_limit: MAX_PARTICIPANTS
+    }, socket);
+    if (closeSocket) {
+      try { socket.close(1000, reason.slice(0, 120)); } catch { /* already closed */ }
+    }
+  }
+
+  private sweepExpiredSockets(now: number): void {
+    const expired = this.ctx.getWebSockets("browser").flatMap(socket => {
+      const meta = this.attachment(socket);
+      return meta && (!Number.isFinite(meta.lastSeenAt)
+        || now - meta.lastSeenAt >= PRESENCE_LEASE_MS)
+        ? [{ socket, meta, wasJoined: meta.joined }] : [];
+    });
+    if (!expired.length) return;
+
+    // Mark the whole expired set first so every leave event reports the same
+    // final, accurate count and close callbacks cannot broadcast duplicates.
+    for (const { socket, meta, wasJoined } of expired) {
+      if (wasJoined) {
+        meta.joined = false;
+        socket.serializeAttachment(meta);
+        this.closeCompute(meta.id);
+        this.pcmBudgets.delete(meta.id);
+      }
+    }
+    const participantCount = this.participants().length;
+    for (const { socket, meta, wasJoined } of expired) {
+      if (wasJoined) {
+        this.broadcast({
+          type: "peer_leave",
+          id: meta.id,
+          participant_count: participantCount,
+          participant_limit: MAX_PARTICIPANTS
+        }, socket);
+      }
+      try { socket.close(1000, "presence lease expired"); } catch { /* already closed */ }
+    }
+  }
+
+  private leasedSocketCount(now: number): number {
+    return this.ctx.getWebSockets("browser").filter(socket => {
+      const meta = this.attachment(socket);
+      // Missing attachment state is invalid and must still consume capacity.
+      return !meta || (Number.isFinite(meta.lastSeenAt)
+        && now - meta.lastSeenAt < PRESENCE_LEASE_MS);
+    }).length;
+  }
+
   private policyClose(socket: WebSocket, reason: string): void {
     socket.close(1008, reason.slice(0, 120));
   }
@@ -489,6 +556,7 @@ export class Room extends DurableObject<Env> {
   }
 
   private consumeTts(participantId: string): { allowed: boolean; retryAfter: number } {
+    this.sweepExpiredSockets(Date.now());
     const participants = this.participants();
     if (!participants.some(({ meta }) => meta.id === participantId)) {
       return { allowed: false, retryAfter: 0 };
@@ -663,7 +731,9 @@ export class Room extends DurableObject<Env> {
         || request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
       return new Response("Expected WebSocket", { status: 426 });
     }
-    if (this.ctx.getWebSockets("browser").length >= MAX_PENDING_SOCKETS) {
+    const now = Date.now();
+    this.sweepExpiredSockets(now);
+    if (this.leasedSocketCount(now) >= MAX_PENDING_SOCKETS) {
       return new Response("Room connection capacity reached", { status: 503 });
     }
 
@@ -676,6 +746,7 @@ export class Room extends DurableObject<Env> {
       lang: "en",
       name: "Speaker",
       voiceStyle: "female",
+      lastSeenAt: Date.now(),
       ttsWindowStart: 0,
       ttsCount: 0
     };
@@ -699,6 +770,13 @@ export class Room extends DurableObject<Env> {
         this.policyClose(socket, "microphone rate exceeded");
         return;
       }
+      const now = Date.now();
+      if (!Number.isFinite(meta.lastSeenAt)
+          || now - meta.lastSeenAt >= PRESENCE_HEARTBEAT_MS) {
+        meta.lastSeenAt = now;
+        socket.serializeAttachment(meta);
+        this.sweepExpiredSockets(now);
+      }
       const compute = await this.ensureCompute(meta);
       if (compute?.readyState === 1) compute.send(message);
       // Frames are deliberately not queued while Modal reconnects. This bounds
@@ -720,9 +798,14 @@ export class Room extends DurableObject<Env> {
 
     if (!meta.joined) {
       if (data.type !== "join") return this.policyClose(socket, "join required");
+      this.sweepExpiredSockets(Date.now());
       const participants = this.participants();
       if (participants.length >= MAX_PARTICIPANTS) {
-        this.send(socket, { type: "room_full", limit: MAX_PARTICIPANTS });
+        this.send(socket, {
+          type: "room_full",
+          limit: MAX_PARTICIPANTS,
+          participant_count: participants.length
+        });
         socket.close(1013, "room full");
         return;
       }
@@ -732,6 +815,7 @@ export class Room extends DurableObject<Env> {
       meta.name = requestedName.slice(0, 40) || "Speaker";
       meta.voiceStyle = VOICE_STYLES.includes(data.voice_style as VoiceStyle)
         ? data.voice_style as VoiceStyle : "female";
+      meta.lastSeenAt = Date.now();
       if (participants.length) {
         meta.ttsWindowStart = participants[0].meta.ttsWindowStart || 0;
         meta.ttsCount = participants[0].meta.ttsCount || 0;
@@ -742,9 +826,36 @@ export class Room extends DurableObject<Env> {
         id: meta.id,
         langs: [...LANGUAGES],
         tts_provider: "kokoro",
+        participant_count: participants.length + 1,
+        participant_limit: MAX_PARTICIPANTS,
+        heartbeat_interval_ms: PRESENCE_HEARTBEAT_MS,
+        presence_lease_ms: PRESENCE_LEASE_MS,
         peers: participants.map(({ meta: peer }) => this.publicParticipant(peer))
       });
-      this.broadcast({ type: "peer_join", ...this.publicParticipant(meta) }, socket);
+      this.broadcast({
+        type: "peer_join",
+        ...this.publicParticipant(meta),
+        participant_count: participants.length + 1,
+        participant_limit: MAX_PARTICIPANTS
+      }, socket);
+      return;
+    }
+
+    meta.lastSeenAt = Date.now();
+    socket.serializeAttachment(meta);
+    this.sweepExpiredSockets(meta.lastSeenAt);
+
+    if (data.type === "heartbeat") {
+      this.send(socket, {
+        type: "presence",
+        participant_count: this.participants().length,
+        participant_limit: MAX_PARTICIPANTS
+      });
+      return;
+    }
+
+    if (data.type === "leave") {
+      this.removeParticipant(socket, meta, "left room", true);
       return;
     }
 
@@ -788,11 +899,7 @@ export class Room extends DurableObject<Env> {
 
   async webSocketClose(socket: WebSocket, code: number, reason: string): Promise<void> {
     const meta = this.attachment(socket);
-    if (meta?.joined) {
-      this.closeCompute(meta.id);
-      this.pcmBudgets.delete(meta.id);
-      this.broadcast({ type: "peer_leave", id: meta.id }, socket);
-    }
+    if (meta?.joined) this.removeParticipant(socket, meta, reason || "socket closed", false);
     try {
       socket.close(code || 1000, reason.slice(0, 120));
     } catch {
@@ -802,11 +909,7 @@ export class Room extends DurableObject<Env> {
 
   async webSocketError(socket: WebSocket): Promise<void> {
     const meta = this.attachment(socket);
-    if (meta?.joined) {
-      this.closeCompute(meta.id);
-      this.pcmBudgets.delete(meta.id);
-      this.broadcast({ type: "peer_leave", id: meta.id }, socket);
-    }
+    if (meta?.joined) this.removeParticipant(socket, meta, "socket error", false);
     try { socket.close(1011, "socket error"); } catch { /* already closed */ }
   }
 

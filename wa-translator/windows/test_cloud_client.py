@@ -61,6 +61,16 @@ class CloudClientContractTests(unittest.TestCase):
         self.assertNotIn("getAudioTracks", HTML[start:end])
         self.assertIn("workletNode.port.postMessage", HTML[start:end])
 
+    def test_presence_lease_heartbeat_and_explicit_leave_are_user_visible(self):
+        self.assertIn('id="participantCount"', HTML)
+        self.assertIn('id="leaveBtn"', HTML)
+        self.assertIn("presenceHeartbeatTimer", HTML)
+        self.assertIn("heartbeat_interval_ms", HTML)
+        self.assertIn("send({type: 'heartbeat'})", HTML)
+        self.assertIn("send({type: 'leave'})", HTML)
+        self.assertIn("window.addEventListener('pagehide', leaveRoom)", HTML)
+        self.assertIn("closed devices clear within 30 seconds", HTML)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

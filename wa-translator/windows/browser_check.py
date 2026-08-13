@@ -220,7 +220,13 @@ async def check_voice_modes(tab, other_tab, my_id, other_id, check):
                        "s.dispatchEvent(new Event('change'));return true})()")
     style_arrived = await _wait_js(
         tab, f"peers.get({json.dumps(other_id)})?.voiceStyle === 'male'")
-    check(style_arrived, "voice: published non-biometric style reached the listener")
+    style_state = await tab.js(
+        "({ws:ws.readyState, peers:[...peers].map(([id,p])=>"
+        "({id,voiceStyle:p.voiceStyle}))})")
+    published_state = await other_tab.js(
+        "({ws:ws.readyState,myVoiceStyle,value:$('publishVoiceSel').value})")
+    check(style_arrived, "voice: published non-biometric style reached the listener "
+          f"(listener={style_state}, speaker={published_state})")
     await tab.js("$('voiceBtn').click()")
     enabled = await tab.js(STATE)
     other_unchanged = await other_tab.js(STATE)
@@ -296,7 +302,7 @@ async def check_invitation_ui(tab, check):
                    deviceScaleFactor=1, mobile=True)
     layout = await tab.js("""(() => {
       const bar = document.getElementById('bar');
-      const controls = ['micBtn','shareBtn','camBtn','voiceBtn','langSel',
+      const controls = ['micBtn','shareBtn','camBtn','voiceBtn','leaveBtn','langSel',
                         'listenVoiceSel','publishVoiceSel']
                        .map(id => document.getElementById(id).getBoundingClientRect());
       return {fits: document.documentElement.scrollWidth <= innerWidth &&
@@ -454,6 +460,16 @@ async def run():
                 "window.__controls.filter(x=>x.type==='speech_end').length")
             check(after_mute_flushes == mute_flushes + 1,
                   "A: mute emits one speech_end so pending speech can finalize")
+
+            await b.js("document.getElementById('leaveBtn').click()")
+            leave_arrived = await _wait_js(
+                a, "peers.size === 0 && $('participantCount').textContent.startsWith('1 / 4')")
+            left_state = await b.js(
+                "({leaving, count:$('participantCount').textContent, ws:ws.readyState})")
+            check(leave_arrived and left_state["leaving"]
+                  and left_state["count"].startswith("0 / 4"),
+                  "leave: visible control immediately releases the peer and updates both counts "
+                  f"(leaver={left_state})")
 
     finally:
         proc.terminate()

@@ -104,6 +104,12 @@ ephemeral.
 - Cloudflare static assets and Worker requests stay on the free tier initially.
 - The room uses Cloudflare's hibernation WebSocket interface. An active outbound
   Modal socket prevents hibernation only while translation compute is in use.
+- Joined browsers send a hibernation-safe presence heartbeat every 10 seconds.
+  A clean close or the visible Leave control releases the slot immediately; a
+  silent half-open mobile connection is removed at the next heartbeat or join
+  once its 30-second lease has elapsed. The four-person cap counts only live
+  leases, and an unjoined socket cannot occupy one of the eight pending slots
+  beyond the same 30-second attachment lease.
 - TURN credentials are short-lived; the long-lived TURN key and room-signing key
   exist only as Cloudflare/Modal secrets and never enter git or the browser.
 
@@ -136,7 +142,7 @@ Modal and TURN calls may be replaced only at their true network seams.
 | A7 | Room IDs are 24-hour signed bearer tokens; forged, expired and cross-room signalling/caption attempts fail closed. The Worker verifies before selecting a Durable Object. Browser and TTS requests are origin/token/body limited, and Modal rejects any request without its server-only credential. | Python and Worker security tests |
 | A8 | The Cloudflare deployment serves a permanent HTTPS room creator and shareable `/room/<token>` URL while the Windows host is stopped. All clients for a room deterministically reach one Durable Object. A Modal process replacement reconnects only the independent compute streams and never declares the room dead or drops the natural WebRTC call. | Live URL, health and cold-start/replacement receipt |
 | A9 | WebRTC uses Cloudflare TURN credentials when direct ICE cannot connect; credentials are short-lived and no long-lived secret reaches client code or git. | Configuration test and relay-candidate browser receipt |
-| A10 | Phone layout at 360 CSS pixels exposes Share, microphone, camera, translated-voice mode and voice choice without horizontal overflow. | Browser viewport assertion and screenshot |
+| A10 | Phone layout at 360 CSS pixels exposes Share, Leave, microphone, camera, translated-voice mode and voice choice without horizontal overflow. | Browser viewport assertion and screenshot |
 | A11 | A real two-person Codex in-app-browser run shows video, carries natural audio in captions-only mode, displays English/Spanish captions, and audibly exercises both male and female translated voices. Automation alone cannot satisfy this row. | Human-observable acceptance receipt |
 | A12 | Modal has a one-container/four-participant beta ceiling, concurrent WebSocket configuration, scale-to-zero and persistent model cache. The Durable Object uses hibernation attachments and stores no media/caption history. Documentation states cold-start, short-utterance voice quality, licensing and cost ceilings. | Configuration assertions and deployment documentation |
 
