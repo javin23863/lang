@@ -1,4 +1,4 @@
-# Live bilingual video room — Spec (v7)
+# Live multilingual video room — Spec (v7, current supplement)
 
 > **Cloud extension:** this document remains the local-adapter specification.
 > The production cloud room, captions-only default, per-listener translated
@@ -6,10 +6,10 @@
 > specified in [`CLOUD-ARCHITECTURE.md`](CLOUD-ARCHITECTURE.md). Where the two
 > differ for cloud behavior, that architecture is authoritative.
 
-> v7 replaces v6's host-app-plus-guest-browser model with a **symmetric browser
-> room**. Both people open the same link. They see each other. They speak their
-> own language and read the other's. The Windows machine is no longer a
-> participant — it is the compute.
+> The current implementation retains v7's symmetric browser room while adding
+> a shared capability catalog, one transcription to unique-target M2M100 fanout
+> and up to four participants. The Windows machine is a local development
+> adapter; the production compute lane is the one AP-routed, scale-to-zero L4.
 
 ## Why v6 could not do this
 
@@ -27,16 +27,16 @@ while Person B used a browser. Three things made that the wrong shape:
 ## v7 architecture
 
 ```
-Browser A (en)  ──── WebRTC P2P: camera + voice ────  Browser B (es)
-      │                                                      │
-      └──── WebSocket: 16kHz int16 PCM + control/signalling ─┘
+Browsers (up to 4, explicit BCP-47 Locale) ─ WebRTC P2P: camera + voice
+      │
+      └──── WebSocket: 16kHz int16 PCM + control/signalling ───────────┘
                                │
-                 translation_server.py (Windows, CUDA)
+            local translation_server.py / production Modal L4
                    faster-whisper large-v3-turbo (fp16)
-                   CTranslate2 OPUS-MT en→es / es→en (int8_float16)
+       CTranslate2 M2M100 418M (one model; int8_float16 GPU / int8 CPU)
                    Silero VAD endpointing, rolling partials
                                │
-                     captions fan out to the room
+       captions fan out once per unique listener base Language (maximum 3)
 ```
 
 Video and call audio never reach the server: it relays SDP and ICE without
@@ -80,9 +80,11 @@ path itself grants access.
 ## Captions
 
 Each utterance produces a stream of **partials** (every 400 ms, from ~0.8 s of
-speech onward) and one **final** when the speaker stops for 500 ms. Partials are
-translated too, so the reader watches the sentence assemble in their own
-language.
+speech onward) and one **final** when the speaker stops for 500 ms. A source
+Locale is validated at the boundary and maps to one base Language. Its ASR runs
+once; M2M100 then translates to the unique base Languages of current listeners,
+so `es-ES` and `es-MX` share one `es` result. Partials are translated too, so
+the reader watches the sentence assemble in their own language.
 
 Every caption carries `speaker` (a participant id), `speaker_lang`, `seq`, and a
 `translations` map keyed by language. **No caption carries a "me"/"remote"
@@ -102,34 +104,25 @@ own id.
   returns `"Gracias."` for 0.6 s of Spanish with `no_speech_prob=0.0` and a
   healthy `avg_logprob`. The defenses that work are the Silero gate and the
   minimum speech duration; a logprob filter was tried, measured, and removed.
-- **Marian source tokens end with `</s>`.** Without it the decoder re-translates
-  the input forever. Gate 1b recorded this as "en-es is slow and loops" and
-  blamed the model; it was the tokenizer, and it affected every pair.
+- **M2M100 tokenizer semantics are explicit.** The pinned tokenizer encodes the
+  source Language once, each target uses its official forced language-token
+  prefix, and the returned prefix is removed before decoding. The adapter never
+  falls back to a nearby Locale or a different model revision.
 - **Video failure is stated, not shown as a black rectangle.** There is no TURN
   server, so strict NAT kills the P2P video. The page says so and the captions
   keep running.
 
 ## Spoken translation
 
-Each **final** caption addressed to you is also spoken aloud, in your language.
-Partials are never spoken: they are rewritten as the sentence lands, so
-speaking them would stutter and repeat.
-
-The browser's `speechSynthesis` is the first path only when it exposes an exact
-or base-language match. The presence of the API alone is not enough: Chromium
-can expose English voices and no Spanish voice, then silently read Spanish with
-its default English voice. When the requested language is missing, the client
-POSTs the final caption to authenticated `/tts` and plays the returned binary
-WAV through one reusable, user-unlocked audio element.
-
-The local Windows fallback is CPU-only: `sherpa-onnx` runs
-`en_US-ljspeech-medium` and `es_ES-carlfm-x_low`. The deployed cloud path uses
-revision-pinned Kokoro on the same Modal L4 service as Whisper and MT, with one
-bounded TTS input separate from the four caption streams. The local model data
-is public-domain and the runtime is Apache-2.0; its two model directories total
-about 115 MB and are cached after first download. HTTP keeps audio ownership,
-cancellation, and backpressure separate from ordered captions and WebRTC
-signalling in both paths.
+Each **final** caption addressed to you may be spoken only through the exact
+Voice Profile selected for your target Locale. Partials are never spoken: they
+are rewritten as the sentence lands, so speaking them would stutter and repeat.
+The browser plays an authenticated `/tts` WAV through one reusable,
+user-unlocked audio element; it never silently uses a wrong-language browser
+voice. The cloud profile set is currently English (US/GB), Spanish, French
+(female only), and Japanese. Arabic, German and every non-enabled catalog
+Language remain captions-only. The local adapter advertises no TTS profiles,
+which is an intentional fail-closed parity stance rather than a fallback.
 
 **The feedback loop is the hazard, not the synthesis.** Your speaker is
 centimetres from your microphone: left alone, the translation is transcribed as
@@ -139,11 +132,11 @@ is therefore held shut for the duration of the utterance plus a short tail, and
 The peer connection stays live throughout — only the caption feed is paused, so
 the other person still hears your real voice.
 
-`browser_check.py` asserts all of it: partials and your own finals stay silent,
-native speech uses the requested language, and both fallback languages decode,
-enter `playing`, advance through nonzero audio, and end. It also covers serial
-queueing, cancellation, and ASR pause/resume. Removing the pause leaves the
-speech working and the check failing, which is the point.
+`browser_check.py` asserts the browser lifecycle: partials and your own finals
+stay silent; selected-profile media enters `playing`, advances through nonzero
+audio, and ends; unsupported local TTS stays disabled. It also covers serial
+queueing, cancellation, RTL/mobile layout, and ASR pause/resume. This is
+automation evidence, not a claim that a person heard audio in the Codex browser.
 
 ## Not in v7
 

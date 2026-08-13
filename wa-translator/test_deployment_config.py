@@ -12,6 +12,7 @@ WRANGLER = json.loads((ROOT / "cloudflare/wrangler.jsonc").read_text(encoding="u
 LOCK = (ROOT / "modal-runtime-requirements.txt").read_text(encoding="utf-8")
 RECEIPTS = (ROOT / "cloudflare/ACCEPTANCE-RECEIPTS.md").read_text(encoding="utf-8")
 MT = (ROOT / "windows/mt_ct2.py").read_text(encoding="utf-8")
+VERIFIER = (ROOT / "verify_multilingual_deployment.py").read_text(encoding="utf-8")
 
 
 class DeploymentConfigTests(unittest.TestCase):
@@ -24,9 +25,15 @@ class DeploymentConfigTests(unittest.TestCase):
         self.assertIn('"HOME": "/root"', MODAL)
         self.assertIn('"HF_HOME": "/model-cache/huggingface"', MODAL)
         self.assertIn('"LANG_ROOM_MODEL_ROOT": "/model-cache/lang-room"', MODAL)
+        self.assertIn('"MODAL_IS_REMOTE": "1"', MODAL)
         self.assertNotIn('"HOME": "/model-cache/', MODAL)
-        for helper in ("asr_whisper.py", "cuda_dlls.py", "endpointer.py", "mt_ct2.py"):
+        for helper in ("asr_whisper.py", "cuda_dlls.py", "endpointer.py", "mt_ct2.py",
+                       "language_catalog.py"):
             self.assertIn(f'"/root/windows/{helper}"', MODAL)
+        self.assertIn('"/root/capabilities.json"', MODAL)
+        self.assertIn('"/root/multilingual_fixtures.json"', MODAL)
+        self.assertIn('Path("/root/windows/language_catalog.py")', MODAL)
+        self.assertIn('WINDOWS_DIR =', MODAL)
         self.assertNotIn('"/root/wa-translator/windows/', MODAL)
         self.assertNotIn('os.chdir("/root/wa-translator")', MODAL)
         self.assertIn('os.environ.get("LANG_ROOM_MODEL_ROOT")', MT)
@@ -35,6 +42,10 @@ class DeploymentConfigTests(unittest.TestCase):
         self.assertIn("WHISPER_REVISION =", MODAL)
         self.assertIn("MAX_STREAM_INPUTS = 4", MODAL)
         self.assertIn("MAX_TTS_INPUTS = 1", MODAL)
+        self.assertIn("M2M100_REVISION", MODAL)
+        self.assertIn("VOICE_ROUTES = _live_voice_routes()", MODAL)
+        self.assertIn("VOICE_ARTIFACT_SHA256", MODAL)
+        self.assertIn('"/mt-receipt"', MODAL)
 
     def test_only_the_ap_south_public_function_can_start_an_l4(self):
         self.assertIn('routing_region="ap-south"', MODAL)
@@ -104,6 +115,11 @@ class DeploymentConfigTests(unittest.TestCase):
         for command in ("probe_kokoro_tts.py", "probe_stream.py", "browser_check.py",
                         "Get-FileHash"):
             self.assertIn(command, RECEIPTS)
+
+    def test_post_deploy_verifier_detects_worker_modal_catalog_drift(self):
+        self.assertIn("deployment_drift", VERIFIER)
+        self.assertIn("/api/capabilities", VERIFIER)
+        self.assertIn("mt-receipt", VERIFIER)
 
 
 if __name__ == "__main__":

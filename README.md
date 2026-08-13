@@ -1,10 +1,18 @@
-# lang — live bilingual video room
+# lang — live multilingual video room
 
-Two people, one link, a browser each. You speak English, they speak Spanish, and
-each of you reads the other in your own language while the sentence is still
-being said. Camera and natural voice go directly between the two browsers.
-Captions-only is the default; each listener can independently replace incoming
-natural audio with a selected translated voice.
+One private link, up to four browsers. Camera and natural voice go directly
+between peers while a single transcription fans out to the unique base
+languages of current listeners. Captions-only is the default; a listener can
+independently choose an exact declared synthetic Voice Profile where one is
+enabled.
+
+The shared catalog currently declares **100 M2M100 base text Languages**,
+**122 BCP-47 Locale profiles**, and **six release-tested live-speech
+Languages** (Arabic, German, English, Spanish, French, Japanese). Those counts
+are deliberately separate: locale variants such as `es-MX` map to base `es` and
+do not claim a distinct ASR/MT model or dialect quality. Production TTS is
+enabled for four Languages (English, Spanish, French, Japanese) through nine
+pinned profiles; Arabic and German remain captions-only.
 
 There are two adapters. The Windows adapter below is the local development path.
 The production beta uses a permanent Cloudflare `workers.dev` room plus a
@@ -18,9 +26,8 @@ cd wa-translator\windows
 ```
 
 It prints a private `https://…/room/<random-code>` invitation. Open it on your
-phone, tap 📤, choose WhatsApp and the contact. Both people then tap **Start**
-and pick the language they speak. The application never receives the telephone
-number; WhatsApp chooses the recipient.
+phone, use Share/WhatsApp, and choose the Locale you speak. The application
+never receives a telephone number; the share target chooses the recipient.
 
 Full runbook, checks and measured latency: [`wa-translator/windows/README.md`](wa-translator/windows/README.md).
 Architecture and the rules the implementation is held to: [`SPEC-v7.md`](SPEC-v7.md).
@@ -46,12 +53,13 @@ this device, but never exposes it to a participant.
 
 - **Live captions, not turn-taking.** Text appears ~1.7s after you start
   speaking and keeps growing and correcting itself until you stop.
-- **Both directions.** English→Spanish and Spanish→English, with each
-  participant declaring the language they speak.
-- **Optional translated voice.** It starts off. Each listener can choose Match
-  speaker, Female or Male without changing anyone else's setting. The cloud
-  routes English and Spanish through four controlled Kokoro voices; captions
-  carry on in every mode.
+- **One ASR, multi-target captions.** A source Locale resolves to its base
+  Language, transcribes once, then M2M100 translates to up to three unique
+  listener base Languages. Same-base Locale listeners share one translation.
+- **Optional translated voice.** It starts off. A listener selects an exact
+  declared profile, never an inferred biometric or cloned voice. Female/male
+  choices are shown only when that Locale has a corresponding enabled profile;
+  French currently exposes only its documented female profile.
 - **Video.** Peer-to-peer, with the other person filling the top of the screen
   and your own camera as a small inset.
 
@@ -72,14 +80,13 @@ Stated plainly, because each of these will look like a bug otherwise:
   to your microphone; if it kept listening it would transcribe the translation
   and translate it back forever. The other person still hears your real voice
   throughout — only the caption feed is held.
-- **Voice quality varies.** The cloud uses revision-pinned Kokoro routes. The
-  local adapter has one smaller CPU fallback per language and does not reproduce
-  the cloud's female/male choices.
-- **The first host run downloads two small voice models** (about 115 MB on
-  disk). After that spoken translation, like captions, runs locally with no
-  paid service.
-- **It needs a CUDA GPU.** Without one both models fall back to CPU, the code
-  runs, and the captions lag far behind the conversation.
+- **Voice quality varies.** The cloud uses revision-pinned Kokoro artifacts
+  only for the nine profiles declared in the catalog. Unsupported languages are
+  captions-only; the local development adapter also stays captions-only rather
+  than pretending to reproduce cloud TTS.
+- **Model work belongs on the production L4.** The local adapter can use the
+  same catalog/contract and CPU M2M100 path for development, but it does not
+  download or benchmark the production model lane on this Windows host.
 
 ## Repository layout
 
@@ -88,5 +95,7 @@ Stated plainly, because each of these will look like a bug otherwise:
 | `wa-translator/windows/` | the app — server, ASR, MT, browser UI, checks |
 | `wa-translator/cloudflare/` | permanent Worker, one room Durable Object and deployment tests |
 | `wa-translator/modal_app.py` | independent authenticated ASR/MT/Kokoro compute |
-| `wa-translator/` | Sprint-0 benchmarks that chose the models (whisper.cpp, Moonshine, OPUS-MT latency) and the portable caption filter |
+| `wa-translator/capabilities.json` | one shared Language/Locale/Capability/Voice Profile catalog |
+| `wa-translator/MULTILINGUAL-SOURCES.md` | primary-source model, license, revision, artifact-hash and quality-ceiling decision record |
+| `wa-translator/` | compute adapters, fixtures, tests, notices and the portable caption filter |
 | `SPEC-v7.md` | current architecture; `SPEC.md`–`SPEC-v6.md` are its history |

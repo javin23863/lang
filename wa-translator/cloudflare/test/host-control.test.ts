@@ -71,7 +71,7 @@ async function openSocket(path: string): Promise<SocketClient> {
 
 async function join(client: SocketClient): Promise<Record<string, unknown>> {
   client.socket.send(JSON.stringify({
-    type: "join", lang: "en", name: "Host test", voice_style: "female"
+    type: "join", locale: "en-US", name: "Host test", voice_profile: "en-us-af-heart"
   }));
   return client.next();
 }

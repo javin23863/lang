@@ -5,8 +5,8 @@ translation_server.py — bilingual video room with live captions.
 Both people open the same link in a browser. Camera and call audio go
 peer-to-peer over WebRTC (this server only relays the signalling); a second,
 16kHz mono copy of each microphone comes here over the WebSocket, where it is
-transcribed (faster-whisper large-v3-turbo) and translated (CTranslate2
-OPUS-MT), then pushed back to the room as captions.
+transcribed (faster-whisper large-v3-turbo) and translated by the revision-
+pinned M2M100 CTranslate2 adapter, then pushed back to the room as captions.
 
 Captions are emitted repeatedly per utterance: a partial every PARTIAL_EVERY_S
 while you are still speaking, and a final once you stop. Every caption carries
@@ -36,6 +36,7 @@ import uvicorn
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mt_ct2
 import tts_local
+import language_catalog
 from endpointer import Endpointer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -74,9 +75,17 @@ MAX_PARTICIPANTS = 4
 PRE_JOIN_TIMEOUT_S = 10    # a socket that opens and says nothing is not a guest
 MAX_TTS_CHARS = 300        # a final caption, not an arbitrary audiobook request
 MAX_TTS_BODY_BYTES = 2048  # reject before buffering a public request body
-VOICE_STYLES = ("female", "male")
 ROOM_TTL_S = 24 * 60 * 60  # an invite survives a restart-free day, then expires
 MAX_ROOMS = 64             # ponytail: one-host ceiling; add persistent storage when needed
+
+# The desktop adapter shares the production catalog, but it intentionally does
+# not substitute its older local voices for an explicitly selected Kokoro voice
+# profile.  Until this adapter has the exact pinned Kokoro runtime, spoken
+# translation is captions-only here rather than silently using a different
+# synthetic voice.
+CATALOG = language_catalog.public_catalog()
+CATALOG_REVISION = CATALOG["revision"]
+LOCAL_TTS_PROFILE_IDS: frozenset[str] = frozenset()
 
 app = FastAPI(title="Live Translator Room")
 _tts_job: asyncio.Task | None = None  # one CPU job; callers fail fast, never pile up
@@ -89,9 +98,10 @@ class Participant:
     id: int
     ws: WebSocket
     room: str = ""
+    locale: str = "en-US"
     lang: str = "en"
     name: str = ""
-    voice_style: str = "female"  # selected preference, never inferred
+    voice_profile_id: str | None = None  # explicit profile; never inferred
     ep: Endpointer = field(default_factory=Endpointer)
     seq: int = 0                  # utterance counter
     onset: float = 0.0            # wall clock when the current utterance began
@@ -100,8 +110,12 @@ class Participant:
     tts_token: str = field(default_factory=lambda: secrets.token_urlsafe(24))
 
     def public(self):
-        return {"id": self.id, "lang": self.lang, "name": self.name,
-                "voice_style": self.voice_style}
+        selected = language_catalog.voice_profile(self.voice_profile_id, self.locale)
+        return {
+            "id": self.id, "locale": self.locale, "lang": self.lang,
+            "name": self.name, "voice_profile": self.voice_profile_id,
+            "voice_style": selected["style"] if selected else None,
+        }
 
 
 participants: dict[int, Participant] = {}
@@ -222,6 +236,33 @@ def target_langs(speaker: Participant) -> list[str]:
     return sorted({p.lang for p in participants.values()
                    if p.room == speaker.room and p.id != speaker.id
                    and p.lang != speaker.lang})
+
+
+def declared_locale(data: dict) -> tuple[dict, str | None] | None:
+    """Validate the browser's locale/profile pair without a base-code fallback."""
+    profile = language_catalog.locale_profile(data.get("locale"))
+    requested_voice = data.get("voice_profile")
+    if not profile or not profile["capabilities"]["asr"]["available"]:
+        return None
+    if requested_voice is not None:
+        selected = language_catalog.voice_profile(requested_voice, profile["id"])
+        if not selected or requested_voice not in LOCAL_TTS_PROFILE_IDS:
+            return None
+    # A null profile is valid only because this local adapter exposes an
+    # explicit captions-only runtime overlay.  Production Worker requires a
+    # matching profile whenever its catalog lists one.
+    return profile, requested_voice
+
+
+def apply_declared_locale(participant: Participant, data: dict) -> bool:
+    declared = declared_locale(data)
+    if declared is None:
+        return False
+    profile, requested_voice = declared
+    participant.locale = profile["id"]
+    participant.lang = profile["language"]
+    participant.voice_profile_id = requested_voice
+    return True
 
 
 # ── Job queue: finals always run, partials are latest-wins ────────────
@@ -367,16 +408,13 @@ def _handle(job: Job):
     text = _asr.transcribe(job.audio, job.lang, partial=not job.final)
 
     translations = {}
-    if text:
-        for tgt in job.targets:
-            out, reason = mt_ct2.translate(
-                text, f"{job.lang}-{tgt}", stream_id=str(job.pid), final=job.final)
-            if out:
-                translations[tgt] = out
-            elif job.final:
-                # A suppressed final (loop, duplicate) must not leave the
-                # original standing next to a stale translation.
-                print(f"[mt] suppressed {job.lang}-{tgt}: {reason}")
+    if text and job.targets:
+        translations, reason = mt_ct2.translate_many(
+            text, job.lang, job.targets, stream_id=str(job.pid), final=job.final)
+        if job.final and not translations:
+            # A suppressed final (loop, duplicate) must not leave the original
+            # standing next to a stale translation.
+            print(f"[mt] suppressed {job.lang}->{','.join(job.targets)}: {reason}")
 
     broadcast_from_thread(caption_message(job, text, translations), speaker.room)
 
@@ -517,6 +555,21 @@ async def room_preflight(request: Request):
                                                "Referrer-Policy": "no-referrer"})
 
 
+@app.get("/api/capabilities")
+async def capabilities():
+    """Stable same-origin catalog with an honest local-runtime overlay."""
+    payload = language_catalog.public_catalog()
+    payload["runtime"] = {
+        "voice_profile_ids": sorted(LOCAL_TTS_PROFILE_IDS),
+        "tts_unavailable_reason": (
+            "This local adapter has no exact pinned Kokoro voice runtime; it is captions-only."
+        ),
+    }
+    return JSONResponse(payload, headers={
+        "Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
+    })
+
+
 def host_room_state(room_id: str) -> dict:
     count = 0 if room_is_closed(room_id) else len(room_participants(room_id))
     return {
@@ -620,11 +673,12 @@ async def tts_audio(request: Request):
         return JSONResponse({"error": "invalid JSON"}, status_code=400)
     if not isinstance(data, dict):
         return JSONResponse({"error": "invalid spoken translation request"}, status_code=422)
-    text, lang = data.get("text"), data.get("lang")
-    voice_style = data.get("voice_style", "female")
+    text, locale, voice_profile_id = data.get("text"), data.get("locale"), data.get("voice_profile")
+    selected_voice = language_catalog.voice_profile(voice_profile_id, locale)
     if not (isinstance(text, str) and 0 < len(text) <= MAX_TTS_CHARS
-            and lang == p.lang and lang in mt_ct2.ROOM_LANGS
-            and voice_style in VOICE_STYLES):
+            and locale == p.locale and selected_voice is not None
+            and voice_profile_id == p.voice_profile_id
+            and voice_profile_id in LOCAL_TTS_PROFILE_IDS):
         return JSONResponse({"error": "invalid spoken translation request"}, status_code=422)
     if p.tts_pending:
         return JSONResponse({"error": "spoken translation is already pending"}, status_code=429)
@@ -634,7 +688,7 @@ async def tts_audio(request: Request):
     p.tts_pending = True
     async def generate():
         try:
-            return await asyncio.to_thread(tts_local.synthesize, text, lang)
+            return await asyncio.to_thread(tts_local.synthesize, text, p.lang)
         finally:
             p.tts_pending = False
 
@@ -645,10 +699,10 @@ async def tts_audio(request: Request):
         # it actually finishes; later callers get 429 instead of piling up.
         audio = await asyncio.wait_for(asyncio.shield(_tts_job), timeout=60)
     except asyncio.TimeoutError:
-        print(f"[tts] {lang} timed out; the bounded worker is still finishing")
+        print(f"[tts] {p.lang} timed out; the bounded worker is still finishing")
         return JSONResponse({"error": "spoken translation timed out"}, status_code=503)
     except Exception as exc:
-        print(f"[tts] {lang} failed: {type(exc).__name__}: {exc}")
+        print(f"[tts] {p.lang} failed: {type(exc).__name__}: {exc}")
         return JSONResponse({"error": "spoken translation is unavailable"}, status_code=503)
     return Response(audio, media_type="audio/wav",
                     headers={"Cache-Control": "no-store"})
@@ -693,6 +747,9 @@ async def ws_endpoint(ws: WebSocket, room_id: str):
                 data = json.loads(msg["text"])
                 if data.get("type") != "join":
                     continue
+                if not apply_declared_locale(p, data):
+                    await ws.close(code=1008, reason="unknown locale or voice profile")
+                    return
                 # Check and insert with no await between them: the event loop is
                 # single-threaded, so this pair is atomic and the limit cannot be
                 # raced past by simultaneous joiners.
@@ -749,10 +806,9 @@ async def _on_control(p: Participant, data: dict):
     kind = data.get("type")
 
     if kind == "join":
-        requested = data.get("lang")
-        p.lang = requested if requested in mt_ct2.ROOM_LANGS else "en"
-        requested_style = data.get("voice_style")
-        p.voice_style = requested_style if requested_style in VOICE_STYLES else "female"
+        if not apply_declared_locale(p, data):
+            await p.ws.close(code=1008, reason="unknown locale or voice profile")
+            return
         name = data.get("name")
         p.name = name[:40] if isinstance(name, str) and name.strip() else f"Speaker {p.id}"
         await send_to(p.id, {
@@ -760,21 +816,25 @@ async def _on_control(p: Participant, data: dict):
             "id": p.id,
             "tts_token": p.tts_token,
             "tts_provider": "local",
-            "langs": list(mt_ct2.ROOM_LANGS),
+            "catalog_revision": CATALOG_REVISION,
             "peers": [q.public() for q in room_participants(p.room) if q.id != p.id],
         }, p.room)
         await broadcast({"type": "peer_join", **p.public()}, p.room, exclude=p.id)
 
-    elif kind == "set_lang":
-        requested = data.get("lang")
-        if requested in mt_ct2.ROOM_LANGS:
-            p.lang = requested
+    elif kind == "set_locale":
+        if not apply_declared_locale(p, data):
+            await p.ws.close(code=1008, reason="unknown locale or voice profile")
+            return
         await broadcast({"type": "peer_update", **p.public()}, p.room)
 
-    elif kind == "set_voice_style":
-        requested = data.get("voice_style")
-        if requested in VOICE_STYLES:
-            p.voice_style = requested
+    elif kind == "set_voice_profile":
+        requested = data.get("voice_profile")
+        # A captions-only local adapter accepts only its already selected null
+        # profile.  Any attempt to activate an unavailable synthetic voice is a
+        # policy violation, not a fallback to a different voice.
+        if requested is not None or p.voice_profile_id is not None:
+            await p.ws.close(code=1008, reason="voice profile unavailable")
+            return
         await broadcast({"type": "peer_update", **p.public()}, p.room)
 
     elif kind == "signal":
@@ -810,6 +870,11 @@ async def _on_control(p: Participant, data: dict):
 async def startup():
     global _server_loop
     _server_loop = asyncio.get_running_loop()
+    if os.environ.get("LANG_ROOM_SKIP_MODEL_LOAD") == "1":
+        # Browser/protocol smoke tests inject captions and must never trigger a
+        # local heavyweight model conversion or voice download.
+        print("[server] model loading disabled for browser smoke test")
+        return
     threading.Thread(target=_load_models, daemon=True).start()
     threading.Thread(target=_worker, daemon=True).start()
     threading.Thread(target=tts_local.preload, daemon=True).start()

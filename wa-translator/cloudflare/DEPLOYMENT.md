@@ -7,13 +7,21 @@ system, native wrapper or custom domain.
 
 ## Fixed beta ceilings
 
-- English and Spanish only; four participants per room.
-- Each browser must explicitly choose the language spoken on that device before
-  it joins. Translated voice is incoming-only: an English-speaking device hears
-  English for incoming Spanish, while its own Spanish translation plays on the
-  Spanish listener's device.
-- One L4 Modal container has five total concurrent inputs: four stream slots
-  reserved for long-lived participant WebSockets and one TTS slot. A second
+- The catalog declares **100 M2M100 base text languages**, **122 BCP-47 locale
+  profiles**, and **six release-tested live-speech base languages**: Arabic,
+  German, English, Spanish, French, and Japanese. A locale maps to one base
+  language; it never claims a regional ASR or MT model or dialect-specific
+  quality. Unknown/mismatched profiles fail closed.
+- Each browser explicitly chooses its speaking locale before it joins. One ASR
+  transcript fans out once to the unique base languages of current listeners
+  (at most three); Spanish regional listeners share one Spanish translation.
+  Translated voice is incoming-only.
+- The production runtime exposes only exact pinned Kokoro profiles reachable
+  from release live-speech locales: American/British English, Spanish, French
+  female, and Japanese. Arabic and German are captions-only in this release;
+  no wrong-language voice fallback is permitted.
+- One L4 Modal container serves at most four participants: four stream slots
+  reserved for their long-lived WebSockets and one TTS slot. A second
   simultaneous TTS request fails fast instead of taking a stream slot. The
   active deployment exposes only the AP-routed `web_ap_south` Modal Function;
   per-function `max_containers=1` is therefore also the app-wide L4 ceiling.
@@ -33,7 +41,7 @@ system, native wrapper or custom domain.
 - The Durable Object stores expiry and, after revocation, a closed tombstone
   through that expiry. It sends `room_closed` and close code 4001 to current
   sockets, cancels compute, and refuses later participant page, preflight and
-  WebSocket access. Presence and selected voice style and the small per-room
+  WebSocket access. Presence and explicitly selected voice profile and the small per-room
   TTS quota counters otherwise live in hibernation
   attachments; captions and media are never stored.
   Ordinary memory is disposable. An active outbound Modal WebSocket prevents
@@ -51,8 +59,8 @@ system, native wrapper or custom domain.
 - Short utterance quality is a known ceiling. Whisper can invent filler on
   sub-second speech, so partial decoding waits for 0.8 seconds and Silero gates
   every decode. Very short Kokoro phrases can sound less natural than complete
-  sentences. Voice is a selected synthetic female/male style, never inferred
-  identity, gender detection, cloning or biometric data.
+  sentences. A synthetic voice profile is explicitly selected, never inferred
+  from identity, gender detection, cloning or biometric data.
 
 Protocol limits are fail-closed: 8 KiB ordinary browser/compute control frames,
 up to 64 KiB only for validated WebRTC signalling, 32,000-byte PCM frames,
@@ -71,8 +79,9 @@ connection's ICE configuration, and restart ICE.
 packages with hashes. The Modal image installs it with `--require-hashes`.
 The lock includes explicit CUDA 12 cuBLAS/cuDNN compatibility libraries for
 CTranslate2, and the image build loads both shared objects before deployment.
-Model downloads use immutable Hugging Face revisions; Kokoro's main weight is
-also checked against its LFS SHA-256 before loading. Review
+Model downloads use immutable Hugging Face revisions; the M2M100 source
+artifacts, Kokoro main weight, and every enabled Kokoro voice artifact are
+checked against pinned SHA-256 values before loading. Review
 `../THIRD-PARTY-NOTICES.md` and `../licenses/Apache-2.0.txt` before a release.
 
 Regenerate the lock only as an audited dependency change:
@@ -95,8 +104,7 @@ No secret value belongs in git, a URL, browser code or logs. Before deployment:
 3. Put `ROOM_SIGNING_KEY` (at least 32 random bytes), `TURN_KEY_ID`, and
    `TURN_API_TOKEN` into Cloudflare secrets. The TURN long-term API token must
    never be returned to the browser.
-4. Deploy Modal with
-   `modal deploy wa-translator/modal_app.py::modal_application`. On Windows,
+4. Deploy Modal with `modal deploy wa-translator/modal_app.py`. On Windows,
    set `PYTHONUTF8=1` and `PYTHONIOENCODING=utf-8` for the CLI process. Record
    the ASGI HTTPS URL. Put its `https://.../stream` and `https://.../tts` endpoints into
    Cloudflare as `MODAL_WS_URL` and `MODAL_TTS_URL` secrets.
@@ -123,8 +131,8 @@ They are instructions, not a claim that deployment occurred.
    selected candidate pair uses a `relay` local candidate. Dynamic TURN config
    alone does not satisfy this gate.
 4. Perform A11 in the real Codex in-app browser with two people: see video,
-   hear natural audio in captions-only mode, see both translation directions,
-   then audibly exercise both female and male translated voices. Automated
+   hear natural audio in captions-only mode, see captions for supported routes,
+   then audibly exercise only visible selected voice profiles. Automated
    playback counters do not satisfy this human-observable gate.
 
 ## Windows standalone host dashboard

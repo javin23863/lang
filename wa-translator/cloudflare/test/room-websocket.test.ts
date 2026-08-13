@@ -41,10 +41,16 @@ async function openSocket(path: string): Promise<SocketClient> {
   };
 }
 
-async function join(client: SocketClient, lang: "en" | "es", name: string,
+const profileFor = {
+  en: { locale: "en-US", female: "en-us-af-heart", male: "en-us-am-michael" },
+  es: { locale: "es-ES", female: "es-ef-dora", male: "es-em-alex" },
+} as const;
+
+async function join(client: SocketClient, lang: keyof typeof profileFor, name: string,
                     voiceStyle: "female" | "male") {
+  const profile = profileFor[lang];
   client.socket.send(JSON.stringify({
-    type: "join", lang, name, voice_style: voiceStyle
+    type: "join", locale: profile.locale, name, voice_profile: profile[voiceStyle]
   }));
   return client.next();
 }
@@ -86,7 +92,9 @@ describe("public room WebSocket interface", () => {
     const roomB = await createRoom();
     const a1 = await openSocket(roomA);
     const a1Welcome = await join(a1, "en", "A1", "female");
-    expect(a1Welcome).toMatchObject({ type: "welcome", peers: [], langs: ["en", "es"] });
+    expect(a1Welcome).toMatchObject({
+      type: "welcome", peers: [], catalog_revision: "2026-08-14-m2m100-55c2e61"
+    });
 
     const b1 = await openSocket(roomB);
     const b1Welcome = await join(b1, "es", "B1", "male");
@@ -106,7 +114,9 @@ describe("public room WebSocket interface", () => {
       type: "signal", to: b1Welcome.id,
       data: { candidate: { candidate: "cross-room" } }
     }));
-    b1.socket.send(JSON.stringify({ type: "set_voice_style", voice_style: "female" }));
+    b1.socket.send(JSON.stringify({
+      type: "set_voice_profile", voice_profile: "es-ef-dora"
+    }));
     expect(await b1.next()).toMatchObject({
       type: "peer_update", id: b1Welcome.id, voice_style: "female"
     });
@@ -190,7 +200,9 @@ describe("public room WebSocket interface", () => {
       for (const earlier of held.slice(0, -1)) await earlier.next();
     }
     const fifth = await openSocket(room);
-    fifth.socket.send(JSON.stringify({ type: "join", lang: "en", name: "P4", voice_style: "male" }));
+    fifth.socket.send(JSON.stringify({
+      type: "join", locale: "en-US", name: "P4", voice_profile: "en-us-am-michael"
+    }));
     expect(await fifth.next()).toEqual({
       type: "room_full", limit: 4, participant_count: 4
     });

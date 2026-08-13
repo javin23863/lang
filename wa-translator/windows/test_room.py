@@ -19,10 +19,19 @@ from starlette.websockets import WebSocketDisconnect
 
 import translation_server as srv
 import run_room
+import language_catalog
 from translation_server import Job, JobQueue, Participant, caption_message
 
 
 SAME_ORIGIN = {"Origin": "http://testserver"}
+
+
+def join_message(locale: str, name: str, voice_profile: str | None = None) -> dict:
+    """Browser-facing multilingual join contract; no base-code shortcuts."""
+    profile = language_catalog.locale_profile(locale)
+    assert profile is not None
+    return {"type": "join", "locale": locale, "name": name,
+            "voice_profile": voice_profile}
 
 
 def job(pid, seq, final, lang="en"):
@@ -92,6 +101,18 @@ def test_caption_carries_speaker_not_a_role():
 
 def test_target_langs_is_the_other_side():
     srv.participants.clear()
+
+
+def test_multi_target_fanout_deduplicates_same_base_locale_listeners():
+    """One source transcript fans out to at most three unique base targets."""
+    srv.participants.clear()
+    speaker = Participant(id=1, ws=None, room="room-a", locale="en-US", lang="en")
+    es_es = Participant(id=2, ws=None, room="room-a", locale="es-ES", lang="es")
+    es_mx = Participant(id=3, ws=None, room="room-a", locale="es-MX", lang="es")
+    fr = Participant(id=4, ws=None, room="room-a", locale="fr-FR", lang="fr")
+    srv.participants.update({p.id: p for p in (speaker, es_es, es_mx, fr)})
+    assert srv.target_langs(speaker) == ["es", "fr"]
+    srv.participants.clear()
     a = Participant(id=1, ws=None, room="room-a", lang="en")
     b = Participant(id=2, ws=None, room="room-a", lang="es")
     elsewhere = Participant(id=3, ws=None, room="room-b", lang="es")
@@ -141,6 +162,14 @@ def test_private_room_http_flow():
     assert re.fullmatch(r"/room/[A-Za-z0-9_-]{24}", opened.headers["location"])
     assert opened.headers["location"] != path
     assert isinstance(client.get("/health").json()["participants"], int)
+    capabilities = client.get("/api/capabilities")
+    assert capabilities.status_code == 200
+    assert capabilities.headers["cache-control"] == "no-store"
+    assert capabilities.json()["counts"] == {
+        "base_languages": 100, "locale_profiles": 122,
+        "live_speech_languages": 6, "text_languages": 100,
+        "voice_languages": 4, "voice_profiles": 9,
+    }
 
     expired_id = path.split("/")[-1]
     srv.rooms[expired_id] = time.time() - 1
@@ -194,8 +223,7 @@ def test_local_host_control_closes_only_its_room_and_preserves_the_tombstone():
 
     other = client.post("/api/rooms", headers=SAME_ORIGIN).json()
     with client.websocket_connect(f"/ws/{room_id}") as joined:
-        joined.send_json({"type": "join", "lang": "en", "name": "host",
-                          "voice_style": "female"})
+        joined.send_json(join_message("en-US", "host"))
         assert joined.receive_json()["type"] == "welcome"
         assert client.get("/api/room-control", headers=control).json()["state"] == "open"
         closed = client.post("/api/room-control/close", headers=control)
@@ -272,43 +300,42 @@ def test_room_peer_discovery_is_isolated():
     room_b = client.post("/api/rooms", headers=SAME_ORIGIN).json()["path"].split("/")[-1]
 
     with client.websocket_connect(f"/ws/{room_a}") as a1:
-        a1.send_json({"type": "join", "lang": "en", "name": "A1",
-                      "voice_style": "male"})
+        a1.send_json(join_message("en-US", "A1"))
         welcome_a1 = a1.receive_json()
         assert welcome_a1["type"] == "welcome" and welcome_a1["peers"] == []
         assert welcome_a1["tts_provider"] == "local"
 
         with client.websocket_connect(f"/ws/{room_b}") as b1:
-            b1.send_json({"type": "join", "lang": "es", "name": "B1"})
+            b1.send_json(join_message("es-MX", "B1"))
             welcome_b1 = b1.receive_json()
             assert welcome_b1["type"] == "welcome" and welcome_b1["peers"] == []
 
             with client.websocket_connect(f"/ws/{room_a}") as a2:
-                a2.send_json({"type": "join", "lang": "es", "name": "A2"})
+                a2.send_json(join_message("es-ES", "A2"))
                 welcome_a2 = a2.receive_json()
                 assert [p["id"] for p in welcome_a2["peers"]] == [welcome_a1["id"]]
-                assert welcome_a2["peers"][0]["voice_style"] == "male"
+                assert welcome_a2["peers"][0]["locale"] == "en-US"
+                assert welcome_a2["peers"][0]["voice_profile"] is None
 
                 # A2's join stays in room A. If it leaked to B, it would be the
                 # next message B receives instead of its own update below.
                 a1.receive_json()
                 a1.send_json({"type": "signal", "to": welcome_b1["id"],
                               "data": {"candidate": {"candidate": "cross-room"}}})
-                b1.send_json({"type": "set_lang", "lang": "en"})
+                b1.send_json({"type": "set_locale", "locale": "en-GB",
+                              "voice_profile": None})
                 b_next = b1.receive_json()
                 assert b_next["type"] == "peer_update", b_next
 
                 # Invalid client languages cannot escape into the MT direction
                 # names or poison what peers believe this caller speaks.
-                a1.send_json({"type": "set_lang", "lang": "not-a-language"})
-                a_update = a1.receive_json()
-                assert a_update["type"] == "peer_update" and a_update["lang"] == "en"
-                a2.receive_json()  # the same room-scoped language update
-
-                a1.send_json({"type": "set_voice_style", "voice_style": "female"})
-                voice_update = a2.receive_json()
-                assert voice_update["type"] == "peer_update"
-                assert voice_update["voice_style"] == "female"
+                a1.send_json({"type": "set_locale", "locale": "not-a-locale",
+                              "voice_profile": None})
+                try:
+                    a1.receive_json()
+                    raise AssertionError("unknown locale stayed connected")
+                except WebSocketDisconnect as exc:
+                    assert exc.code == 1008
 
     srv.participants.clear()
 

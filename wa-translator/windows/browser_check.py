@@ -38,6 +38,7 @@ PORT = 9444
 BASE = os.environ.get("ROOM_BASE", f"http://localhost:{DEFAULT_PORT}").rstrip("/")
 ROOM = os.environ.get("ROOM_URL")
 FORCE_RELAY = os.environ.get("FORCE_RELAY") == "1"
+HEADLESS = os.environ.get("BROWSER_CHECK_HEADLESS") == "1"
 
 
 def create_room_url():
@@ -199,10 +200,13 @@ async def _wait_js(tab, expression, timeout=4):
 
 
 async def check_voice_modes(tab, other_tab, my_id, other_id, check):
-    """Exercise observable playback plus every natural-audio restoration path.
+    """Exercise selected-profile playback plus natural-audio restoration.
 
-    This is deliberately not a speechSynthesis spy: success requires the real
-    HTML audio element to decode, enter `playing`, advance, and end.
+    The local adapter intentionally advertises captions-only because it does
+    not carry the exact pinned Kokoro voice runtime.  The harness temporarily
+    enables one declared profile while intercepting /tts, so it can still test
+    the browser's actual HTMLMediaElement lifecycle without claiming local
+    production voice availability.
     """
     installed = await tab.js(CONTROLLED_TTS_SPY)
     check(installed, "voice: real media playback and ASR worklet are observable")
@@ -217,9 +221,14 @@ async def check_voice_modes(tab, other_tab, my_id, other_id, check):
     })()""")
 
     initial = await tab.js(STATE)
-    other_initial = await other_tab.js(STATE)
-    check(not initial["voiceOn"] and not initial["remoteMuted"],
-          "voice: captions-only default leaves natural incoming audio audible")
+    check(not initial["voiceOn"] and not initial["remoteMuted"]
+          and await tab.js("$('voiceBtn').disabled"),
+          "voice: local captions-only capability keeps natural incoming audio audible")
+
+    # This is an explicit test-only capability override, never an app fallback.
+    await tab.js("runtimeVoiceProfileIds=null;applyLocale('en-US','en-us-af-heart');updateVoiceButton()")
+    check(await tab.js("!$('voiceBtn').disabled && myVoiceProfileId === 'en-us-af-heart'"),
+          "voice: a declared, selected profile can enable translated playback")
 
     before_bubbles = await tab.js("document.querySelectorAll('.msg').length")
     await tab.js(f"handle({caption(other_id, 50, False, 'Hola', {'en': 'Hello'})})")
@@ -229,18 +238,6 @@ async def check_voice_modes(tab, other_tab, my_id, other_id, check):
     check(off_state["voice"]["starts"] == 0 and off_state["bubbles"] > before_bubbles,
           "voice: captions continue and translated audio does not start while off")
 
-    # Publish an explicit selected style; the listener's Match choice must use it.
-    await other_tab.js("(()=>{const s=$('publishVoiceSel');s.value='male';"
-                       "s.dispatchEvent(new Event('change'));return true})()")
-    style_arrived = await _wait_js(
-        tab, f"peers.get({json.dumps(other_id)})?.voiceStyle === 'male'")
-    style_state = await tab.js(
-        "({ws:ws.readyState, peers:[...peers].map(([id,p])=>"
-        "({id,voiceStyle:p.voiceStyle}))})")
-    published_state = await other_tab.js(
-        "({ws:ws.readyState,myVoiceStyle,value:$('publishVoiceSel').value})")
-    check(style_arrived, "voice: published non-biometric style reached the listener "
-          f"(listener={style_state}, speaker={published_state})")
     await tab.js("$('voiceBtn').click()")
     enabled = await tab.js(STATE)
     other_unchanged = await other_tab.js(STATE)
@@ -259,8 +256,9 @@ async def check_voice_modes(tab, other_tab, my_id, other_id, check):
     await asyncio.sleep(0.35)
     played = await tab.js("({voice:window.__voice, posts:window.__worklet})")
     request = played["voice"]["requests"][0]
-    check(request["body"]["voice_style"] == "male",
-          f"voice: Match speaker routed the published male style (got {request})")
+    check(request["body"] == {"text": "I need help", "locale": "en-US",
+                              "voice_profile": "en-us-af-heart"},
+          f"voice: selected profile is the only TTS route (got {request})")
     check(request["authorization"] == "Bearer " + await tab.js("roomId"),
           "voice: TTS bearer stays in the Authorization header")
     check(request["participant"] == str(my_id),
@@ -280,13 +278,14 @@ async def check_voice_modes(tab, other_tab, my_id, other_id, check):
     check(during["outgoingAudio"] is True,
           "voice: ASR guard does not mute the microphone track sent to the peer")
 
-    # Local selection outranks the published style.
-    await tab.js("(()=>{const s=$('listenVoiceSel');s.value='female';"
-                 "s.dispatchEvent(new Event('change'));return true})()")
+    # A second exact profile is a controlled choice, not a generic style.
+    await tab.js("(()=>{const realSend=send;send=()=>{};const s=$('publishVoiceSel');"
+                 "s.value='en-us-am-michael';s.dispatchEvent(new Event('change'));send=realSend;return true})()")
     await tab.js(f"handle({caption(other_id, 52, True, 'Otra', {'en': 'Another'})})")
     await _wait_js(tab, "window.__voice.ended === 2", timeout=3)
-    override = await tab.js("window.__voice.requests.at(-1).body.voice_style")
-    check(override == "female", f"voice: local female override won (got {override})")
+    override = await tab.js("window.__voice.requests.at(-1).body.voice_profile")
+    check(override == "en-us-am-michael",
+          f"voice: locally selected controlled profile won (got {override})")
 
     # HTTP/playback failure restores natural audio and drops back to captions-only.
     await tab.js("window.__ttsFail=true")
@@ -321,8 +320,8 @@ async def check_invitation_ui(tab, check):
                    deviceScaleFactor=1, mobile=True)
     layout = await tab.js("""(() => {
       const bar = document.getElementById('bar');
-      const controls = ['micBtn','shareBtn','camBtn','voiceBtn','leaveBtn','langSel',
-                        'listenVoiceSel','publishVoiceSel']
+      const controls = ['micBtn','shareBtn','camBtn','voiceBtn','leaveBtn','localeSel',
+                        'publishVoiceSel']
                        .map(id => document.getElementById(id).getBoundingClientRect());
       return {fits: document.documentElement.scrollWidth <= innerWidth &&
                     bar.scrollWidth <= innerWidth &&
@@ -337,6 +336,24 @@ async def check_invitation_ui(tab, check):
     with open(out_path, "wb") as output:
         output.write(base64.b64decode(shot["data"]))
     print("360px screenshot:", out_path)
+
+    rtl = await tab.js("""(() => {
+      applyLocale('ar-SA', null);
+      const result = {dir: document.documentElement.dir,
+                      locale: myLocale,
+                      scroll: document.documentElement.scrollWidth,
+                      width: innerWidth};
+      return result;
+    })()""")
+    check(rtl["dir"] == "rtl" and rtl["locale"] == "ar-SA"
+          and rtl["scroll"] <= rtl["width"],
+          f"invite UI: Arabic locale uses RTL without 360px overflow (got {rtl})")
+    rtl_shot = await tab.call("Page.captureScreenshot", format="png")
+    rtl_path = os.path.join(tempfile.gettempdir(), "room_check_rtl.png")
+    with open(rtl_path, "wb") as output:
+        output.write(base64.b64decode(rtl_shot["data"]))
+    print("RTL screenshot:", rtl_path)
+    await tab.js("applyLocale('en-US', null)")
 
     native = await tab.js("""(() => {
       let payload = null;
@@ -381,7 +398,7 @@ async def check_invitation_ui(tab, check):
 async def run():
     room = ROOM or create_room_url()
     profile = tempfile.mkdtemp(prefix="room-check-")
-    proc = subprocess.Popen([
+    chrome_args = [
         CHROME, f"--user-data-dir={profile}", f"--remote-debugging-port={PORT}",
         "--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream",
         "--no-first-run", "--no-default-browser-check",
@@ -390,8 +407,12 @@ async def run():
         # harness reports a connection failure the app does not have. Real
         # browsers keep mDNS; this flag only affects this test instance.
         "--disable-features=WebRtcHideLocalIpsWithMdns",
-        "--disable-background-timer-throttling", "--window-size=520,900", room,
-    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        "--disable-background-timer-throttling", "--window-size=520,900",
+    ]
+    if HEADLESS:
+        chrome_args.append("--headless=new")
+    chrome_args.append(room)
+    proc = subprocess.Popen(chrome_args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     failures = []
     try:
@@ -423,11 +444,15 @@ async def run():
                         }
                       });
                     })()""")
-            # Language is a required role decision now. Never let this harness
-            # regress to the navigator-language default that made two devices
-            # silently advertise the same source language in production.
-            await a.js("chooseLanguage('en')")
-            await b.js("chooseLanguage('es')")
+            # A locale is a required role decision.  Wait for the same-origin
+            # catalog rather than falling back to navigator language or a base
+            # code, then choose two explicitly declared profiles.
+            for tab in (a, b):
+                loaded = await _wait_js(tab, "catalogRevision && locales.size >= 117", timeout=8)
+                if not loaded:
+                    raise RuntimeError("capability catalog did not load")
+            await a.js("chooseLocale('en-US')")
+            await b.js("chooseLocale('es-ES')")
 
             def check(cond, msg):
                 print(("  ok   " if cond else "  FAIL ") + msg)

@@ -6,9 +6,20 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === "/tts") {
       const body = await request.json();
+      const voiceProfiles = {
+        "en-us-af-heart": true,
+        "en-us-am-michael": true,
+        "en-gb-bf-emma": true,
+        "en-gb-bm-fable": true,
+        "es-ef-dora": true,
+        "es-em-alex": true,
+        "fr-ff-siwis": true,
+        "ja-jf-alpha": true,
+        "ja-jm-kumo": true,
+      };
       if (request.method !== "POST"
-          || !["en", "es"].includes(body.lang)
-          || !["female", "male"].includes(body.voice_style)) {
+          || !voiceProfiles[body.voice_profile]
+          || Object.keys(body).some(key => !["text", "voice_profile"].includes(key))) {
         return new Response("invalid", { status: 422 });
       }
       const streamed = (value, length) => {
@@ -39,7 +50,7 @@ export default {
           headers: { "Content-Type": "audio/wav", "Content-Length": "100" }
         });
       }
-      const marker = `${body.lang}:${body.voice_style}:${body.text}`;
+      const marker = `${body.voice_profile}:${body.text}`;
       const audio = new TextEncoder().encode("RIFF" + marker);
       return new Response(audio, {
         headers: {
@@ -65,10 +76,11 @@ export default {
         }
         if (control.type === "speech_end" && pendingFlush) {
           pendingFlush = false;
-          const target = init.source_lang === "en" ? "es" : "en";
+          const targets = init.target_langs || [];
           server.send(JSON.stringify({
             type: "caption", seq: 1, final: true, original: "flushed",
-            translations: { [target]: "translated flush" }, t_ms: 5
+            translations: Object.fromEntries(targets.map(target =>
+              [target, `translated-${target}-flush`])), t_ms: 5
           }));
         }
         return;
@@ -78,7 +90,7 @@ export default {
         pendingFlush = true;
         return;
       }
-      const target = init.source_lang === "en" ? "es" : "en";
+      const targets = init.target_langs || [];
       server.send(JSON.stringify({
         type: "caption",
         speaker: "untrusted-modal-speaker",
@@ -86,7 +98,8 @@ export default {
         seq: 1,
         final: true,
         original: init.source_lang === "en" ? "hello" : "hola",
-        translations: { [target]: target === "es" ? "hola" : "hello" },
+        translations: Object.fromEntries(targets.map(target =>
+          [target, target === "es" ? "hola" : `translated-${target}`])),
         t_ms: 5
       }));
       setTimeout(() => server.close(1012, "simulated process replacement"), 0);

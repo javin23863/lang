@@ -14,7 +14,9 @@ function auth(roomToken: string, origin = ORIGIN): HeadersInit {
   return { Origin: origin, Authorization: `Bearer ${roomToken}` };
 }
 
-async function join(roomToken: string): Promise<{ id: string; socket: WebSocket }> {
+async function join(
+  roomToken: string, locale = "en-US", voice_profile = "en-us-af-heart",
+): Promise<{ id: string; socket: WebSocket }> {
   const response = await exports.default.fetch(`${ORIGIN}/ws/${roomToken}`, {
     headers: { Origin: ORIGIN, Upgrade: "websocket" }
   });
@@ -24,7 +26,7 @@ async function join(roomToken: string): Promise<{ id: string; socket: WebSocket 
   const welcome = new Promise<any>(resolve => socket.addEventListener("message", event =>
     resolve(JSON.parse(String(event.data))), { once: true }));
   socket.send(JSON.stringify({
-    type: "join", lang: "en", name: "listener", voice_style: "female"
+    type: "join", locale, name: "listener", voice_profile
   }));
   return { id: (await welcome).id, socket };
 }
@@ -74,43 +76,54 @@ describe("TURN and translated-voice edge interfaces", () => {
     }
   });
 
-  it("routes four controlled voices to authenticated Modal HTTP and enforces caps", async () => {
+  it("routes only each participant's explicitly selected profile to Modal and enforces caps", async () => {
     const roomToken = await token();
-    const participant = await join(roomToken);
-    for (const lang of ["en", "es"] as const) {
-      for (const voice_style of ["female", "male"] as const) {
-        const response = await exports.default.fetch(`${ORIGIN}/tts`, {
-          method: "POST",
-          headers: voiceHeaders(roomToken, participant.id),
-          body: JSON.stringify({ text: "hello", lang, voice_style })
-        });
-        expect(response.status).toBe(200);
-        expect(response.headers.get("Content-Type")).toBe("audio/wav");
-        expect(response.headers.get("X-Upstream-Secret")).toBeNull();
-        expect(new Uint8Array(await response.arrayBuffer()).byteLength).toBeGreaterThan(4);
-      }
+    const participants = await Promise.all([
+      join(roomToken, "en-US", "en-us-af-heart"),
+      join(roomToken, "en-US", "en-us-am-michael"),
+      join(roomToken, "es-ES", "es-ef-dora"),
+      join(roomToken, "es-ES", "es-em-alex"),
+    ]);
+    for (const [participant, [locale, voice_profile]] of participants.map((participant, index) => [
+      participant,
+      [["en-US", "en-us-af-heart"], ["en-US", "en-us-am-michael"],
+       ["es-ES", "es-ef-dora"], ["es-ES", "es-em-alex"]][index],
+    ] as const)) {
+      const response = await exports.default.fetch(`${ORIGIN}/tts`, {
+        method: "POST", headers: voiceHeaders(roomToken, participant.id),
+        body: JSON.stringify({ text: "hello", locale, voice_profile })
+      });
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Content-Type")).toBe("audio/wav");
+      expect(response.headers.get("X-Upstream-Secret")).toBeNull();
+      expect(new Uint8Array(await response.arrayBuffer()).byteLength).toBeGreaterThan(4);
     }
 
     const invalid = [
-      { text: "hello", lang: "fr", voice_style: "female" },
-      { text: "hello", lang: "en", voice_style: "match" },
-      { text: "x".repeat(301), lang: "en", voice_style: "male" }
+      { text: "hello", locale: "ar-SA", voice_profile: null },
+      { text: "hello", locale: "en-US", voice_profile: "es-em-alex" },
+      { text: "x".repeat(301), locale: "en-US", voice_profile: "en-us-am-michael" }
     ];
     for (const body of invalid) {
       const response = await exports.default.fetch(`${ORIGIN}/tts`, {
         method: "POST",
-        headers: voiceHeaders(roomToken, participant.id),
+        headers: voiceHeaders(roomToken, participants[0].id),
         body: JSON.stringify(body)
       });
       expect(response.status).toBe(422);
     }
+    const wrongSelectedProfile = await exports.default.fetch(`${ORIGIN}/tts`, {
+      method: "POST", headers: voiceHeaders(roomToken, participants[0].id),
+      body: JSON.stringify({ text: "hello", locale: "en-US", voice_profile: "en-us-am-michael" })
+    });
+    expect(wrongSelectedProfile.status).toBe(403);
     const oversized = await exports.default.fetch(`${ORIGIN}/tts`, {
       method: "POST",
-      headers: voiceHeaders(roomToken, participant.id),
-      body: JSON.stringify({ text: "x".repeat(3000), lang: "en", voice_style: "female" })
+      headers: voiceHeaders(roomToken, participants[0].id),
+      body: JSON.stringify({ text: "x".repeat(3000), locale: "en-US", voice_profile: "en-us-af-heart" })
     });
     expect(oversized.status).toBe(413);
-    participant.socket.close(1000, "done");
+    for (const participant of participants) participant.socket.close(1000, "done");
   });
 
   it("fails closed on missing, oversized, non-RIFF, and truncated upstream audio", async () => {
@@ -119,7 +132,7 @@ describe("TURN and translated-voice edge interfaces", () => {
     const request = (text: string) => exports.default.fetch(`${ORIGIN}/tts`, {
       method: "POST",
       headers: voiceHeaders(roomToken, participant.id),
-      body: JSON.stringify({ text, lang: "en", voice_style: "female" })
+      body: JSON.stringify({ text, locale: "en-US", voice_profile: "en-us-af-heart" })
     });
 
     for (const text of [
@@ -135,7 +148,9 @@ describe("TURN and translated-voice edge interfaces", () => {
   it("requires a live participant and caps translated voice per room", async () => {
     const roomToken = await token();
     const participant = await join(roomToken);
-    const body = JSON.stringify({ text: "hello", lang: "en", voice_style: "female" });
+    const body = JSON.stringify({
+      text: "hello", locale: "en-US", voice_profile: "en-us-af-heart"
+    });
     const missingParticipant = await exports.default.fetch(`${ORIGIN}/tts`, {
       method: "POST",
       headers: { ...auth(roomToken), "Content-Type": "application/json" },

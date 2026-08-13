@@ -1,14 +1,20 @@
 # Cloud caption room — implementation contract
 
-> STATUS 2026-08-13: plan corrected after a blocking independent review. No
-> cloud deployment is accepted until every row below has a named receipt.
+> STATUS 2026-08-14: multilingual implementation is locally gated; public
+> deployment and its named model receipts are tracked separately. A8 remains
+> partial and A11 remains unmet until the required human-observable receipt.
 
 ## Product boundary
 
-The first product is an iTour-style bilingual video room. WhatsApp only carries
-the invitation link. Inside the room, WebRTC carries each person's natural
-camera and microphone stream while the translation system adds English/Spanish
-captions.
+The product is a private multilingual video room. WhatsApp only carries the
+invitation link. Inside the room, WebRTC carries each person's natural camera
+and microphone stream while one source transcription fans out to the unique
+base Languages of current listeners (maximum three targets).
+
+The shared catalog declares 100 M2M100 base text Languages, 122 BCP-47 Locale
+profiles, and six release-tested live-speech Languages: Arabic, German,
+English, Spanish, French and Japanese. A Locale maps to one base Language and
+never implies a dialect-specific ASR/MT model or quality claim.
 
 Translated speech is a separate listening mode, never the definition of a
 working room. Each participant controls their own device independently:
@@ -16,9 +22,10 @@ working room. Each participant controls their own device independently:
 - **Captions only** is the default. Natural incoming speech remains audible.
 - **Translated voice** locally mutes incoming natural speech and plays translated
   phrases. It never changes what another participant hears.
-- **Match speaker / Female / Male** selects the voice heard on that device.
-  Match speaker follows the remote participant's published voice preference;
-  either listener may override it locally.
+- An exact **Voice Profile** selects the voice heard on that device. The UI
+  offers female/male choices only where the selected target Locale declares
+  them; it never infers voice, gender or identity from a person. French has one
+  enabled female profile. Arabic and German are captions-only in this release.
 - Captions remain visible in every mode. A voice failure immediately restores
   natural incoming audio and leaves captions running.
 
@@ -51,8 +58,8 @@ one Cloudflare Durable Object per room
         | authenticated WebSocket / HTTP proxy
         v
 Modal ASGI app (starts on demand)
-  - each microphone stream -> Whisper ASR -> OPUS-MT -> captions
-  - optional Kokoro English/Spanish male/female translated speech
+  - each microphone stream -> Whisper ASR once -> M2M100 captions to unique targets
+  - optional exact-profile Kokoro speech for English/Spanish/French/Japanese
         |
         v
 Browser WebRTC peer connection
@@ -79,7 +86,9 @@ and cloud adapters.
 ```text
 wa-translator/
   cloudflare/              Worker, static-asset configuration and Worker tests
-  modal_app.py             Modal image, model cache, limits and ASGI entrypoint
+  capabilities.json        canonical Language/Locale/Capability/Voice Profile catalog
+  modal_app.py             Modal image, pinned models, limits and ASGI entrypoint
+  MULTILINGUAL-SOURCES.md  primary-source coverage/license/checksum decision record
   windows/                 existing local adapter and its integration tests
   windows/static/          one shared browser client, served by both adapters
 ```
@@ -97,9 +106,10 @@ ephemeral.
   participant stream is independent, so correctness never depends on two Modal
   WebSockets retaining the same process. This is an explicit beta ceiling, not
   a scale claim.
-- The GPU is primarily for low-latency Whisper transcription and also accelerates
-  Kokoro when translated voice is enabled. OPUS-MT and TTS can run on CPU, but
-  CPU-only latency is not the production target.
+- The GPU is primarily for low-latency Whisper transcription and M2M100
+  CTranslate2 (`int8_float16`), and also accelerates Kokoro when a declared
+  Voice Profile is enabled. Local CPU parity is a development fallback only;
+  it is not a production-quality receipt.
 - Modal scales to zero after the last active connection. Model files use a
   persistent Modal Volume so a container restart does not download them again.
   A process restart loses in-memory decoder state; the Durable Object reconnects
@@ -141,15 +151,15 @@ Modal and TURN calls may be replaced only at their true network seams.
 |---|---|---|
 | A1 | A newly joined participant is in captions-only mode; natural remote audio/video is enabled and no translated audio starts. | Browser integration test plus visible two-tab receipt |
 | A2 | Either participant can enable or disable translated voice without changing the other participant's mode. Captions continue in both states. | Two-client browser integration test |
-| A3 | Match speaker, Female and Male resolve to controlled English and Spanish Kokoro voices; speaker preference propagates only as non-sensitive participant metadata and local override wins. | Deterministic routing test plus four non-empty WAV probes |
+| A3 | An exact selected Voice Profile resolves only to its catalog-declared Kokoro route. Female/male controls appear only when a matching profile exists; French remains female-only and unsupported languages remain captions-only. | Deterministic routing test plus pinned-profile WAV probes |
 | A4 | Enabling translated voice locally mutes incoming natural audio before translated playback; disabling it, playback failure, watchdog expiry, reconnect or peer leave restores natural audio. | Browser lifecycle tests |
 | A5 | Spoken output never feeds back into that participant's ASR stream; the WebRTC microphone track sent to the peer is not muted by that guard. | Existing echo-loop regression plus mode-specific browser test |
-| A6 | English and Spanish microphone fixtures produce correctly attributed final captions in the other language through the public WebSocket protocol. Partials remain latest-wins and finals are never dropped. | Existing stream probe plus Modal smoke test |
+| A6 | Fixed EN↔ES, EN→FR/DE/JA/AR and ES→FR M2M fixtures produce correctly attributed final captions through the public protocol. Partials remain latest-wins and finals are never dropped. | Pinned-M2M receipt endpoint, source fixtures and public stream probe |
 | A7 | Room IDs are 24-hour signed bearer tokens; forged, expired and cross-room signalling/caption attempts fail closed. The Worker verifies before selecting a Durable Object. Browser and TTS requests are origin/token/body limited, and Modal rejects any request without its server-only credential. | Python and Worker security tests |
 | A8 | The Cloudflare deployment serves a permanent HTTPS room creator and shareable `/room/<token>` URL while the Windows host is stopped. All clients for a room deterministically reach one Durable Object. A Modal process replacement reconnects only the independent compute streams and never declares the room dead or drops the natural WebRTC call. | Live URL, health and cold-start/replacement receipt |
 | A9 | WebRTC uses Cloudflare TURN credentials when direct ICE cannot connect; credentials are short-lived and no long-lived secret reaches client code or git. | Configuration test and relay-candidate browser receipt |
 | A10 | Phone layout at 360 CSS pixels exposes Share, Leave, microphone, camera, translated-voice mode and voice choice without horizontal overflow. | Browser viewport assertion and screenshot |
-| A11 | A real two-person Codex in-app-browser run shows video, carries natural audio in captions-only mode, displays English/Spanish captions, and audibly exercises both male and female translated voices. Automation alone cannot satisfy this row. | Human-observable acceptance receipt |
+| A11 | A real two-person Codex in-app-browser run shows video, carries natural audio in captions-only mode, displays supported multilingual captions, and audibly exercises only visible declared voice profiles. Automation alone cannot satisfy this row. | Human-observable acceptance receipt |
 | A12 | Modal has a one-container/four-participant beta ceiling, concurrent WebSocket configuration, scale-to-zero and persistent model cache. The Durable Object uses hibernation attachments and stores no media/caption history. Documentation states cold-start, short-utterance voice quality, licensing and cost ceilings. | Configuration assertions and deployment documentation |
 | A13 | The installed host dashboard creates, copies/shares, opens, persists and terminally closes a room. Host control is never in the participant URL; close disconnects current sockets and makes future page, preflight and WebSocket access fail through expiry. | Worker host-control tests, fresh-public-browser flow and Windows shortcut receipt |
 
@@ -158,7 +168,10 @@ Modal and TURN calls may be replaced only at their true network seams.
 - One active GPU container is the free-first beta. Multi-container compute comes
   only after measured demand; room affinity already belongs to the Durable
   Object and must never depend on Modal process stickiness.
-- The first release supports English and Spanish only.
+- Release live speech is limited to Arabic, German, English, Spanish, French
+  and Japanese. Caption text coverage and Locale profile count are not a claim
+  of full per-language conversational quality. Production TTS has four
+  Languages and nine profiles; the other catalog Languages are captions-only.
 - Voice identity is a selected synthesized style, not gender detection and not
   voice cloning.
 - A `workers.dev` address and native Edge app-mode shortcut are sufficient. A

@@ -18,7 +18,7 @@ async function createRoom(): Promise<string> {
   return (await response.json<{ path: string }>()).path;
 }
 
-async function open(path: string, lang: "en" | "es"): Promise<Client> {
+async function open(path: string, lang: "en" | "es" | "fr", localeOverride?: string): Promise<Client> {
   const response = await exports.default.fetch(
     `${ORIGIN}${path.replace("/room/", "/ws/")}`,
     { headers: { Origin: ORIGIN, Upgrade: "websocket" } }
@@ -36,7 +36,15 @@ async function open(path: string, lang: "en" | "es"): Promise<Client> {
   const next = () => pending.length
     ? Promise.resolve(pending.shift()!)
     : new Promise<Record<string, any>>(resolve => readers.push(resolve));
-  socket.send(JSON.stringify({ type: "join", lang, name: lang, voice_style: "female" }));
+  const profile = {
+    en: ["en-US", "en-us-af-heart"],
+    es: ["es-ES", "es-ef-dora"],
+    fr: ["fr-FR", "fr-ff-siwis"],
+  } as const;
+  socket.send(JSON.stringify({
+    type: "join", locale: localeOverride || profile[lang][0], name: lang,
+    voice_profile: profile[lang][1],
+  }));
   const welcome = await next();
   expect(welcome.type).toBe("welcome");
   return { id: welcome.id, peers: welcome.peers, socket, next };
@@ -49,7 +57,8 @@ describe("authenticated independent Modal compute proxy", () => {
       const room = instance as any;
       const meta = {
         kind: "browser", id: "race", joined: true,
-        lang: "en", name: "race", voiceStyle: "female"
+        locale: "en-US", lang: "en", name: "race",
+        voiceProfileId: "en-us-af-heart", voiceStyle: "female"
       };
       const pending = room.ensureCompute(meta);
       room.closeCompute(meta.id);
@@ -109,6 +118,43 @@ describe("authenticated independent Modal compute proxy", () => {
 
     speaker.socket.close(1000, "done");
     listener.socket.close(1000, "done");
+  });
+
+  it("transcribes once and fans out only unique current listener base languages", async () => {
+    const room = await createRoom();
+    const spanish = await open(room, "es");
+    const french = await open(room, "fr");
+    await spanish.next(); // peer_join French
+    const speaker = await open(room, "en");
+    await spanish.next(); // peer_join English
+    await french.next(); // peer_join English
+
+    speaker.socket.send(new Uint8Array(3200).buffer);
+    expect(await spanish.next()).toMatchObject({
+      type: "caption", speaker: speaker.id,
+      translations: { es: "hola", fr: "translated-fr" },
+    });
+    expect(await french.next()).toMatchObject({
+      type: "caption", speaker: speaker.id,
+      translations: { es: "hola", fr: "translated-fr" },
+    });
+
+    // A same-base Spanish locale does not create a second `es` target.
+    const mexicanSpanish = await open(room, "es", "es-MX");
+    await spanish.next();
+    await french.next();
+    await speaker.next();
+    await new Promise(resolve => setTimeout(resolve, 600));
+    speaker.socket.send(new Uint8Array(3200).buffer);
+    expect(await spanish.next()).toMatchObject({
+      type: "caption", speaker: speaker.id,
+      translations: { es: "hola", fr: "translated-fr" },
+    });
+
+    speaker.socket.close(1000, "done");
+    spanish.socket.close(1000, "done");
+    french.socket.close(1000, "done");
+    mexicanSpanish.socket.close(1000, "done");
   });
 
   it("closes oversized microphone frames", async () => {

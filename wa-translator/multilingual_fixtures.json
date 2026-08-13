@@ -1,0 +1,63 @@
+{
+  "schema_version": "1",
+  "purpose": "Small original semantic smoke fixtures for the pinned M2M100 runtime. They verify a route is executable and make the observed output reviewable; they do not certify conversational or native-speaker quality.",
+  "fixtures": [
+    {
+      "id": "en-es-meeting-time",
+      "source_language": "en",
+      "target_language": "es",
+      "source_text": "The meeting starts tomorrow at nine.",
+      "semantic_token_groups": [["reunión", "junta"], ["mañana"], ["nueve", "9"]]
+    },
+    {
+      "id": "es-en-meeting-time",
+      "source_language": "es",
+      "target_language": "en",
+      "source_text": "La reunión empieza mañana a las nueve.",
+      "semantic_token_groups": [["meeting"], ["tomorrow"], ["nine", "9"]]
+    },
+    {
+      "id": "en-fr-signed-report",
+      "source_language": "en",
+      "target_language": "fr",
+      "source_text": "Please send the signed report today.",
+      "semantic_token_groups": [["rapport"], ["signé", "signée"], ["aujourd'hui", "aujourd’hui"]]
+    },
+    {
+      "id": "en-de-station-river",
+      "source_language": "en",
+      "target_language": "de",
+      "source_text": "The station is across the river.",
+      "semantic_token_groups": [["bahnhof", "station"], ["fluss"]]
+    },
+    {
+      "id": "en-ja-room-time",
+      "source_language": "en",
+      "target_language": "ja",
+      "source_text": "The room opens tomorrow at eight.",
+      "semantic_token_groups": [["部屋", "会議室"], ["明日"], ["八", "8"]]
+    },
+    {
+      "id": "en-ar-room-time",
+      "source_language": "en",
+      "target_language": "ar",
+      "source_text": "The room opens tomorrow at eight.",
+      "semantic_token_groups": [["غرفة", "قاعة"], ["غد"], ["ثمان", "8"]]
+    },
+    {
+      "id": "es-fr-report-meeting",
+      "source_language": "es",
+      "target_language": "fr",
+      "source_text": "El informe está listo para la reunión.",
+      "semantic_token_groups": [["rapport"], ["réunion"]]
+    }
+  ],
+  "locale_mapping_fixture": {
+    "source_locale": "es-MX",
+    "target_locale": "es-ES",
+    "source_base_language": "es",
+    "target_base_language": "es",
+    "expect_distinct_mt_model": false,
+    "expect_locale_quality_claim": false
+  }
+}

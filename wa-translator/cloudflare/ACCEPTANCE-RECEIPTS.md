@@ -1,5 +1,38 @@
 # Cloud caption-room acceptance receipts
 
+## Current truth — multilingual wave, 2026-08-14 (pre-deploy)
+
+The dated entries below are historical bilingual/previous-model receipts. They
+must not be read as a receipt for the revision-pinned M2M100 multilingual
+implementation now in this branch. The current locally verified contract is:
+
+- one shared catalog: 100 base text Languages, 122 Locale profiles, six
+  release-tested live-speech Languages, four production TTS Languages and nine
+  exact enabled Voice Profiles;
+- one source ASR transcription fans out to up to three unique listener base
+  Languages; same-base Locale listeners share one translation;
+- M2M100 418M is pinned to `55c2e61bbf05dfb8d7abccdc3fae6fc8512fd636` under
+  MIT; its source weights/tokenizer and enabled Kokoro voices are hash-checked;
+- local contract checks are green, but no deployed M2M100/voice/public-room
+  receipt belongs to this new model version until the deployment verifier and
+  fixed fixtures run on the AP-routed L4.
+
+A8 remains **partial**: a real live Modal replacement during an observed
+natural WebRTC call and an explicit Windows-host-off receipt are still missing.
+A11 remains **unmet**: automated browser/media lifecycle tests do not prove a
+person heard natural audio or a selected Voice Profile in the Codex in-app
+browser. Do not upgrade either status from this document without those live
+receipts.
+
+The fixed M2M receipt corpus is
+[`../multilingual_fixtures.json`](../multilingual_fixtures.json): EN↔ES,
+EN→FR/DE/JA/AR, ES→FR and Spanish Locale mapping. Semantic token hints make an
+observed output reviewable; they are not a native-speaker quality certificate.
+
+---
+
+## Historical bilingual receipts (previous deployed revision)
+
 Status snapshot: **2026-08-13 18:18 +07:00**. A “live automated pass” below
 means the deployed `workers.dev` room was exercised through its public browser
 interfaces. It is not the human-audible receipt required by A11.

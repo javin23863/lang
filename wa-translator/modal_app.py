@@ -29,23 +29,72 @@ from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import JSONResponse, Response
 from starlette.websockets import WebSocketDisconnect
 
+# The source tree colocates helpers in ``windows/``.  The deployed Modal image
+# deliberately installs just those audited helpers at /root/windows so the
+# heavyweight build context does not become a second copy of the app.  Resolve
+# the exact image layout first, with the source layout as the local-test path.
+WINDOWS_DIR = (Path("/root/windows") if Path("/root/windows/language_catalog.py").is_file()
+               else Path(__file__).with_name("windows"))
+sys.path.insert(0, str(WINDOWS_DIR))
+import language_catalog
+
 try:  # Local unit tests do not need a Modal account or SDK.
     import modal
 except ModuleNotFoundError:  # pragma: no cover - exercised by import itself
     modal = None
 
 
-LANGUAGES = ("en", "es")
-VOICE_STYLES = ("female", "male")
-VOICE_ROUTES = {
-    ("en", "female"): "af_heart",
-    ("en", "male"): "am_michael",
-    ("es", "female"): "ef_dora",
-    ("es", "male"): "em_alex",
+CATALOG = language_catalog.public_catalog()
+LANGUAGES = tuple(CATALOG["release_live_speech_languages"])
+M2M_LANGUAGE_CODES = frozenset(entry["code"] for entry in CATALOG["languages"])
+CATALOG_REVISION = CATALOG["revision"]
+M2M100_REVISION = CATALOG["models"]["mt"]["revision"]
+VOICE_ARTIFACT_SHA256 = CATALOG["models"]["tts"]["release_voice_artifact_sha256"]
+FIXTURE_PATH = (Path("/root/multilingual_fixtures.json")
+                if Path("/root/multilingual_fixtures.json").is_file()
+                else Path(__file__).with_name("multilingual_fixtures.json"))
+FIXTURE_DOCUMENT = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+MT_RECEIPT_FIXTURES = {
+    fixture["id"]: fixture for fixture in FIXTURE_DOCUMENT["fixtures"]
 }
+if (len(MT_RECEIPT_FIXTURES) != len(FIXTURE_DOCUMENT["fixtures"])
+        or any(not isinstance(fixture.get("id"), str)
+               or fixture.get("source_language") not in M2M_LANGUAGE_CODES
+               or fixture.get("target_language") not in M2M_LANGUAGE_CODES
+               or not isinstance(fixture.get("source_text"), str)
+               or len(fixture["source_text"]) > 300
+               for fixture in FIXTURE_DOCUMENT["fixtures"])):
+    raise RuntimeError("invalid multilingual model-receipt fixture catalog")
+
+
+def _live_voice_routes() -> dict[str, dict[str, str]]:
+    """Profiles reachable from release live-speech locales, with no fallback."""
+    routes: dict[str, dict[str, str]] = {}
+    for locale in CATALOG["locales"]:
+        if locale["language"] not in LANGUAGES:
+            continue
+        for voice in locale["voice_profiles"]:
+            route = {
+                "language": locale["language"],
+                "style": voice["style"],
+                "pipeline": voice["pipeline"],
+                "model_voice": voice["model_voice"],
+            }
+            existing = routes.setdefault(voice["id"], route)
+            if existing != route:
+                raise RuntimeError(f"voice profile has inconsistent catalog route: {voice['id']}")
+    return routes
+
+
+VOICE_ROUTES = _live_voice_routes()
+if set(VOICE_ARTIFACT_SHA256) != set(VOICE_ROUTES):
+    raise RuntimeError("catalog release voice checksums must exactly match enabled voice profiles")
 TTS_WARMUP_FIXTURES = (
-    ("Hi David, I'm fine, thank you.", "en", "female"),
-    ("Hola María, ¿cómo estás hoy?", "es", "female"),
+    ("Hi David, I'm fine, thank you.", "en-us-af-heart"),
+    ("Good morning. The room is ready.", "en-gb-bf-emma"),
+    ("Hola María, ¿cómo estás hoy?", "es-ef-dora"),
+    ("Bonjour, la salle est prête.", "fr-ff-siwis"),
+    ("こんにちは、準備ができました。", "ja-jf-alpha"),
 )
 
 SAMPLE_RATE = 16_000
@@ -75,13 +124,13 @@ WHISPER_REVISION = "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf"
 
 class Compute(Protocol):
     def transcribe_translate(
-        self, pcm: np.ndarray, source_lang: str, target_lang: str,
+        self, pcm: np.ndarray, source_lang: str, target_langs: list[str],
         stream_id: str, final: bool,
-    ) -> tuple[str, str]: ...
+    ) -> tuple[str, dict[str, str]]: ...
 
 
 class TTS(Protocol):
-    def synthesize(self, text: str, lang: str, voice_style: str) -> bytes: ...
+    def synthesize(self, text: str, voice_profile: str) -> bytes: ...
 
 
 class ModelInitializationError(RuntimeError):
@@ -107,6 +156,32 @@ def _bounded_diagnostic(error: Exception, *hidden: str) -> str:
     cause_type = (error.cause_type if isinstance(error, ModelInitializationError)
                   else type(error).__name__)
     return f"{cause_type}: {message[:MAX_DIAGNOSTIC_CHARS]}"
+
+
+def _translate_receipt_fixture(fixture: dict[str, Any]) -> dict[str, Any]:
+    """Run only a fixed, authenticated MT receipt fixture; never arbitrary text."""
+    import mt_ct2
+
+    translated, reason = mt_ct2.translate_many(
+        fixture["source_text"], fixture["source_language"],
+        [fixture["target_language"]],
+        stream_id=f"receipt-{fixture['id']}-{time.monotonic_ns()}", final=True,
+    )
+    text = translated.get(fixture["target_language"], "")
+    if not text:
+        raise RuntimeError(f"M2M100 receipt translation unavailable: {reason}")
+    normalized = text.casefold()
+    groups = fixture["semantic_token_groups"]
+    return {
+        "fixture_id": fixture["id"],
+        "source_language": fixture["source_language"],
+        "target_language": fixture["target_language"],
+        "translation": text,
+        "semantic_token_group_matches": [
+            any(token.casefold() in normalized for token in group) for group in groups
+        ],
+        "model": mt_ct2.model_receipt(),
+    }
 
 
 class InputCapacity:
@@ -153,9 +228,8 @@ class ModelRuntime:
         with self._load_lock:
             if self._asr is not None:
                 return
-            windows_dir = Path(__file__).with_name("windows")
-            if str(windows_dir) not in sys.path:
-                sys.path.insert(0, str(windows_dir))
+            if str(WINDOWS_DIR) not in sys.path:
+                sys.path.insert(0, str(WINDOWS_DIR))
             # The receiver also lazily imports faster_whisper.vad on its first
             # PCM frame.  Initialize that shared import path here before
             # importing another faster_whisper submodule, avoiding a cold-start
@@ -177,9 +251,9 @@ class ModelRuntime:
             mt_ct2.preload()
 
     def transcribe_translate(
-        self, pcm: np.ndarray, source_lang: str, target_lang: str,
+        self, pcm: np.ndarray, source_lang: str, target_langs: list[str],
         stream_id: str, final: bool,
-    ) -> tuple[str, str]:
+    ) -> tuple[str, dict[str, str]]:
         try:
             self._ensure_loaded()
         except ModelInitializationError:
@@ -189,15 +263,13 @@ class ModelRuntime:
         import mt_ct2
 
         original = self._asr.transcribe(pcm, source_lang, partial=not final)
-        translated = ""
+        translated: dict[str, str] = {}
         if original:
-            translated, _reason = mt_ct2.translate(
-                original,
-                f"{source_lang}-{target_lang}",
-                stream_id=stream_id,
-                final=final,
-            )
-        return original[:MAX_CAPTION_CHARS], translated[:MAX_CAPTION_CHARS]
+            translated, _reason = mt_ct2.translate_many(
+                original, source_lang, target_langs, stream_id=stream_id, final=final)
+        return original[:MAX_CAPTION_CHARS], {
+            language: value[:MAX_CAPTION_CHARS] for language, value in translated.items()
+        }
 
     def preload(self) -> None:
         started = time.monotonic()
@@ -209,7 +281,7 @@ class ModelRuntime:
 
 
 class KokoroTTS:
-    """Four controlled voice routes from one revision-pinned Kokoro model."""
+    """Explicit catalog voice-profile routes from one pinned Kokoro model."""
 
     def __init__(self) -> None:
         self._model: Any = None
@@ -235,16 +307,22 @@ class KokoroTTS:
                 revision=KOKORO_REVISION,
                 local_dir=str(local_dir),
                 allow_patterns=["config.json", "kokoro-v1_0.pth",
-                                *(f"voices/{voice}.pt"
-                                  for voice in VOICE_ROUTES.values())],
+                                *(f"voices/{route['model_voice']}.pt"
+                                  for route in VOICE_ROUTES.values())],
             )
             model_file = local_dir / "kokoro-v1_0.pth"
             digest = hashlib.sha256(model_file.read_bytes()).hexdigest()
             if not secrets.compare_digest(digest, KOKORO_MODEL_SHA256):
                 raise RuntimeError("Kokoro model checksum mismatch")
-            for voice in VOICE_ROUTES.values():
+            for route in VOICE_ROUTES.values():
+                voice = route["model_voice"]
                 if not (local_dir / "voices" / f"{voice}.pt").is_file():
                     raise RuntimeError(f"Kokoro voice missing: {voice}")
+            for profile_id, route in VOICE_ROUTES.items():
+                voice_file = local_dir / "voices" / f"{route['model_voice']}.pt"
+                digest = hashlib.sha256(voice_file.read_bytes()).hexdigest()
+                if not secrets.compare_digest(digest, VOICE_ARTIFACT_SHA256[profile_id]):
+                    raise RuntimeError(f"Kokoro voice checksum mismatch: {profile_id}")
 
             device = "cuda" if torch.cuda.is_available() else "cpu"
             model = KModel(
@@ -259,24 +337,25 @@ class KokoroTTS:
             if os.environ.get("MODAL_IS_REMOTE") == "1" and actual_device != "cuda":
                 raise RuntimeError("Kokoro CUDA unavailable in deployed L4 container")
             pipelines = {
-                "en": KPipeline(lang_code="a", repo_id=str(local_dir),
-                                model=model),
-                "es": KPipeline(lang_code="e", repo_id=str(local_dir),
-                                model=model),
+                pipeline: KPipeline(lang_code=pipeline, repo_id=str(local_dir), model=model)
+                for pipeline in sorted({route["pipeline"] for route in VOICE_ROUTES.values()})
             }
             self._model = model
             self._snapshot = local_dir
             self._pipelines = pipelines
             print(f"[tts] Kokoro model ready device={actual_device}", flush=True)
 
-    def synthesize(self, text: str, lang: str, voice_style: str) -> bytes:
+    def synthesize(self, text: str, voice_profile: str) -> bytes:
+        route = VOICE_ROUTES.get(voice_profile)
+        if route is None:
+            raise ValueError("unsupported Kokoro voice profile")
         with self._synthesis_lock:
             self._ensure_loaded()
             assert self._snapshot is not None
-            voice_name = VOICE_ROUTES[(lang, voice_style)]
+            voice_name = route["model_voice"]
             voice_path = self._snapshot / "voices" / f"{voice_name}.pt"
             chunks: list[np.ndarray] = []
-            for result in self._pipelines[lang](text, voice=str(voice_path)):
+            for result in self._pipelines[route["pipeline"]](text, voice=str(voice_path)):
                 audio = result.audio if hasattr(result, "audio") else result[2]
                 if audio is not None:
                     chunks.append(np.asarray(audio, dtype=np.float32))
@@ -297,8 +376,8 @@ class KokoroTTS:
 
     def preload(self) -> None:
         started = time.monotonic()
-        for text, lang, style in TTS_WARMUP_FIXTURES:
-            self.synthesize(text, lang, style)
+        for text, voice_profile in TTS_WARMUP_FIXTURES:
+            self.synthesize(text, voice_profile)
         elapsed_ms = round((time.monotonic() - started) * 1_000)
         print(f"[tts] Kokoro preload ready elapsed_ms={elapsed_ms}", flush=True)
 
@@ -342,7 +421,7 @@ class LatestWinsQueue:
 class StreamState:
     stream_id: str
     source_lang: str
-    target_lang: str
+    target_langs: list[str]
     endpointer: Any
     queue: LatestWinsQueue
     seq: int = 0
@@ -356,22 +435,35 @@ def _authorized(value: str | None, expected: str) -> bool:
     return secrets.compare_digest(value[7:], expected)
 
 
-def _valid_start(value: object) -> dict[str, str] | None:
+def _valid_start(value: object) -> dict[str, Any] | None:
     if not isinstance(value, dict) or value.get("type") != "start":
         return None
     stream_id = value.get("stream_id")
     source_lang = value.get("source_lang")
-    target_lang = value.get("target_lang")
+    source_locale = value.get("source_locale")
+    target_langs = value.get("target_langs")
+    catalog_revision = value.get("catalog_revision")
+    mt_revision = value.get("mt_revision")
     if (not isinstance(stream_id, str) or not stream_id
             or len(stream_id) > MAX_STREAM_ID_CHARS
-            or source_lang not in LANGUAGES or target_lang not in LANGUAGES
-            or source_lang == target_lang):
+            or source_lang not in LANGUAGES
+            or not isinstance(source_locale, str)
+            or language_catalog.base_language(source_locale) != source_lang
+            or not isinstance(target_langs, list)
+            or len(target_langs) > 3
+            or catalog_revision != CATALOG_REVISION
+            or mt_revision != M2M100_REVISION
+            or any(not isinstance(target, str) or target not in M2M_LANGUAGE_CODES
+                   for target in target_langs)):
         return None
+    # The data catalog is authoritative even though the M2M model has a wider
+    # text set. Compute streams are opened only for declared release speech.
+    unique_targets = list(dict.fromkeys(target_langs))
     return {"stream_id": stream_id, "source_lang": source_lang,
-            "target_lang": target_lang}
+            "target_langs": unique_targets}
 
 
-async def _receive_initial(websocket: WebSocket) -> dict[str, str] | None:
+async def _receive_initial(websocket: WebSocket) -> dict[str, Any] | None:
     message = await websocket.receive()
     raw = message.get("text")
     if not isinstance(raw, str) or len(raw.encode()) > MAX_CONTROL_BYTES:
@@ -440,11 +532,11 @@ async def _caption_worker(websocket: WebSocket, state: StreamState, compute: Com
     while True:
         job = await state.queue.get()
         # A final supersedes any older partial already executing.
-        original, translated = await asyncio.to_thread(
+        original, translations = await asyncio.to_thread(
             compute.transcribe_translate,
             job.audio,
             state.source_lang,
-            state.target_lang,
+            state.target_langs,
             state.stream_id,
             job.final,
         )
@@ -455,8 +547,8 @@ async def _caption_worker(websocket: WebSocket, state: StreamState, compute: Com
             "seq": job.seq,
             "final": job.final,
             "original": original[:MAX_CAPTION_CHARS],
-            "translations": ({state.target_lang: translated[:MAX_CAPTION_CHARS]}
-                             if translated else {}),
+            "translations": {language: value[:MAX_CAPTION_CHARS]
+                             for language, value in translations.items()},
             "t_ms": max(0, round((asyncio.get_running_loop().time() - job.onset) * 1000)),
         })
 
@@ -518,9 +610,8 @@ def create_api(
             target=run, name="model-preload", daemon=True,
         ).start()
     if endpointer_factory is None:
-        windows_dir = Path(__file__).with_name("windows")
-        if str(windows_dir) not in sys.path:
-            sys.path.insert(0, str(windows_dir))
+        if str(WINDOWS_DIR) not in sys.path:
+            sys.path.insert(0, str(WINDOWS_DIR))
         from endpointer import Endpointer
         endpointer_factory = Endpointer
 
@@ -532,7 +623,42 @@ def create_api(
             return JSONResponse({"error": "unauthorized"}, status_code=401)
         return JSONResponse({"status": "ok", "languages": list(LANGUAGES),
                              "max_streams": MAX_STREAM_INPUTS,
-                             "max_tts": MAX_TTS_INPUTS})
+                             "max_tts": MAX_TTS_INPUTS,
+                             "catalog_revision": CATALOG_REVISION,
+                             "mt_revision": M2M100_REVISION,
+                             "voice_profiles": sorted(VOICE_ROUTES)})
+
+    @api.get("/capabilities")
+    async def capabilities(request: Request) -> Response:
+        if not _authorized(request.headers.get("authorization"), secret):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        return JSONResponse(language_catalog.public_catalog(),
+                            headers={"Cache-Control": "no-store"})
+
+    @api.post("/mt-receipt")
+    async def mt_receipt(request: Request) -> Response:
+        """Authenticated, bounded pinned-MT receipt path used only at deploy time."""
+        if not _authorized(request.headers.get("authorization"), secret):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        body = await _read_limited(request, 256)
+        if body is None:
+            return JSONResponse({"error": "request body is too large"}, status_code=413)
+        try:
+            data = json.loads(body)
+            fixture_id = data.get("fixture_id") if isinstance(data, dict) else None
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            fixture_id = None
+        fixture = MT_RECEIPT_FIXTURES.get(fixture_id)
+        if fixture is None:
+            return JSONResponse({"error": "unknown model receipt fixture"}, status_code=422)
+        try:
+            receipt = await asyncio.wait_for(
+                asyncio.to_thread(_translate_receipt_fixture, fixture), timeout=120)
+        except Exception as error:
+            print(f"[mt-receipt] {_bounded_diagnostic(error, secret)}",
+                  file=sys.stderr, flush=True)
+            return JSONResponse({"error": "M2M100 receipt unavailable"}, status_code=503)
+        return JSONResponse(receipt, headers={"Cache-Control": "no-store"})
 
     @api.websocket("/stream")
     async def stream(websocket: WebSocket) -> None:
@@ -562,6 +688,11 @@ def create_api(
                 task.cancel()
             await asyncio.gather(*pending, return_exceptions=True)
             for task in done:
+                # ``Task.exception`` re-raises ``CancelledError``. A peer
+                # close is an ordinary stream terminal condition, not an
+                # application failure that should poison the ASGI close path.
+                if task.cancelled():
+                    continue
                 error = task.exception()
                 if error and not isinstance(error, WebSocketDisconnect):
                     if isinstance(error, ModelInitializationError):
@@ -592,17 +723,17 @@ def create_api(
         if not isinstance(data, dict):
             return JSONResponse({"error": "invalid TTS request"}, status_code=422)
         text = data.get("text")
-        lang = data.get("lang")
-        style = data.get("voice_style")
+        voice_profile = data.get("voice_profile")
         if (not isinstance(text, str) or not text.strip()
-                or len(text) > MAX_TTS_CHARS or lang not in LANGUAGES
-                or style not in VOICE_STYLES):
+                or len(text) > MAX_TTS_CHARS
+                or not isinstance(voice_profile, str)
+                or voice_profile not in VOICE_ROUTES):
             return JSONResponse({"error": "invalid TTS request"}, status_code=422)
         if not input_capacity.try_tts():
             return JSONResponse({"error": "TTS busy"}, status_code=429,
                                 headers={"Retry-After": "1"})
         task = asyncio.create_task(
-            asyncio.to_thread(tts_engine.synthesize, text.strip(), lang, style))
+            asyncio.to_thread(tts_engine.synthesize, text.strip(), voice_profile))
         release_on_return = True
         try:
             audio = await asyncio.wait_for(asyncio.shield(task), timeout=60)
@@ -645,6 +776,7 @@ if modal is not None:  # pragma: no branch - false only in the local test venv
             "HOME": "/root",
             "HF_HOME": "/model-cache/huggingface",
             "LANG_ROOM_MODEL_ROOT": "/model-cache/lang-room",
+            "MODAL_IS_REMOTE": "1",
             "LD_LIBRARY_PATH": "/usr/local/lib/python3.11/site-packages/nvidia/cublas/lib:/usr/local/lib/python3.11/site-packages/nvidia/cudnn/lib",
         })
         .run_commands(
@@ -652,6 +784,12 @@ if modal is not None:  # pragma: no branch - false only in the local test venv
             "ctypes.CDLL('libcudnn.so.9')\""
         )
         .add_local_file(str(Path(__file__)), "/root/wa-translator/modal_app.py")
+        .add_local_file(str(Path(__file__).with_name("capabilities.json")),
+                        "/root/capabilities.json")
+        .add_local_file(str(Path(__file__).with_name("multilingual_fixtures.json")),
+                        "/root/multilingual_fixtures.json")
+        .add_local_file(str(Path(__file__).with_name("windows") / "language_catalog.py"),
+                        "/root/windows/language_catalog.py")
         .add_local_file(str(Path(__file__).with_name("windows") / "asr_whisper.py"),
                         "/root/windows/asr_whisper.py")
         .add_local_file(str(Path(__file__).with_name("windows") / "cuda_dlls.py"),
