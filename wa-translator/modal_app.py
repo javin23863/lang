@@ -88,20 +88,21 @@ class ModelInitializationError(RuntimeError):
         super().__init__(str(cause))
 
 
-def _bounded_initialization_diagnostic(
-    error: ModelInitializationError, shared_secret: str,
-) -> str:
+def _bounded_diagnostic(error: Exception, *hidden: str) -> str:
     """Return useful model-startup context without logging request content."""
     message = " ".join(str(error).split())
-    if shared_secret:
-        message = message.replace(shared_secret, "[redacted]")
+    for value in hidden:
+        if value:
+            message = message.replace(value, "[redacted]")
     message = re.sub(
         r"(?i)(bearer\s+|(?:token|secret|password|credential)\s*[=:]\s*)\S+",
         r"\1[redacted]",
         message,
     )
     message = re.sub(r"(https?://[^?\s]+)\?\S+", r"\1?[redacted]", message)
-    return f"{error.cause_type}: {message[:MAX_DIAGNOSTIC_CHARS]}"
+    cause_type = (error.cause_type if isinstance(error, ModelInitializationError)
+                  else type(error).__name__)
+    return f"{cause_type}: {message[:MAX_DIAGNOSTIC_CHARS]}"
 
 
 class InputCapacity:
@@ -508,7 +509,7 @@ def create_api(
                 error = task.exception()
                 if error and not isinstance(error, WebSocketDisconnect):
                     if isinstance(error, ModelInitializationError):
-                        diagnostic = _bounded_initialization_diagnostic(error, secret)
+                        diagnostic = _bounded_diagnostic(error, secret)
                     else:
                         diagnostic = type(error).__name__
                     print(f"[stream] {diagnostic}", file=sys.stderr, flush=True)
@@ -557,7 +558,9 @@ def create_api(
             release_on_return = False
             task.add_done_callback(lambda _task: input_capacity.release_tts())
             raise
-        except Exception:
+        except Exception as error:
+            print(f"[tts] {_bounded_diagnostic(error, secret, text)}",
+                  file=sys.stderr, flush=True)
             return JSONResponse({"error": "TTS unavailable"}, status_code=503)
         finally:
             if release_on_return:

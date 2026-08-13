@@ -81,6 +81,11 @@ class FakeTTS:
                 + (16).to_bytes(2, "little") + b"data" + (0).to_bytes(4, "little"))
 
 
+class FailingTTS:
+    def synthesize(self, text, *_args):
+        raise RuntimeError(f"failed text={text} token={SECRET}")
+
+
 def client_fixture():
     compute = FakeCompute()
     tts = FakeTTS()
@@ -171,6 +176,24 @@ class ModalStreamTests(unittest.TestCase):
 
 
 class ModalTTSTests(unittest.TestCase):
+    def test_tts_failure_logs_bounded_diagnostic_without_text_or_credentials(self):
+        api = modal_app.create_api(
+            shared_secret=SECRET, compute=FakeCompute(), tts=FailingTTS(),
+            endpointer_factory=FakeEndpointer,
+        )
+        output = io.StringIO()
+        with contextlib.redirect_stderr(output):
+            response = TestClient(api).post(
+                "/tts", headers={"authorization": f"Bearer {SECRET}"},
+                json={"text": "private fixture", "lang": "en",
+                      "voice_style": "female"},
+            )
+        self.assertEqual(response.status_code, 503)
+        logged = output.getvalue()
+        self.assertIn("RuntimeError", logged)
+        self.assertNotIn(SECRET, logged)
+        self.assertNotIn("private fixture", logged)
+
     def test_synthesis_places_supplied_model_on_available_cuda_and_eval(self):
         models = []
 
