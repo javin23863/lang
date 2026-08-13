@@ -141,7 +141,7 @@ class ModalComputeTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["cache-control"], "no-store")
         self.assertEqual(response.json()["revision"],
-                         "2026-08-14-m2m100-55c2e61")
+                         "2026-08-14-m2m100-55c2e61-voice-bytes")
         self.assertEqual(response.json()["counts"]["base_languages"], 100)
 
     def test_fixed_mt_receipt_endpoint_rejects_arbitrary_input_and_reports_pin(self):

@@ -57,6 +57,22 @@ class LanguageCatalogTests(unittest.TestCase):
         results = language_catalog.search_locales("Español")
         self.assertIn("es-ES", [entry["id"] for entry in results])
 
+    def test_release_voice_pins_are_verified_content_hashes(self):
+        """Pins are SHA-256s of resolve-response bytes, not HF ETags."""
+        pins = language_catalog.public_catalog()["models"]["tts"][
+            "release_voice_artifact_sha256"]
+        self.assertEqual(pins, {
+            "en-us-af-heart": "0ab5709b8ffab19bfd849cd11d98f75b60af7733253ad0d67b12382a102cb4ff",
+            "en-us-am-michael": "9a443b79a4b22489a5b0ab7c651a0bcd1a30bef675c28333f06971abbd47bd37",
+            "en-gb-bf-emma": "d0a423deabf4a52b4f49318c51742c54e21bb89bbbe9a12141e7758ddb5da701",
+            "en-gb-bm-fable": "d44935f3135257a9064df99f007fc1342ff1aa767552b4a4fa4c3b2e6e59079c",
+            "es-ef-dora": "d9d69b0f8a2b87a345f269d89639f89dfbd1a6c9da0c498ae36dd34afcf35530",
+            "es-em-alex": "5eac53f767c3f31a081918ba531969aea850bed18fe56419b804d642c6973431",
+            "fr-ff-siwis": "8073bf2d2c4b9543a90f2f0fd2144de4ed157e2d4b79ddeb0d5123066171fbc9",
+            "ja-jf-alpha": "1bf4c9dc69e45ee46183b071f4db766349aac5592acbcfeaf051018048a5d787",
+            "ja-jm-kumo": "98340afd68b1cee84fe0cd95528cfa6d4b39e416aa75a9df64049d52c8b55896",
+        })
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
