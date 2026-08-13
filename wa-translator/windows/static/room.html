@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111b21">
+<link rel="manifest" href="/manifest.webmanifest">
 <title>Live Translator Room</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -40,20 +42,30 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
 @keyframes blink{50%{opacity:0}}
 
 /* ── controls ────────────────────────────────────────────── */
-#bar{flex:0 0 auto;background:#111b21;padding:8px 12px calc(8px + env(safe-area-inset-bottom));
-     display:flex;gap:8px;align-items:center;border-top:1px solid #202c33}
+#bar{flex:0 0 auto;background:#111b21;padding:8px 10px calc(8px + env(safe-area-inset-bottom));
+     display:grid;grid-template-columns:minmax(118px,1fr) repeat(3,44px);gap:7px;
+     align-items:center;border-top:1px solid #202c33}
 button{border:none;border-radius:20px;font-size:14px;font-weight:600;
-       cursor:pointer;padding:11px 16px;font-family:inherit}
-#micBtn{flex:1;background:#075E54;color:#fff}
+       cursor:pointer;padding:11px 12px;font-family:inherit;min-height:42px}
+#micBtn{background:#075E54;color:#fff;min-width:0;white-space:nowrap;overflow:hidden}
 #micBtn.on{background:#d32f2f}
 #micBtn .dot{display:inline-block;width:9px;height:9px;border-radius:50%;
              background:#fff;margin-right:7px;animation:blink 1s infinite}
-.icon{background:#202c33;color:#e9edef;padding:11px 13px}
+.icon{background:#202c33;color:#e9edef;padding:10px;width:44px}
 .icon.off{background:#202c33;color:#8696a0;text-decoration:line-through}
-#langSel{background:#202c33;color:#e9edef;border:none;border-radius:20px;
-         padding:11px 10px;font-size:14px;font-family:inherit}
+#settings{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.setting{display:flex;flex-direction:column;gap:3px;min-width:0;color:#8696a0;
+         font-size:10px;text-align:left}
+.setting select{width:100%;min-width:0;background:#202c33;color:#e9edef;border:0;
+         border-radius:8px;padding:8px 5px;font-size:12px;font-family:inherit}
 #status{position:absolute;top:0;left:0;right:0;padding:5px;text-align:center;
         font-size:11px;color:#e9edef;background:rgba(0,0,0,.55);z-index:5}
+@media(max-width:380px){
+  #stage{height:31vh;min-height:160px}
+  #captions{padding:8px 10px 6px}
+  #bar{padding-left:7px;padding-right:7px;gap:6px;grid-template-columns:minmax(105px,1fr) repeat(3,42px)}
+  .icon{width:42px}.setting select{font-size:11px;padding:7px 3px}
+}
 </style>
 </head>
 <body>
@@ -69,19 +81,37 @@ button{border:none;border-radius:20px;font-size:14px;font-weight:600;
 
 <div id="bar">
   <button id="micBtn">🎤 Start</button>
-  <button id="camBtn" class="icon">📷</button>
-  <select id="langSel" title="The language you speak"></select>
+  <button id="shareBtn" class="icon" title="Share this private room" aria-label="Share">📤</button>
+  <button id="camBtn" class="icon" title="Turn camera on or off" aria-label="Camera">📷</button>
+  <button id="voiceBtn" class="icon off" title="Turn translated voice on or off" aria-label="Translated voice">🔇</button>
+  <div id="settings">
+    <label class="setting">I speak<select id="langSel"></select></label>
+    <label class="setting">I hear<select id="listenVoiceSel">
+      <option value="match">Match speaker</option>
+      <option value="female">Female</option>
+      <option value="male">Male</option>
+    </select></label>
+    <label class="setting">My voice<select id="publishVoiceSel">
+      <option value="female">Female</option>
+      <option value="male">Male</option>
+    </select></label>
+  </div>
 </div>
 
 <script>
 const LANG_NAMES = {en: 'English', es: 'Español'};
 const $ = (id) => document.getElementById(id);
+const roomId = location.pathname.split('/').filter(Boolean).pop();
 
-let ws, myId = null, myLang = (navigator.language || 'en').slice(0, 2);
+let ws, myId = null, ttsToken = null, myLang = (navigator.language || 'en').slice(0, 2);
 if (!(myLang in LANG_NAMES)) myLang = 'en';
+let myVoiceStyle = 'female', listenVoiceStyle = 'match';
 
 let mediaStream = null, audioCtx = null, workletNode = null;
-let micOn = false, camOn = true, roomFull = false;
+let micOn = false, camOn = true, roomFull = false, reconnectFailures = 0;
+let terminalRoom = false, turnRefreshTimer = null, iceRefreshPromise = null;
+let iceServers = [{urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302']}];
+let iceExpiresAt = 0;
 const peers = new Map();   // id -> {pc, lang, polite, makingOffer, ignoreOffer}
 const bubbles = new Map(); // "speakerId:seq" -> element
 
@@ -92,20 +122,112 @@ function setStatus(text, sticky) {
   if (!sticky && text) setTimeout(() => { if (el.textContent === text) el.style.display = 'none'; }, 3000);
 }
 
-// ── WebSocket ─────────────────────────────────────────────
-function connect() {
-  ws = new WebSocket((location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws');
+// ── WebSocket and short-lived ICE configuration ──────────
+function scheduleTurnRefresh(delay) {
+  clearTimeout(turnRefreshTimer);
+  if (terminalRoom) return;
+  turnRefreshTimer = setTimeout(() => refreshIceServers(true),
+                                Math.max(1000, Math.min(delay, 2147483647)));
+}
+
+function applyIceServersToPeers() {
+  for (const {pc} of peers.values()) {
+    if (pc.connectionState === 'closed') continue;
+    try {
+      pc.setConfiguration({iceServers});
+      pc.restartIce();
+    } catch (_) {
+      // A connection closing at the same moment will be rebuilt by signalling.
+    }
+  }
+}
+
+async function refreshIceServers(force = false) {
+  if (!force && Date.now() < iceExpiresAt - 60000) {
+    scheduleTurnRefresh(iceExpiresAt - Date.now() - 60000);
+    return;
+  }
+  if (iceRefreshPromise) return iceRefreshPromise;
+  iceRefreshPromise = (async () => {
+    try {
+      const response = await fetch('/api/turn', {
+        headers: {'Authorization': 'Bearer ' + roomId, 'Accept': 'application/json'}
+      });
+      if (response.status === 404) return; // Local adapter intentionally uses STUN.
+      if (!response.ok) {
+        scheduleTurnRefresh(30000);
+        return;
+      }
+      const value = await response.json();
+      if (!Array.isArray(value.iceServers) || !value.iceServers.length) {
+        throw new Error('empty ICE config');
+      }
+      iceServers = value.iceServers;
+      iceExpiresAt = Number(value.expires_at) * 1000 || Date.now() + 300000;
+      applyIceServersToPeers();
+      scheduleTurnRefresh(iceExpiresAt - Date.now() - 60000);
+    } catch (_) {
+      scheduleTurnRefresh(30000);
+      // Direct connections still work on compatible networks. A relay failure
+      // remains visible in connection state; no long-term key is in this page.
+    }
+  })().finally(() => { iceRefreshPromise = null; });
+  return iceRefreshPromise;
+}
+
+async function preflightRoom() {
+  if (terminalRoom) return false;
+  try {
+    const response = await fetch('/api/room', {
+      headers: {'Authorization': 'Bearer ' + roomId, 'Accept': 'application/json'}
+    });
+    if (response.status === 401 || response.status === 410) {
+      terminalRoom = true;
+      clearTimeout(turnRefreshTimer);
+      failVoice('Natural audio restored because this private room expired');
+      setStatus('This private room has expired or is unavailable', true);
+      showVideoNote('Ask the caller to create a new private room.');
+      return false;
+    }
+    // 404 keeps compatibility with an older local adapter that has no
+    // preflight route. Other transient failures still get the bounded retry.
+    return true;
+  } catch (_) {
+    return true;
+  }
+}
+
+async function connect() {
+  if (!await preflightRoom()) return;
+  await refreshIceServers();
+  ws = new WebSocket((location.protocol === 'https:' ? 'wss' : 'ws') + '://' +
+                     location.host + '/ws/' + encodeURIComponent(roomId));
   ws.binaryType = 'arraybuffer';
   ws.onopen = () => {
+    reconnectFailures = 0;
     setStatus('Connected');
-    send({type: 'join', lang: myLang, name: LANG_NAMES[myLang]});
+    send({type: 'join', lang: myLang, name: LANG_NAMES[myLang],
+          voice_style: myVoiceStyle});
   };
-  ws.onclose = () => {
+  ws.onclose = (event) => {
+    failVoice('Natural audio restored while reconnecting');
+    ttsToken = null;
+    if (terminalRoom) return;
+    if (event.code === 1008) {
+      setStatus('This private room has expired or is unavailable', true);
+      showVideoNote('Ask the caller to create a new private room.');
+      return;
+    }
     if (roomFull) return;   // retrying a full room just hammers the server
     setStatus('Reconnecting…', true);
-    setTimeout(connect, 1500);
+    reconnectFailures++;
+    const delay = Math.min(8000, 250 * 2 ** Math.min(reconnectFailures, 5));
+    setTimeout(connect, delay);
   };
-  ws.onmessage = (ev) => handle(JSON.parse(ev.data));
+  ws.onmessage = async (ev) => {
+    try { await handle(JSON.parse(ev.data)); }
+    catch (_) { ws.close(1008, 'invalid server message'); }
+  };
 }
 
 function send(obj) {
@@ -124,16 +246,23 @@ async function handle(m) {
       showVideoNote('Reconnecting to the other person…');
     }
     myId = m.id;
+    ttsToken = m.tts_token;
     renderLangs(m.langs);
     // myId decides who is polite, so no peer may be built before it is known.
-    for (const peer of m.peers) startPeer(peer.id);
+    for (const peer of m.peers) startPeer(peer);
   } else if (m.type === 'peer_join') {
     setStatus(LANG_NAMES[m.lang] + ' speaker joined');
-    startPeer(m.id);
+    startPeer(m);
+  } else if (m.type === 'peer_update') {
+    const p = peers.get(m.id);
+    if (p) { p.lang = m.lang; p.voiceStyle = m.voice_style; }
   } else if (m.type === 'peer_leave') {
     const p = peers.get(m.id);
     if (p) { p.pc.close(); peers.delete(m.id); }
-    if (peers.size === 0) showVideoNote('The other person left.');
+    failVoice('Natural audio restored because a participant left');
+    if (peers.size === 0) {
+      showVideoNote('The other person left.');
+    }
   } else if (m.type === 'signal') {
     await onSignal(m.from, m.data);
   } else if (m.type === 'caption') {
@@ -181,7 +310,274 @@ function renderCaption(m) {
   el.querySelector('.lead').textContent = lead;
   el.querySelector('.sub').textContent = sub;
   $('captions').scrollTop = $('captions').scrollHeight;
+
+  // Finals only. Partials are rewritten as the sentence lands, so speaking them
+  // would stutter and repeat, and the server suppresses duplicate finals — so
+  // this is the one event per utterance worth saying out loud.
+  if (m.final && !mine && translated) speak(translated, myLang, m.speaker);
 }
+
+// ── Spoken translation ────────────────────────────────────
+// Captions-only is the safe default. Cloud speech always comes from one of the
+// four controlled Kokoro routes; no browser voice or biometric inference is used.
+let voiceOn = false, speaking = false, asrPaused = false;
+let speechGeneration = 0, ttsRequestId = 0, activeSpeech = null;
+const fallbackAudio = new Audio();
+let fallbackUrl = null;
+const speakQueue = [];
+
+function setNaturalAudioMuted(muted) {
+  $('remoteVideo').muted = muted;
+}
+
+function updateVoiceButton() {
+  $('voiceBtn').className = 'icon' + (voiceOn ? '' : ' off');
+  $('voiceBtn').textContent = voiceOn ? '🔊' : '🔇';
+  $('voiceBtn').setAttribute('aria-pressed', String(voiceOn));
+}
+
+function resolvedVoiceStyle(speakerId) {
+  if (listenVoiceStyle !== 'match') return listenVoiceStyle;
+  return peers.get(speakerId)?.voiceStyle || 'female';
+}
+
+function speak(text, lang, speakerId) {
+  if (!voiceOn || !text) return;
+  speakQueue.push({text, lang, voiceStyle: resolvedVoiceStyle(speakerId)});
+  drainSpeech();
+}
+
+function drainSpeech() {
+  if (speaking || !speakQueue.length) return;
+  const {text, lang, voiceStyle} = speakQueue.shift();
+  const item = {
+    id: ++ttsRequestId, text, lang, voiceStyle, generation: speechGeneration,
+    settled: false, controller: null, fallbackStarted: false,
+    playTimer: null, fetchTimer: null
+  };
+  speaking = true;
+  activeSpeech = item;
+  requestFallbackSpeech(item);
+}
+
+async function requestFallbackSpeech(item) {
+  if (item.settled || item !== activeSpeech || item.generation !== speechGeneration || !voiceOn) return;
+  if (item.fallbackStarted) return;
+  item.fallbackStarted = true;
+  item.controller = new AbortController();
+  item.fetchTimer = setTimeout(() => item.controller.abort(), 65000);
+  try {
+    const body = JSON.stringify({text: item.text, lang: item.lang,
+                                 voice_style: item.voiceStyle});
+    const headers = {'Content-Type': 'application/json',
+                     'Authorization': 'Bearer ' + roomId,
+                     'X-Participant-ID': myId};
+    if (ttsToken) headers['X-TTS-Token'] = ttsToken;
+    const retryDeadline = Date.now() + 30000;
+    let response, retryDelay = 250;
+    while (true) {
+      response = await fetch('/tts', {
+        method: 'POST',
+        headers,
+        body,
+        signal: item.controller.signal
+      });
+      if (response.status !== 429 || Date.now() + retryDelay > retryDeadline) break;
+      await response.text();
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
+      if (item.controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      retryDelay = Math.min(2000, retryDelay * 2);
+    }
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    const audio = await response.blob();
+    if (!audio.size) throw new Error('empty audio');
+    if (item.settled || item !== activeSpeech || item.generation !== speechGeneration) return;
+
+    stopFallbackAudio();
+    fallbackUrl = URL.createObjectURL(audio);
+    fallbackAudio.src = fallbackUrl;
+    fallbackAudio.volume = 1;
+    fallbackAudio.onended = () => finishSpeech(item);
+    fallbackAudio.onerror = () => finishSpeech(item, 'Could not play spoken translation');
+    item.playTimer = setTimeout(
+      () => finishSpeech(item, 'Spoken translation playback timed out'), 60000);
+    // Natural incoming audio and the local ASR feed are both gated before
+    // play(), while the WebRTC microphone track sent to peers remains live.
+    setNaturalAudioMuted(true);
+    setAsrPaused(true);
+    await fallbackAudio.play();
+  } catch (error) {
+    if (error.name === 'AbortError' && item.settled) return;
+    finishSpeech(item, error.name === 'NotAllowedError'
+      ? 'Tap Start to allow spoken translation'
+      : 'Spoken translation is temporarily unavailable');
+  } finally {
+    clearTimeout(item.fetchTimer);
+  }
+}
+
+function stopFallbackAudio() {
+  fallbackAudio.onplaying = fallbackAudio.onended = fallbackAudio.onerror = null;
+  fallbackAudio.pause();
+  fallbackAudio.removeAttribute('src');
+  if (fallbackUrl) {
+    URL.revokeObjectURL(fallbackUrl);
+    fallbackUrl = null;
+  }
+}
+
+function finishSpeech(item, error) {
+  // Browser media can report a rejected play and a later error for the same
+  // element. Only the first completion may advance the shared queue.
+  if (!item || item.settled) return;
+  item.settled = true;
+  clearTimeout(item.playTimer);
+  clearTimeout(item.fetchTimer);
+  if (item !== activeSpeech || item.generation !== speechGeneration) return;
+  stopFallbackAudio();
+  activeSpeech = null;
+  if (error) {
+    speaking = false;
+    setAsrPaused(false);
+    failVoice(error);
+    return;
+  }
+  // Let the room go quiet before listening again, or the tail of the
+  // utterance is still in the air when the mic reopens. Keep `speaking` true
+  // through this tail so a newly queued final cannot start early. Once the
+  // tail ends, reopen ASR before fetching the next fallback WAV: synthesis is
+  // silent and must not unnecessarily suppress captions.
+  setTimeout(() => {
+    if (item.generation !== speechGeneration) return;
+    speaking = false;
+    setAsrPaused(false);
+    drainSpeech();
+  }, 250);
+}
+
+function cancelSpeech() {
+  const needsTail = asrPaused;
+  speechGeneration++;
+  const generation = speechGeneration;
+  speakQueue.length = 0;
+  if (activeSpeech) {
+    activeSpeech.settled = true;
+    clearTimeout(activeSpeech.playTimer);
+    clearTimeout(activeSpeech.fetchTimer);
+    if (activeSpeech.controller) activeSpeech.controller.abort();
+    activeSpeech = null;
+  }
+  stopFallbackAudio();
+  if (needsTail) {
+    // Block a rapid off/on or language-change final until the cancelled sound
+    // has left the room. Otherwise this old timer could reopen ASR in the
+    // middle of the new utterance.
+    speaking = true;
+    setTimeout(() => {
+      if (generation !== speechGeneration) return;
+      speaking = false;
+      setAsrPaused(false);
+      drainSpeech();
+    }, 250);
+  } else {
+    speaking = false;
+    setAsrPaused(false);
+  }
+}
+
+function failVoice(message) {
+  const wasOn = voiceOn;
+  voiceOn = false;
+  cancelSpeech();
+  setNaturalAudioMuted(false);
+  updateVoiceButton();
+  if (message && wasOn) setStatus(message);
+}
+
+let audioUnlocked = false;
+const SILENT_WAV = 'data:audio/wav;base64,UklGRsQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+
+function unlockFallbackAudio() {
+  if (audioUnlocked) return;
+  // Reuse this exact element for later translations. On iOS, unlocking a
+  // disposable element does not reliably authorize a different one.
+  fallbackAudio.src = SILENT_WAV;
+  fallbackAudio.volume = 0;
+  fallbackAudio.play().then(() => {
+    audioUnlocked = true;
+    fallbackAudio.pause();
+    fallbackAudio.removeAttribute('src');
+    fallbackAudio.volume = 1;
+  }).catch(() => {});
+}
+
+function setAsrPaused(p) {
+  // Flush on the transition that stops capture. Playback has not started yet,
+  // and reopening after its tail deliberately sends no second flush.
+  if (p && !asrPaused) sendSpeechEnd();
+  asrPaused = p;
+  if (workletNode) workletNode.port.postMessage({on: micOn && !asrPaused});
+}
+
+function sendSpeechEnd() {
+  if (micOn && !asrPaused) send({type: 'speech_end'});
+}
+
+$('voiceBtn').onclick = () => {
+  unlockFallbackAudio();
+  if (voiceOn) {
+    failVoice();
+  } else {
+    voiceOn = true;
+    // Replace natural incoming audio immediately, before any translated phrase.
+    setNaturalAudioMuted(true);
+    updateVoiceButton();
+  }
+  setStatus(voiceOn ? 'Speaking translations aloud' : 'Translations muted — captions only');
+};
+
+$('listenVoiceSel').onchange = () => {
+  listenVoiceStyle = $('listenVoiceSel').value;
+  cancelSpeech();
+};
+
+$('publishVoiceSel').onchange = () => {
+  myVoiceStyle = $('publishVoiceSel').value;
+  send({type: 'set_voice_style', voice_style: myVoiceStyle});
+};
+
+updateVoiceButton();
+
+$('shareBtn').onclick = async () => {
+  const invite = {
+    title: 'Private translated video call',
+    text: 'Join my private English–Spanish video call.',
+    url: location.href
+  };
+  if (navigator.share) {
+    try {
+      await navigator.share(invite);
+      setStatus('Invitation shared');
+      return;
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+    }
+  }
+  const message = invite.text + '\n' + invite.url;
+  const opened = window.open('https://wa.me/?text=' + encodeURIComponent(message),
+                             '_blank');
+  if (opened) opened.opener = null;
+  if (!opened) {
+    try {
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(invite.url);
+        setStatus('Private room link copied');
+        return;
+      }
+    } catch (_) {}
+    setStatus('Could not open WhatsApp — copy the address-bar link', true);
+  }
+};
 
 // ── Media ─────────────────────────────────────────────────
 // Cache the promise, not the resolved stream. startPeer, the mic button and the
@@ -198,6 +594,9 @@ function getMedia() {
     }).then(stream => {
       mediaStream = stream;
       $('selfVideo').srcObject = stream;
+      stream.getAudioTracks().forEach(track => {
+        track.onended = () => { if (micOn) setMicEnabled(false); };
+      });
       // The camera may be wanted before the mic is. The audio track exists from
       // here on and gets published to the peer as soon as one connects, so it
       // starts disabled and only setMicEnabled turns it on.
@@ -216,9 +615,13 @@ function getMedia() {
 // separate before, so the button muted the captions while the other person
 // could still hear the room.
 function setMicEnabled(on) {
+  if (!on && micOn && !asrPaused) sendSpeechEnd();
   micOn = on;
   if (mediaStream) mediaStream.getAudioTracks().forEach(t => { t.enabled = on; });
-  if (workletNode) workletNode.port.postMessage({on});
+  // `asrPaused` outranks the button while a translation is being spoken —
+  // unmuting mid-utterance would feed our own speaker straight back into ASR.
+  // The peer still hears the live track; only the caption feed is held.
+  if (workletNode) workletNode.port.postMessage({on: on && !asrPaused});
   $('micBtn').className = on ? 'on' : '';
   $('micBtn').innerHTML = on
     ? '<span class="dot"></span>Listening — tap to mute'
@@ -242,6 +645,7 @@ async function startCapture() {
 }
 
 $('micBtn').onclick = async () => {
+  unlockFallbackAudio();
   try {
     if (micOn) {
       setMicEnabled(false);
@@ -275,7 +679,12 @@ function renderLangs(langs) {
     if (l === myLang) o.selected = true;
     sel.appendChild(o);
   });
-  sel.onchange = () => { myLang = sel.value; send({type: 'set_lang', lang: myLang}); };
+  sel.onchange = () => {
+    cancelSpeech();
+    sendSpeechEnd();
+    myLang = sel.value;
+    send({type: 'set_lang', lang: myLang});
+  };
 }
 
 // ── WebRTC (perfect negotiation; lower id is polite) ──────
@@ -295,14 +704,20 @@ function addTracks(pc) {
 // and built a second RTCPeerConnection for the same peer: the SDP was applied to
 // one and the ICE candidates were emitted by the other, and one side of the call
 // never sent a single candidate. Nothing may await before peers.set().
-function startPeer(peerId) {
+function startPeer(peer) {
+  const peerId = typeof peer === 'object' ? peer.id : peer;
   const existing = peers.get(peerId);
-  if (existing) return existing;
+  if (existing) {
+    if (typeof peer === 'object') {
+      existing.lang = peer.lang;
+      existing.voiceStyle = peer.voice_style;
+    }
+    return existing;
+  }
 
-  const pc = new RTCPeerConnection({
-    iceServers: [{urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302']}]
-  });
-  const state = {pc, polite: myId > peerId, makingOffer: false, ignoreOffer: false};
+  const pc = new RTCPeerConnection({iceServers});
+  const state = {pc, polite: myId > peerId, makingOffer: false, ignoreOffer: false,
+                 lang: peer?.lang || 'en', voiceStyle: peer?.voice_style || 'female'};
   peers.set(peerId, state);
 
   // Media may not be granted yet. Adding tracks later fires negotiationneeded
@@ -312,6 +727,7 @@ function startPeer(peerId) {
 
   pc.ontrack = (e) => {
     $('remoteVideo').srcObject = e.streams[0];
+    setNaturalAudioMuted(voiceOn);
     $('videoNote').classList.add('hidden');
   };
   pc.onicecandidate = (e) => {
@@ -326,9 +742,13 @@ function startPeer(peerId) {
   };
   pc.oniceconnectionstatechange = () => {
     if (pc.iceConnectionState === 'failed') {
-      // No TURN server here, so a symmetric NAT on either side kills video.
-      // Say so — a black rectangle reads as a bug in the app.
+      failVoice('Natural audio restored after the media connection failed');
       showVideoNote('Video could not connect through your networks. Captions are still live.');
+    }
+  };
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+      failVoice('Natural audio restored after the media connection ended');
     }
   };
   setTimeout(() => {
@@ -361,6 +781,13 @@ async function onSignal(from, data) {
 }
 
 connect();
+window.addEventListener('pagehide', () => {
+  sendSpeechEnd();
+  clearTimeout(turnRefreshTimer);
+});
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  navigator.serviceWorker.register('/sw.js', {scope: '/'}).catch(() => {});
+}
 </script>
 </body>
 </html>

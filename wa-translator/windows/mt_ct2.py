@@ -115,6 +115,13 @@ PAIRS = {
     "en-ja": "Helsinki-NLP/opus-mt-en-ja",
 }
 
+# Production room directions are revision-pinned so a scale-from-zero cannot
+# silently download different weights than the version that was audited.
+MODEL_REVISIONS = {
+    "en-es": "8f4d4924189681076e9c642b2fd85278d793fd4d",
+    "es-en": "c96e2c5399ebfae4fc43d9669556b9afa74bb69d",
+}
+
 # Languages the room offers. Both directions between any two must exist above.
 ROOM_LANGS = ("en", "es")
 
@@ -158,7 +165,9 @@ class CTranslate2MT:
         if self._model_dir and os.path.isdir(self._model_dir):
             return self._model_dir
         # Default cache location
-        cache = Path.home() / ".cache" / "wa-translator" / "mt_models" / f"ct2-{self.pair}-int8"
+        revision = MODEL_REVISIONS.get(self.pair, "unversioned")[:12]
+        cache = (Path.home() / ".cache" / "wa-translator" / "mt_models"
+                 / f"ct2-{self.pair}-{revision}-int8")
         if cache.exists() and any(f.endswith(".bin") for f in os.listdir(cache)):
             return str(cache)
         # Download + convert
@@ -170,7 +179,8 @@ class CTranslate2MT:
         print(f"[mt] downloading {hf_id} and converting to CT2 int8...")
         from huggingface_hub import hf_hub_download
         from ctranslate2.converters import TransformersConverter
-        conv = TransformersConverter(hf_id)
+        revision = MODEL_REVISIONS.get(self.pair)
+        conv = TransformersConverter(hf_id, revision=revision)
         conv.convert(out_dir, force=True, quantization="int8")
         # The sentencepiece models are not part of the CT2 conversion output.
         # Fetch just those two files — a snapshot_download here would also drag
@@ -179,7 +189,7 @@ class CTranslate2MT:
         for f in ("source.spm", "target.spm"):
             d = os.path.join(out_dir, f)
             if not os.path.exists(d):
-                shutil.copy(hf_hub_download(hf_id, f), d)
+                shutil.copy(hf_hub_download(hf_id, f, revision=revision), d)
         return out_dir
 
     def start(self):

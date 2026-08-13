@@ -1,14 +1,20 @@
 # wa-translator
 
-**The app lives in [`windows/`](windows/README.md).** Everything else in this
-directory is the Sprint-0 benchmark work that chose its models — kept because it
-is the evidence behind the design, not because it runs in production.
+The shared phone client lives in [`windows/static/`](windows/static/). The local
+development adapter is documented in [`windows/`](windows/README.md); the
+production beta uses [`cloudflare/`](cloudflare/DEPLOYMENT.md) for room state and
+`modal_app.py` for authenticated compute. The remaining top-level files are the
+Sprint-0 benchmark evidence that chose the models.
 
 ## The app
 
 `windows/` — bilingual video room: WebRTC video peer-to-peer, faster-whisper ASR
 and CTranslate2 OPUS-MT on the host, live captions both directions. See
 [`windows/README.md`](windows/README.md) to run it.
+
+`cloudflare/` + `modal_app.py` — signed 24-hour rooms, one deterministic Durable
+Object per room, hibernating browser sockets, dynamic TURN and independently
+reconnectable Modal streams. See [`../CLOUD-ARCHITECTURE.md`](../CLOUD-ARCHITECTURE.md).
 
 ## Benchmarks that chose the models
 

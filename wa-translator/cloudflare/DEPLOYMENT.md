@@ -1,0 +1,109 @@
+# Cloud room deployment
+
+This is the production shape described in `CLOUD-ARCHITECTURE.md`: Cloudflare
+owns the room and Modal supplies independent authenticated compute. A
+`workers.dev` URL is the intended beta endpoint. There is no database, account
+system, native wrapper or custom domain.
+
+## Fixed beta ceilings
+
+- English and Spanish only; four participants per room.
+- One L4 Modal container has five total concurrent inputs: four stream slots
+  reserved for long-lived participant WebSockets and one TTS slot. A second
+  simultaneous TTS request fails fast instead of taking a stream slot. The
+  container has a 60-second idle scale-down window and scale-to-zero. The named Modal Volume is the persistent model
+  cache. A cold start still initializes models even when their files are
+  cached, so first-caption and first-voice latency will be higher.
+- A room link is a deliberately replayable HMAC bearer for exactly 24 hours.
+  Anyone holding it can rejoin during that period. There is no revocation or
+  single-use invite without adding an account model.
+- The Durable Object stores only the room expiry. Presence and selected voice
+  style and the small per-room TTS quota counters live in hibernation
+  attachments; captions and media are never stored.
+  Ordinary memory is disposable. An active outbound Modal WebSocket prevents
+  Durable Object hibernation while that compute stream is open.
+- A Modal process restart loses decoder/endpointer state by design. Cloudflare
+  reconnects each participant's compute stream independently and drops PCM
+  while reconnecting instead of buffering stale speech. The browser's natural
+  peer-to-peer WebRTC call does not depend on Modal and stays live.
+- Short utterance quality is a known ceiling. Whisper can invent filler on
+  sub-second speech, so partial decoding waits for 0.8 seconds and Silero gates
+  every decode. Very short Kokoro phrases can sound less natural than complete
+  sentences. Voice is a selected synthetic female/male style, never inferred
+  identity, gender detection, cloning or biometric data.
+
+Protocol limits are fail-closed: 8 KiB browser/compute control frames, 32,000
+byte PCM frames, 300-character captions and TTS text, 2 KiB TTS request bodies,
+4 MiB TTS WAV responses, eight pending browser sockets, four joined
+participants, a 40,000-byte/second microphone rate with a 64,000-byte burst,
+12 TTS phrases per room per 60 seconds, an eight-second maximum compute
+reconnect delay, and TURN TTL clamped to 60–172,800 seconds (configured to
+3,600 seconds). Browsers refresh TURN one minute before expiry, replace every
+peer connection's ICE configuration, and restart ICE.
+
+## Dependency and license gate
+
+`modal-runtime-requirements.txt` is a Linux/Python 3.11 lock of all 134 resolved
+packages with hashes. The Modal image installs it with `--require-hashes`.
+Model downloads use immutable Hugging Face revisions; Kokoro's main weight is
+also checked against its LFS SHA-256 before loading. Review
+`../THIRD-PARTY-NOTICES.md` and `../licenses/Apache-2.0.txt` before a release.
+
+Regenerate the lock only as an audited dependency change:
+
+```powershell
+uv pip compile --python-version 3.11 --python-platform linux --generate-hashes `
+  --output-file wa-translator/modal-runtime-requirements.txt `
+  wa-translator/modal-runtime-requirements.in
+```
+
+## Account grants and secrets
+
+No secret value belongs in git, a URL, browser code or logs. Before deployment:
+
+1. Authenticate the pinned Modal CLI and Wrangler interactively. Verify with
+   `modal token info` and `npx wrangler whoami`.
+2. Create the Modal named secret `spoken-translation-modal` containing only
+   `MODAL_SHARED_SECRET`. Generate at least 32 random bytes. Put the same value
+   into Cloudflare with `npx wrangler secret put MODAL_SHARED_SECRET`.
+3. Put `ROOM_SIGNING_KEY` (at least 32 random bytes), `TURN_KEY_ID`, and
+   `TURN_API_TOKEN` into Cloudflare secrets. The TURN long-term API token must
+   never be returned to the browser.
+4. Deploy Modal with `modal deploy wa-translator/modal_app.py`. Record the ASGI
+   HTTPS URL. Put its `https://.../stream` and `https://.../tts` endpoints into
+   Cloudflare as `MODAL_WS_URL` and `MODAL_TTS_URL` secrets.
+   `MODAL_WS_URL` is deliberately HTTPS: the Worker performs an HTTP fetch with
+   `Upgrade: websocket`; a `wss://` request URL is rejected as configuration.
+5. From `wa-translator/cloudflare`, run `npm ci`, `npm run check`, then
+   `npx wrangler deploy`. If a canonical origin is configured, set
+   `PUBLIC_ORIGIN` to the exact `https://...workers.dev` origin; never use a
+   wildcard. Record the deployment ID and URL printed by each CLI.
+
+The commands above require operator grants and may incur external charges.
+They are instructions, not a claim that deployment occurred.
+
+## Live receipts required after deployment
+
+1. `GET /health` must return `{"status":"ok"}` at the permanent Worker URL
+   while the Windows host is stopped. Create a room with a same-origin
+   `POST /api/rooms`, open the returned `/room/<token>`, and cold-start both
+   directions through the public WebSocket.
+2. Replace a Modal process and show that only compute reconnects: natural
+   WebRTC media stays connected and later captions resume. Do not infer this
+   receipt from the offline stub replacement test.
+3. Force direct ICE to fail and retain a browser `getStats()` receipt whose
+   selected candidate pair uses a `relay` local candidate. Dynamic TURN config
+   alone does not satisfy this gate.
+4. Perform A11 in the real Codex in-app browser with two people: see video,
+   hear natural audio in captions-only mode, see both translation directions,
+   then audibly exercise both female and male translated voices. Automated
+   playback counters do not satisfy this human-observable gate.
+
+## Cost ceiling
+
+The cost ceiling is architectural, not a promise of zero spend: one L4
+container and at most five concurrent Modal inputs (four streams plus one TTS), scale-to-zero after the
+idle window, one persistent model Volume, one Durable Object per active room,
+and on-demand TURN. Modal GPU/Volume, Cloudflare Durable Objects, Workers and
+Realtime TURN are metered according to the actual account plan. Check current
+dashboards and pricing before raising any ceiling.

@@ -20,6 +20,7 @@ All ASR and MT run on this machine. No paid APIs.
 import os
 import sys
 import json
+import secrets
 import time
 import asyncio
 import threading
@@ -27,13 +28,14 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mt_ct2
+import tts_local
 from endpointer import Endpointer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -70,8 +72,14 @@ WS_MAX_SIZE = 65536
 # would starve the conversation the room exists for.
 MAX_PARTICIPANTS = 4
 PRE_JOIN_TIMEOUT_S = 10    # a socket that opens and says nothing is not a guest
+MAX_TTS_CHARS = 300        # a final caption, not an arbitrary audiobook request
+MAX_TTS_BODY_BYTES = 2048  # reject before buffering a public request body
+VOICE_STYLES = ("female", "male")
+ROOM_TTL_S = 24 * 60 * 60  # an invite survives a restart-free day, then expires
+MAX_ROOMS = 64             # ponytail: one-host ceiling; add persistent storage when needed
 
 app = FastAPI(title="Live Translator Room")
+_tts_job: asyncio.Task | None = None  # one CPU job; callers fail fast, never pile up
 
 
 # ── Participants ──────────────────────────────────────────────────────
@@ -80,18 +88,24 @@ app = FastAPI(title="Live Translator Room")
 class Participant:
     id: int
     ws: WebSocket
+    room: str = ""
     lang: str = "en"
     name: str = ""
+    voice_style: str = "female"  # selected preference, never inferred
     ep: Endpointer = field(default_factory=Endpointer)
     seq: int = 0                  # utterance counter
     onset: float = 0.0            # wall clock when the current utterance began
     last_partial: float = 0.0
+    tts_pending: bool = False
+    tts_token: str = field(default_factory=lambda: secrets.token_urlsafe(24))
 
     def public(self):
-        return {"id": self.id, "lang": self.lang, "name": self.name}
+        return {"id": self.id, "lang": self.lang, "name": self.name,
+                "voice_style": self.voice_style}
 
 
 participants: dict[int, Participant] = {}
+rooms: dict[str, float] = {}  # room id -> expiry; deliberately memory-only
 _next_id = 1
 _id_lock = threading.Lock()
 
@@ -103,10 +117,53 @@ def _new_id() -> int:
         return pid
 
 
+def _prune_rooms(now: float | None = None):
+    now = now or time.time()
+    active = {p.room for p in participants.values()}
+    for room_id, expiry in list(rooms.items()):
+        if expiry <= now and room_id not in active:
+            rooms.pop(room_id, None)
+
+
+def create_room() -> str:
+    """Create a 144-bit invitation id. Possession of the URL is room access."""
+    _prune_rooms()
+    if len(rooms) >= MAX_ROOMS:
+        raise RuntimeError("room capacity reached")
+    while True:
+        room_id = secrets.token_urlsafe(18)
+        if room_id not in rooms:
+            rooms[room_id] = time.time() + ROOM_TTL_S
+            return room_id
+
+
+def room_is_live(room_id: str) -> bool:
+    expiry = rooms.get(room_id)
+    if expiry is None or expiry <= time.time():
+        _prune_rooms()
+        return False
+    return True
+
+
+def request_is_same_origin(request: Request) -> bool:
+    origin = request.headers.get("origin")
+    host = request.headers.get("host")
+    forwarded = request.headers.get("x-forwarded-proto", request.url.scheme)
+    scheme = forwarded.split(",", 1)[0].strip().lower()
+    if not origin or not host or scheme not in ("http", "https"):
+        return False
+    return origin == f"{scheme}://{host}"
+
+
+def room_participants(room_id: str) -> list[Participant]:
+    return [p for p in participants.values() if p.room == room_id]
+
+
 def target_langs(speaker: Participant) -> list[str]:
     """Languages the *other* people in the room read."""
     return sorted({p.lang for p in participants.values()
-                   if p.id != speaker.id and p.lang != speaker.lang})
+                   if p.room == speaker.room and p.id != speaker.id
+                   and p.lang != speaker.lang})
 
 
 # ── Job queue: finals always run, partials are latest-wins ────────────
@@ -263,7 +320,7 @@ def _handle(job: Job):
                 # original standing next to a stale translation.
                 print(f"[mt] suppressed {job.lang}-{tgt}: {reason}")
 
-    broadcast_from_thread(caption_message(job, text, translations))
+    broadcast_from_thread(caption_message(job, text, translations), speaker.room)
 
 
 def caption_message(job: Job, text: str, translations: dict) -> dict:
@@ -287,10 +344,10 @@ def caption_message(job: Job, text: str, translations: dict) -> dict:
 _server_loop: asyncio.AbstractEventLoop | None = None
 
 
-async def broadcast(message: dict, exclude: int | None = None):
+async def broadcast(message: dict, room_id: str, exclude: int | None = None):
     msg = json.dumps(message)
     for p in list(participants.values()):
-        if p.id == exclude:
+        if p.room != room_id or p.id == exclude:
             continue
         try:
             await p.ws.send_text(msg)
@@ -298,16 +355,16 @@ async def broadcast(message: dict, exclude: int | None = None):
             participants.pop(p.id, None)
 
 
-def broadcast_from_thread(message: dict):
+def broadcast_from_thread(message: dict, room_id: str):
     if _server_loop is not None:
-        asyncio.run_coroutine_threadsafe(broadcast(message), _server_loop)
+        asyncio.run_coroutine_threadsafe(broadcast(message, room_id), _server_loop)
     else:
         print("[server] WARNING: no event loop for broadcast")
 
 
-async def send_to(pid: int, message: dict):
+async def send_to(pid: int, message: dict, room_id: str):
     p = participants.get(pid)
-    if p is None:
+    if p is None or p.room != room_id:
         return
     try:
         await p.ws.send_text(json.dumps(message))
@@ -322,8 +379,72 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 @app.get("/")
 async def index():
+    with open(os.path.join(STATIC, "index.html"), encoding="utf-8") as f:
+        return HTMLResponse(f.read(), headers={"Cache-Control": "no-store"})
+
+
+@app.get("/manifest.webmanifest")
+async def manifest():
+    return FileResponse(os.path.join(STATIC, "manifest.webmanifest"),
+                        media_type="application/manifest+json")
+
+
+@app.get("/icon.svg")
+async def app_icon():
+    return FileResponse(os.path.join(STATIC, "icon.svg"), media_type="image/svg+xml")
+
+
+@app.get("/sw.js")
+async def service_worker():
+    return FileResponse(os.path.join(STATIC, "sw.js"),
+                        media_type="text/javascript", headers={
+                            "Cache-Control": "no-store",
+                            "Service-Worker-Allowed": "/",
+                        })
+
+
+@app.post("/rooms")
+async def open_room(request: Request):
+    if not request_is_same_origin(request):
+        return HTMLResponse("Forbidden", status_code=403)
+    try:
+        room_id = create_room()
+    except RuntimeError:
+        return HTMLResponse("No room is available right now.", status_code=503)
+    return RedirectResponse(f"/room/{room_id}", status_code=303)
+
+
+@app.post("/api/rooms")
+async def new_room(request: Request):
+    if not request_is_same_origin(request):
+        return JSONResponse({"error": "forbidden"}, status_code=403)
+    try:
+        room_id = create_room()
+    except RuntimeError:
+        return JSONResponse({"error": "room capacity reached"}, status_code=503)
+    return JSONResponse({"path": f"/room/{room_id}"}, status_code=201,
+                        headers={"Cache-Control": "no-store"})
+
+
+@app.get("/room/{room_id}")
+async def room_page(room_id: str):
+    if not room_is_live(room_id):
+        return HTMLResponse("This private room does not exist or has expired.",
+                            status_code=404)
     with open(os.path.join(STATIC, "room.html"), encoding="utf-8") as f:
-        return HTMLResponse(f.read())
+        return HTMLResponse(f.read(), headers={
+            "Cache-Control": "no-store",
+            "Referrer-Policy": "no-referrer",
+        })
+
+
+@app.get("/api/room")
+async def room_preflight(request: Request):
+    authorization = request.headers.get("authorization", "")
+    room_id = authorization.removeprefix("Bearer ") if authorization.startswith("Bearer ") else ""
+    if not room_id or " " in room_id or not room_is_live(room_id):
+        return Response(status_code=401, headers={"Cache-Control": "no-store"})
+    return Response(status_code=204, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/test")
@@ -337,18 +458,85 @@ async def test_page():
 async def health():
     return {
         "status": "ok",
-        "participants": [p.public() for p in participants.values()],
+        # Health is public for the launcher; never enumerate private callers.
+        "participants": len(participants),
         "models_ready": _asr_ready.is_set(),
         "asr_device": getattr(_asr, "device", None),
         "queue": len(jobs),
         "dropped_partials": jobs.dropped_partials,
+        "tts": tts_local.status(),
     }
 
 
-@app.websocket("/ws")
-async def ws_endpoint(ws: WebSocket):
+@app.post("/tts")
+async def tts_audio(request: Request):
+    global _tts_job
+    token = request.headers.get("x-tts-token")
+    p = next((guest for guest in participants.values()
+              if secrets.compare_digest(guest.tts_token, token or "")), None)
+    if p is None:
+        return JSONResponse({"error": "not a joined room participant"}, status_code=403)
+
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > MAX_TTS_BODY_BYTES:
+                return JSONResponse({"error": "request body is too large"}, status_code=413)
+        except ValueError:
+            return JSONResponse({"error": "invalid content length"}, status_code=400)
+
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > MAX_TTS_BODY_BYTES:
+            return JSONResponse({"error": "request body is too large"}, status_code=413)
+        body.extend(chunk)
+    try:
+        data = json.loads(body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JSONResponse({"error": "invalid JSON"}, status_code=400)
+    if not isinstance(data, dict):
+        return JSONResponse({"error": "invalid spoken translation request"}, status_code=422)
+    text, lang = data.get("text"), data.get("lang")
+    voice_style = data.get("voice_style", "female")
+    if not (isinstance(text, str) and 0 < len(text) <= MAX_TTS_CHARS
+            and lang == p.lang and lang in mt_ct2.ROOM_LANGS
+            and voice_style in VOICE_STYLES):
+        return JSONResponse({"error": "invalid spoken translation request"}, status_code=422)
+    if p.tts_pending:
+        return JSONResponse({"error": "spoken translation is already pending"}, status_code=429)
+    if _tts_job is not None and not _tts_job.done():
+        return JSONResponse({"error": "spoken translation is busy"}, status_code=429)
+
+    p.tts_pending = True
+    async def generate():
+        try:
+            return await asyncio.to_thread(tts_local.synthesize, text, lang)
+        finally:
+            p.tts_pending = False
+
+    _tts_job = asyncio.create_task(generate())
+    try:
+        # A running thread cannot be cancelled safely. The HTTP request gets a
+        # bounded answer, but shield keeps ownership of the one global job until
+        # it actually finishes; later callers get 429 instead of piling up.
+        audio = await asyncio.wait_for(asyncio.shield(_tts_job), timeout=60)
+    except asyncio.TimeoutError:
+        print(f"[tts] {lang} timed out; the bounded worker is still finishing")
+        return JSONResponse({"error": "spoken translation timed out"}, status_code=503)
+    except Exception as exc:
+        print(f"[tts] {lang} failed: {type(exc).__name__}: {exc}")
+        return JSONResponse({"error": "spoken translation is unavailable"}, status_code=503)
+    return Response(audio, media_type="audio/wav",
+                    headers={"Cache-Control": "no-store"})
+
+
+@app.websocket("/ws/{room_id}")
+async def ws_endpoint(ws: WebSocket, room_id: str):
     await ws.accept()
-    p = Participant(id=_new_id(), ws=ws)
+    if not room_is_live(room_id):
+        await ws.close(code=1008)
+        return
+    p = Participant(id=_new_id(), ws=ws, room=room_id)
     # A socket occupies a slot only once it has joined. Counting connections
     # instead let four sockets that never send `join` — trivial to open against
     # a public link — hold the room shut against everyone real. Nothing before
@@ -383,8 +571,11 @@ async def ws_endpoint(ws: WebSocket):
                 # Check and insert with no await between them: the event loop is
                 # single-threaded, so this pair is atomic and the limit cannot be
                 # raced past by simultaneous joiners.
-                if len(participants) >= MAX_PARTICIPANTS:
-                    print(f"[server] refusing join: room has {len(participants)}")
+                in_room = room_participants(room_id)
+                if (len(participants) >= MAX_PARTICIPANTS
+                        or len(in_room) >= MAX_PARTICIPANTS):
+                    print(f"[server] refusing join: room has {len(in_room)}; "
+                          f"host has {len(participants)}")
                     await ws.send_text(json.dumps(
                         {"type": "room_full", "limit": MAX_PARTICIPANTS}))
                     await ws.close(code=1013)  # try again later
@@ -425,7 +616,7 @@ async def ws_endpoint(ws: WebSocket):
         if joined:
             participants.pop(p.id, None)
             jobs.drop_speaker(p.id)
-            await broadcast({"type": "peer_leave", "id": p.id})
+            await broadcast({"type": "peer_leave", "id": p.id}, p.room)
             print(f"[server] participant {p.id} disconnected")
 
 
@@ -433,19 +624,33 @@ async def _on_control(p: Participant, data: dict):
     kind = data.get("type")
 
     if kind == "join":
-        p.lang = data.get("lang", "en")
-        p.name = data.get("name", f"Speaker {p.id}")
+        requested = data.get("lang")
+        p.lang = requested if requested in mt_ct2.ROOM_LANGS else "en"
+        requested_style = data.get("voice_style")
+        p.voice_style = requested_style if requested_style in VOICE_STYLES else "female"
+        name = data.get("name")
+        p.name = name[:40] if isinstance(name, str) and name.strip() else f"Speaker {p.id}"
         await send_to(p.id, {
             "type": "welcome",
             "id": p.id,
+            "tts_token": p.tts_token,
+            "tts_provider": "local",
             "langs": list(mt_ct2.ROOM_LANGS),
-            "peers": [q.public() for q in participants.values() if q.id != p.id],
-        })
-        await broadcast({"type": "peer_join", **p.public()}, exclude=p.id)
+            "peers": [q.public() for q in room_participants(p.room) if q.id != p.id],
+        }, p.room)
+        await broadcast({"type": "peer_join", **p.public()}, p.room, exclude=p.id)
 
     elif kind == "set_lang":
-        p.lang = data.get("lang", p.lang)
-        await broadcast({"type": "peer_update", **p.public()})
+        requested = data.get("lang")
+        if requested in mt_ct2.ROOM_LANGS:
+            p.lang = requested
+        await broadcast({"type": "peer_update", **p.public()}, p.room)
+
+    elif kind == "set_voice_style":
+        requested = data.get("voice_style")
+        if requested in VOICE_STYLES:
+            p.voice_style = requested
+        await broadcast({"type": "peer_update", **p.public()}, p.room)
 
     elif kind == "signal":
         # WebRTC offer/answer/ICE, relayed verbatim. The server neither parses
@@ -458,9 +663,12 @@ async def _on_control(p: Participant, data: dict):
         kindname = ((payload.get("description") or {}).get("type")
                     if payload.get("description") else
                     "ice" if payload.get("candidate") else "?")
+        target = participants.get(to)
+        same_room = target is not None and target.room == p.room
         print(f"[signal] {p.id} -> {to}: {kindname}"
-              + ("" if to in participants else "  (NO SUCH PARTICIPANT)"))
-        await send_to(to, {"type": "signal", "from": p.id, "data": payload})
+              + ("" if same_room else "  (NO SUCH ROOM PARTICIPANT)"))
+        if same_room:
+            await send_to(to, {"type": "signal", "from": p.id, "data": payload}, p.room)
 
     elif kind == "speech_end":
         # Explicit flush (used by the offline probe); normal calls rely on VAD.
@@ -468,6 +676,7 @@ async def _on_control(p: Participant, data: dict):
             audio = p.ep.take()
             jobs.put(Job(p.id, audio, p.lang, target_langs(p), p.seq, True, p.onset))
             p.onset = 0.0
+            p.last_partial = 0.0
 
 
 # ── Startup ───────────────────────────────────────────────────────────
@@ -478,10 +687,19 @@ async def startup():
     _server_loop = asyncio.get_running_loop()
     threading.Thread(target=_load_models, daemon=True).start()
     threading.Thread(target=_worker, daemon=True).start()
-    print(f"[server] listening on http://0.0.0.0:{DEFAULT_PORT} (models loading in background)")
+    threading.Thread(target=tts_local.preload, daemon=True).start()
+    host = getattr(app.state, "listen_host", "0.0.0.0")
+    port = getattr(app.state, "listen_port", DEFAULT_PORT)
+    print(startup_message(host, port))
+
+
+def startup_message(host: str, port: int) -> str:
+    return f"[server] listening on http://{host}:{port} (models loading in background)"
 
 
 def run_server(host="0.0.0.0", port=DEFAULT_PORT):
+    app.state.listen_host = host
+    app.state.listen_port = port
     uvicorn.run(app, host=host, port=port, log_level="warning",
                 ws_max_size=WS_MAX_SIZE)
 

@@ -9,12 +9,20 @@ instead of converge.
 """
 
 import os
+import re
 import time
+import asyncio
 
 import numpy as np
+from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 import translation_server as srv
+import run_room
 from translation_server import Job, JobQueue, Participant, caption_message
+
+
+SAME_ORIGIN = {"Origin": "http://testserver"}
 
 
 def job(pid, seq, final, lang="en"):
@@ -84,15 +92,169 @@ def test_caption_carries_speaker_not_a_role():
 
 def test_target_langs_is_the_other_side():
     srv.participants.clear()
-    a = Participant(id=1, ws=None, lang="en")
-    b = Participant(id=2, ws=None, lang="es")
-    srv.participants.update({1: a, 2: b})
+    a = Participant(id=1, ws=None, room="room-a", lang="en")
+    b = Participant(id=2, ws=None, room="room-a", lang="es")
+    elsewhere = Participant(id=3, ws=None, room="room-b", lang="es")
+    srv.participants.update({1: a, 2: b, 3: elsewhere})
     assert srv.target_langs(a) == ["es"]
     assert srv.target_langs(b) == ["en"]
 
-    # Same language on both sides means nothing to translate.
+    # Same language inside this room means nothing to translate. The Spanish
+    # participant in room-b must not make room-a request a translation.
     b.lang = "en"
     assert srv.target_langs(a) == []
+    srv.participants.clear()
+
+
+def test_private_room_http_flow():
+    """POST creates an unguessable room; opening the public root does not."""
+    srv.participants.clear()
+    srv.rooms.clear()
+    client = TestClient(srv.app)
+
+    created = client.post("/api/rooms", headers=SAME_ORIGIN)
+    assert created.status_code == 201
+    path = created.json()["path"]
+    assert re.fullmatch(r"/room/[A-Za-z0-9_-]{24}", path), path
+
+    page = client.get(path)
+    assert page.status_code == 200
+    assert 'id="shareBtn"' in page.text and "navigator.share" in page.text
+    assert page.headers["cache-control"] == "no-store"
+    assert page.headers["referrer-policy"] == "no-referrer"
+    token = path.split("/")[-1]
+    assert client.get("/api/room", headers={"Authorization": f"Bearer {token}"}).status_code == 204
+    assert client.get("/api/room", headers={"Authorization": "Bearer invented"}).status_code == 401
+    expiry = srv.rooms[path.split("/")[-1]]
+    client.get(path)
+    assert srv.rooms[path.split("/")[-1]] == expiry, "opening a room extended its hard expiry"
+    assert client.get("/room/not-a-real-room").status_code == 404
+
+    rooms_before = len(srv.rooms)
+    landing = client.get("/")
+    assert landing.status_code == 200 and 'action="/rooms"' in landing.text
+    assert len(srv.rooms) == rooms_before, "a GET allocated a private room"
+    opened = client.post("/rooms", headers=SAME_ORIGIN, follow_redirects=False)
+    assert opened.status_code == 303
+    assert re.fullmatch(r"/room/[A-Za-z0-9_-]{24}", opened.headers["location"])
+    assert opened.headers["location"] != path
+    assert isinstance(client.get("/health").json()["participants"], int)
+
+    expired_id = path.split("/")[-1]
+    srv.rooms[expired_id] = time.time() - 1
+    expired = client.get(path)
+    invented = client.get("/room/not-a-real-room")
+    assert expired.status_code == invented.status_code == 404
+    assert expired.text == invented.text
+    try:
+        with client.websocket_connect(f"/ws/{expired_id}") as closed:
+            closed.receive_json()
+            raise AssertionError("expired WebSocket stayed open")
+    except WebSocketDisconnect as exc:
+        assert exc.code == 1008
+    client.post("/api/rooms", headers=SAME_ORIGIN)
+    assert expired_id not in srv.rooms, "new room creation did not prune expired state"
+
+    before = len(srv.rooms)
+    assert client.post("/api/rooms").status_code == 403
+    assert client.post("/api/rooms", headers={"Origin": "https://attacker.test"}).status_code == 403
+    assert client.post("/rooms", headers={"Origin": "https://attacker.test"}).status_code == 403
+    assert len(srv.rooms) == before, "cross-site room creation consumed local room capacity"
+
+
+def test_speech_end_after_browser_mute_finalizes_pending_audio():
+    class PendingSpeech:
+        speech_seen = True
+
+        def take(self):
+            self.speech_seen = False
+            return np.full(1600, 0.25, dtype=np.float32)
+
+    srv.participants.clear()
+    srv.jobs = JobQueue()
+    p = Participant(id=91, ws=None, room="room-a", lang="en")
+    listener = Participant(id=92, ws=None, room="room-a", lang="es")
+    p.ep = PendingSpeech()
+    p.seq = 1
+    p.onset = time.time()
+    srv.participants.update({p.id: p, listener.id: listener})
+    assert p.ep.speech_seen and len(srv.jobs) == 0
+    asyncio.run(srv._on_control(p, {"type": "speech_end"}))
+    flushed = srv.jobs.get()
+    assert flushed.final and flushed.pid == p.id and flushed.targets == ["es"]
+    assert not p.ep.speech_seen and p.onset == 0.0
+    srv.participants.clear()
+
+
+def test_run_server_records_the_requested_startup_port():
+    called = {}
+    original = srv.uvicorn.run
+    try:
+        srv.uvicorn.run = lambda app, **kwargs: called.update(kwargs)
+        srv.run_server(host="127.0.0.1", port=9123)
+    finally:
+        srv.uvicorn.run = original
+    assert called["port"] == 9123
+    assert srv.app.state.listen_port == 9123
+    assert "127.0.0.1:9123" in srv.startup_message(
+        srv.app.state.listen_host, srv.app.state.listen_port)
+
+
+def test_tunnels_target_the_ipv4_server():
+    """Tunnel clients must not resolve localhost to ::1 against an IPv4 server."""
+    commands = [[part.format(port=8791) for part in provider[1]]
+                for provider in run_room.PROVIDERS]
+    assert "http://127.0.0.1:8791" in commands[0]
+    assert "80:127.0.0.1:8791" in commands[1]
+
+
+def test_room_peer_discovery_is_isolated():
+    """A participant only learns about peers holding the same private URL."""
+    srv.participants.clear()
+    srv.rooms.clear()
+    client = TestClient(srv.app)
+    room_a = client.post("/api/rooms", headers=SAME_ORIGIN).json()["path"].split("/")[-1]
+    room_b = client.post("/api/rooms", headers=SAME_ORIGIN).json()["path"].split("/")[-1]
+
+    with client.websocket_connect(f"/ws/{room_a}") as a1:
+        a1.send_json({"type": "join", "lang": "en", "name": "A1",
+                      "voice_style": "male"})
+        welcome_a1 = a1.receive_json()
+        assert welcome_a1["type"] == "welcome" and welcome_a1["peers"] == []
+        assert welcome_a1["tts_provider"] == "local"
+
+        with client.websocket_connect(f"/ws/{room_b}") as b1:
+            b1.send_json({"type": "join", "lang": "es", "name": "B1"})
+            welcome_b1 = b1.receive_json()
+            assert welcome_b1["type"] == "welcome" and welcome_b1["peers"] == []
+
+            with client.websocket_connect(f"/ws/{room_a}") as a2:
+                a2.send_json({"type": "join", "lang": "es", "name": "A2"})
+                welcome_a2 = a2.receive_json()
+                assert [p["id"] for p in welcome_a2["peers"]] == [welcome_a1["id"]]
+                assert welcome_a2["peers"][0]["voice_style"] == "male"
+
+                # A2's join stays in room A. If it leaked to B, it would be the
+                # next message B receives instead of its own update below.
+                a1.receive_json()
+                a1.send_json({"type": "signal", "to": welcome_b1["id"],
+                              "data": {"candidate": {"candidate": "cross-room"}}})
+                b1.send_json({"type": "set_lang", "lang": "en"})
+                b_next = b1.receive_json()
+                assert b_next["type"] == "peer_update", b_next
+
+                # Invalid client languages cannot escape into the MT direction
+                # names or poison what peers believe this caller speaks.
+                a1.send_json({"type": "set_lang", "lang": "not-a-language"})
+                a_update = a1.receive_json()
+                assert a_update["type"] == "peer_update" and a_update["lang"] == "en"
+                a2.receive_json()  # the same room-scoped language update
+
+                a1.send_json({"type": "set_voice_style", "voice_style": "female"})
+                voice_update = a2.receive_json()
+                assert voice_update["type"] == "peer_update"
+                assert voice_update["voice_style"] == "female"
+
     srv.participants.clear()
 
 

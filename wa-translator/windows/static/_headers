@@ -1,0 +1,15 @@
+/room.html
+  Cache-Control: no-store
+  Referrer-Policy: no-referrer
+  X-Content-Type-Options: nosniff
+  Permissions-Policy: camera=(self), microphone=(self)
+
+/room/*
+  Cache-Control: no-store
+  Referrer-Policy: no-referrer
+  X-Content-Type-Options: nosniff
+  Permissions-Policy: camera=(self), microphone=(self)
+
+/sw.js
+  Cache-Control: no-store
+  Service-Worker-Allowed: /

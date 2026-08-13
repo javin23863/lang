@@ -1,0 +1,16 @@
+# Direct runtime dependencies for the Modal image.  Regenerate the hashed lock:
+#   uv pip compile --python 3.11 --python-platform x86_64-manylinux_2_28 \
+#     --generate-hashes --output-file modal-runtime-requirements.txt \
+#     modal-runtime-requirements.in
+fastapi==0.141.1
+faster-whisper==1.2.1
+ctranslate2==4.8.0
+sentencepiece==0.2.2
+numpy==2.4.6
+huggingface-hub==1.26.0
+transformers==5.14.1
+torch==2.13.0
+kokoro==0.9.4
+modal==1.5.4
+# Kokoro's English frontend otherwise installs this mutable wheel on first use.
+en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl

@@ -8,8 +8,13 @@ wa-translator/caption_filter_test
 # Python
 __pycache__/
 *.pyc
+.pytest_cache/
 /venv-translate/
 /.venv/
+
+# JavaScript / Cloudflare local build state
+node_modules/
+.wrangler/
 
 # Cached model weights (per-user, large)
 *.bin

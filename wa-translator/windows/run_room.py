@@ -96,11 +96,11 @@ def _resolves_publicly(url):
 # been the more reliable of the pair here, and localhost.run needs no install —
 # ssh ships with Git for Windows.
 PROVIDERS = [
-    ("cloudflared", ["cloudflared", "tunnel", "--url", "http://localhost:{port}"],
+    ("cloudflared", ["cloudflared", "tunnel", "--url", "http://127.0.0.1:{port}"],
      CF_URL_RE, "stderr"),
     ("localhost.run", ["ssh", "-o", "StrictHostKeyChecking=accept-new",
                        "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3",
-                       "-R", "80:localhost:{port}", "nokey@localhost.run"],
+                       "-R", "80:127.0.0.1:{port}", "nokey@localhost.run"],
      LHR_URL_RE, "stdout"),
 ]
 
@@ -193,17 +193,19 @@ def main():
               f"then serve the wrong app.\n[room] Stop that server or pass --port.")
         return 1
 
+    room_id = translation_server.create_room()
     tunnel = None
     if not args.local:
         tunnel, url = start_tunnel(args.port)
         if url:
+            invite = f"{url}/room/{room_id}"
             print("\n" + "=" * 58)
-            print("  Share this link:")
-            print(f"    {url}")
+            print("  Private WhatsApp invitation:")
+            print(f"    {invite}")
             print("  Both of you open it, tap Start, and pick your language.")
             print("=" * 58 + "\n")
 
-    print(f"[room] local:  http://localhost:{args.port}")
+    print(f"[room] local:  http://localhost:{args.port}/room/{room_id}")
     print(f"[room] mic/cam test: http://localhost:{args.port}/test")
     try:
         translation_server.run_server(port=args.port)
