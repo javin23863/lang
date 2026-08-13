@@ -193,6 +193,14 @@ class ModelRuntime:
             )
         return original[:MAX_CAPTION_CHARS], translated[:MAX_CAPTION_CHARS]
 
+    def preload(self) -> None:
+        started = time.monotonic()
+        self._ensure_loaded()
+        elapsed_ms = round((time.monotonic() - started) * 1_000)
+        region = os.environ.get("MODAL_REGION", "local")
+        print(f"[compute] preload ready elapsed_ms={elapsed_ms} region={region}",
+              flush=True)
+
 
 class KokoroTTS:
     """Four controlled voice routes from one revision-pinned Kokoro model."""
@@ -478,27 +486,26 @@ def create_api(
     tts_engine = tts or KokoroTTS()
     input_capacity = capacity or InputCapacity()
     preload_lock = threading.Lock()
-    preload_started = False
+    preloads_started: set[str] = set()
 
-    def start_tts_preload() -> None:
-        nonlocal preload_started
-        preload = getattr(tts_engine, "preload", None)
+    def start_preload(name: str, engine: object) -> None:
+        preload = getattr(engine, "preload", None)
         if not callable(preload):
             return
         with preload_lock:
-            if preload_started:
+            if name in preloads_started:
                 return
-            preload_started = True
+            preloads_started.add(name)
 
         def run() -> None:
             try:
                 preload()
             except Exception as error:
-                print(f"[tts] preload {_bounded_diagnostic(error, secret)}",
+                print(f"[{name}] preload {_bounded_diagnostic(error, secret)}",
                       file=sys.stderr, flush=True)
 
         threading.Thread(
-            target=run, name="kokoro-preload", daemon=True,
+            target=run, name=f"{name}-preload", daemon=True,
         ).start()
     if endpointer_factory is None:
         windows_dir = Path(__file__).with_name("windows")
@@ -531,7 +538,8 @@ def create_api(
             if start is None:
                 await websocket.close(code=1008, reason="invalid start message")
                 return
-            start_tts_preload()
+            start_preload("compute", compute_engine)
+            start_preload("tts", tts_engine)
             state = StreamState(
                 **start,
                 endpointer=endpointer_factory(),

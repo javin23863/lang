@@ -99,6 +99,19 @@ class BlockingPreloadTTS(FakeTTS):
         self.preload_release.wait(timeout=5)
 
 
+class BlockingPreloadCompute(FakeCompute):
+    def __init__(self):
+        super().__init__()
+        self.preload_calls = 0
+        self.preload_started = __import__("threading").Event()
+        self.preload_release = __import__("threading").Event()
+
+    def preload(self):
+        self.preload_calls += 1
+        self.preload_started.set()
+        self.preload_release.wait(timeout=5)
+
+
 def client_fixture():
     compute = FakeCompute()
     tts = FakeTTS()
@@ -112,11 +125,12 @@ def client_fixture():
 
 
 class ModalStreamTests(unittest.TestCase):
-    def test_valid_stream_starts_one_nonblocking_tts_preload(self):
+    def test_valid_stream_starts_one_nonblocking_compute_and_tts_preload(self):
+        compute = BlockingPreloadCompute()
         tts = BlockingPreloadTTS()
         api = modal_app.create_api(
             shared_secret=SECRET,
-            compute=FakeCompute(),
+            compute=compute,
             tts=tts,
             endpointer_factory=FakeEndpointer,
         )
@@ -128,6 +142,7 @@ class ModalStreamTests(unittest.TestCase):
                     "type": "start", "stream_id": stream_id,
                     "source_lang": "en", "target_lang": "es",
                 })
+                self.assertTrue(compute.preload_started.wait(timeout=1))
                 self.assertTrue(tts.preload_started.wait(timeout=1))
                 ws.send_bytes(np.full(1600, 1000, dtype=np.int16).tobytes())
                 ws.send_json({"type": "speech_end"})
@@ -135,10 +150,13 @@ class ModalStreamTests(unittest.TestCase):
             if stream_id == "participant-1":
                 # Let the background seam finish before opening a second stream;
                 # the assertion remains that only one preload is ever launched.
+                compute.preload_release.set()
                 tts.preload_release.set()
         try:
+            self.assertEqual(compute.preload_calls, 1)
             self.assertEqual(tts.preload_calls, 1)
         finally:
+            compute.preload_release.set()
             tts.preload_release.set()
 
     def test_capacity_reserves_four_streams_and_one_tts_input(self):
