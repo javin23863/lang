@@ -36,6 +36,14 @@ class DeploymentConfigTests(unittest.TestCase):
         self.assertIn("MAX_STREAM_INPUTS = 4", MODAL)
         self.assertIn("MAX_TTS_INPUTS = 1", MODAL)
 
+    def test_ap_south_routing_experiment_preserves_the_default_endpoint(self):
+        self.assertIn("def web() -> FastAPI:", MODAL)
+        self.assertIn('routing_region="ap-south"', MODAL)
+        self.assertIn("def web_ap_south() -> FastAPI:", MODAL)
+        self.assertEqual(MODAL.count("min_containers=0"), 2)
+        self.assertNotIn('region="ap"', MODAL)
+        self.assertNotIn('region="ap-southeast"', MODAL)
+
     def test_modal_pins_cuda12_runtime_for_ctranslate2(self):
         source = (ROOT / "modal-runtime-requirements.in").read_text(encoding="utf-8")
         notices = (ROOT / "THIRD-PARTY-NOTICES.md").read_text(encoding="utf-8")

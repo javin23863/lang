@@ -662,6 +662,25 @@ if modal is not None:  # pragma: no branch - false only in the local test venv
     @modal.asgi_app()
     def web() -> FastAPI:
         return create_api()
+
+    # Keep the default endpoint as the rollback control.  This sibling changes
+    # only Modal's input/output routing for the Southeast Asia latency A/B;
+    # container placement, capacity, and scale-to-zero remain identical.
+    @modal_application.function(
+        image=modal_image,
+        gpu="L4",
+        volumes={"/model-cache": modal_volume},
+        secrets=[modal.Secret.from_name("spoken-translation-modal")],
+        max_containers=1,
+        min_containers=0,
+        scaledown_window=60,
+        timeout=86_400,
+        routing_region="ap-south",
+    )
+    @modal.concurrent(max_inputs=5, target_inputs=5)
+    @modal.asgi_app()
+    def web_ap_south() -> FastAPI:
+        return create_api()
 else:
     modal_image = None
     modal_volume = None
