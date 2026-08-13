@@ -92,11 +92,13 @@ class BlockingPreloadTTS(FakeTTS):
         self.preload_calls = 0
         self.preload_started = __import__("threading").Event()
         self.preload_release = __import__("threading").Event()
+        self.preload_finished = __import__("threading").Event()
 
     def preload(self):
         self.preload_calls += 1
         self.preload_started.set()
         self.preload_release.wait(timeout=5)
+        self.preload_finished.set()
 
 
 class BlockingPreloadCompute(FakeCompute):
@@ -170,25 +172,27 @@ class ModalStreamTests(unittest.TestCase):
         )
         headers = {"authorization": f"Bearer {SECRET}"}
         client = TestClient(api)
-        for stream_id in ("participant-1", "participant-2"):
-            with client.websocket_connect("/stream", headers=headers) as ws:
-                ws.send_json({
-                    "type": "start", "stream_id": stream_id,
-                    "source_lang": "en", "target_lang": "es",
-                })
-                self.assertTrue(compute.preload_started.wait(timeout=1))
-                if stream_id == "participant-1":
-                    self.assertFalse(tts.preload_started.wait(timeout=0.05))
-                    compute.preload_release.set()
-                self.assertTrue(tts.preload_started.wait(timeout=1))
-                ws.send_bytes(np.full(1600, 1000, dtype=np.int16).tobytes())
-                ws.send_json({"type": "speech_end"})
-                self.assertTrue(ws.receive_json()["final"])
-            if stream_id == "participant-1":
-                # Let the background seam finish before opening a second stream;
-                # the assertion remains that only one preload is ever launched.
-                tts.preload_release.set()
         try:
+            for stream_id in ("participant-1", "participant-2"):
+                with client.websocket_connect("/stream", headers=headers) as ws:
+                    ws.send_json({
+                        "type": "start", "stream_id": stream_id,
+                        "source_lang": "en", "target_lang": "es",
+                    })
+                    self.assertTrue(compute.preload_started.wait(timeout=1))
+                    if stream_id == "participant-1":
+                        self.assertFalse(tts.preload_started.wait(timeout=0.05))
+                        compute.preload_release.set()
+                    self.assertTrue(tts.preload_started.wait(timeout=1))
+                    ws.send_bytes(np.full(1600, 1000, dtype=np.int16).tobytes())
+                    ws.send_json({"type": "speech_end"})
+                    self.assertTrue(ws.receive_json()["final"])
+                    if stream_id == "participant-1":
+                        # Finish the daemon seam before TestClient tears down
+                        # its event-loop portal; Starlette otherwise races the
+                        # completed assertions with a cancelled cleanup future.
+                        tts.preload_release.set()
+                        self.assertTrue(tts.preload_finished.wait(timeout=1))
             self.assertEqual(compute.preload_calls, 1)
             self.assertEqual(tts.preload_calls, 1)
         finally:
