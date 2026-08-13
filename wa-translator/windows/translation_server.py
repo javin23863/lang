@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-translation_server.py — bilingual video room with live captions.
+translation_server.py — multilingual video room with live captions.
 
 Both people open the same link in a browser. Camera and call audio go
 peer-to-peer over WebRTC (this server only relays the signalling); a second,
@@ -14,7 +14,9 @@ the speaker's id — each client decides for itself which bubbles are its own.
 Handing out a server-side "me" label, as this file used to, showed both people
 their own name on every line.
 
-All ASR and MT run on this machine. No paid APIs.
+When an audited local cache is explicitly enabled, ASR and MT run on this
+machine. Normal Windows startup is UI/protocol-only; the supported live model
+lane is the deployed Modal L4.
 """
 
 import os
@@ -25,6 +27,7 @@ import time
 import asyncio
 import threading
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 
@@ -86,6 +89,29 @@ MAX_ROOMS = 64             # ponytail: one-host ceiling; add persistent storage 
 CATALOG = language_catalog.public_catalog()
 CATALOG_REVISION = CATALOG["revision"]
 LOCAL_TTS_PROFILE_IDS: frozenset[str] = frozenset()
+# Normal Windows startup is deliberately lightweight. The local server can read
+# an audited pre-provisioned cache only when this explicit development switch is
+# set; it never downloads or converts the production model lane.
+LOCAL_MODEL_LOADING_ENABLED = os.environ.get("LANG_ROOM_LOCAL_MODEL_LOAD") == "1"
+LOCAL_WHISPER_MODEL_PATH = os.environ.get("LANG_ROOM_WHISPER_MODEL_PATH", "")
+
+
+def local_model_load_preflight(
+    model_loading_enabled: bool | None = None, *, whisper_model_path: str | None = None,
+) -> tuple[bool, str]:
+    """Refuse any local path that would make faster-whisper download a model."""
+    enabled = (LOCAL_MODEL_LOADING_ENABLED if model_loading_enabled is None
+               else model_loading_enabled)
+    if not enabled:
+        return False, (
+            "This local adapter does not load production ASR or M2M100 models by default. "
+            "Use the deployed cloud room for live captions.")
+    candidate = whisper_model_path if whisper_model_path is not None else LOCAL_WHISPER_MODEL_PATH
+    if not candidate or not Path(candidate).is_dir():
+        return False, (
+            "Local model mode requires LANG_ROOM_WHISPER_MODEL_PATH to name an "
+            "already provisioned faster-whisper directory; downloads are disabled.")
+    return True, ""
 
 app = FastAPI(title="Live Translator Room")
 _tts_job: asyncio.Task | None = None  # one CPU job; callers fail fast, never pile up
@@ -334,6 +360,10 @@ jobs = JobQueue()
 
 def ingest(p: Participant, pcm: np.ndarray):
     """Feed one ~100ms frame; enqueue partial/final work when it is due."""
+    # Do not accumulate audio into an unserved local queue when the lightweight
+    # adapter intentionally has no pre-provisioned caption runtime.
+    if not _asr_ready.is_set():
+        return
     speech, silent_ms = p.ep.feed(pcm)
     now = time.time()
 
@@ -371,13 +401,20 @@ def ingest(p: Participant, pcm: np.ndarray):
 
 _asr = None
 _asr_ready = threading.Event()
+_model_load_error: str | None = None
 
 
 def _load_models():
-    global _asr
-    from asr_whisper import WhisperASR
-    _asr = WhisperASR()
-    mt_ct2.preload()
+    global _asr, _model_load_error
+    try:
+        from asr_whisper import WhisperASR
+        whisper_model = LOCAL_WHISPER_MODEL_PATH or None
+        _asr = WhisperASR(model=whisper_model or "large-v3-turbo")
+        mt_ct2.preload()
+    except Exception as error:  # local development remains usable without models
+        _model_load_error = type(error).__name__
+        print(f"[server] local model runtime unavailable: {_model_load_error}")
+        return
     _asr_ready.set()
     print("[server] models ready")
 
@@ -405,6 +442,8 @@ def _handle(job: Job):
         # would repaint a bubble the final has already replaced.
         return
 
+    if _asr is None:
+        return
     text = _asr.transcribe(job.audio, job.lang, partial=not job.final)
 
     translations = {}
@@ -559,15 +598,37 @@ async def room_preflight(request: Request):
 async def capabilities():
     """Stable same-origin catalog with an honest local-runtime overlay."""
     payload = language_catalog.public_catalog()
-    payload["runtime"] = {
+    payload["runtime"] = local_runtime_capabilities()
+    return JSONResponse(payload, headers={
+        "Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
+    })
+
+
+def local_runtime_capabilities(model_loading_enabled: bool | None = None) -> dict:
+    """Describe this adapter separately from the shared production catalog."""
+    enabled = (LOCAL_MODEL_LOADING_ENABLED if model_loading_enabled is None
+               else model_loading_enabled)
+    captions_available = bool(enabled and _asr_ready.is_set())
+    can_load, preflight_reason = local_model_load_preflight(enabled)
+    if captions_available:
+        caption_reason = ""
+    elif not can_load:
+        caption_reason = preflight_reason
+    elif enabled:
+        caption_reason = "The local caption runtime has not become ready; check its local log."
+    else:
+        caption_reason = (
+            "This local adapter does not load production ASR or M2M100 models by default. "
+            "Use the deployed cloud room for live captions.")
+    return {
+        "captions_available": captions_available,
+        "captions_unavailable_reason": caption_reason,
+        "model_loading_enabled": enabled,
         "voice_profile_ids": sorted(LOCAL_TTS_PROFILE_IDS),
         "tts_unavailable_reason": (
             "This local adapter has no exact pinned Kokoro voice runtime; it is captions-only."
         ),
     }
-    return JSONResponse(payload, headers={
-        "Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
-    })
 
 
 def host_room_state(room_id: str) -> dict:
@@ -870,14 +931,14 @@ async def _on_control(p: Participant, data: dict):
 async def startup():
     global _server_loop
     _server_loop = asyncio.get_running_loop()
-    if os.environ.get("LANG_ROOM_SKIP_MODEL_LOAD") == "1":
-        # Browser/protocol smoke tests inject captions and must never trigger a
-        # local heavyweight model conversion or voice download.
-        print("[server] model loading disabled for browser smoke test")
+    can_load, reason = local_model_load_preflight()
+    if not can_load:
+        # Browser/protocol smoke tests and ordinary Windows starts share this
+        # safe default. The permanent desktop shortcut opens the cloud room.
+        print(f"[server] local caption models disabled: {reason}")
         return
     threading.Thread(target=_load_models, daemon=True).start()
     threading.Thread(target=_worker, daemon=True).start()
-    threading.Thread(target=tts_local.preload, daemon=True).start()
     host = getattr(app.state, "listen_host", "0.0.0.0")
     port = getattr(app.state, "listen_port", DEFAULT_PORT)
     print(startup_message(host, port))

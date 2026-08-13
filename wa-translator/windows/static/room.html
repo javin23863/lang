@@ -97,6 +97,7 @@ const roomId = location.pathname.split('/').filter(Boolean).pop();
 let ws, myId = null, ttsToken = null, myLang = null, myLocale = null;
 let myVoiceProfileId = null, catalog = null, catalogRevision = null;
 let runtimeVoiceProfileIds = null;
+let runtimeCaptionsAvailable = true, runtimeCaptionsUnavailableReason = '';
 const locales = new Map();
 const voices = new Map();
 
@@ -138,9 +139,10 @@ function localVoices(profile) {
 function capabilityText(profile) {
   if (!profile) return 'No verified language capability is selected.';
   const voiceChoices = localVoices(profile);
-  const badges = ['Captions'];
+  const badges = [runtimeCaptionsAvailable ? 'Captions' : 'Caption runtime unavailable'];
   if (voiceChoices.length) badges.push('Voice');
-  const unavailable = profile.capabilities?.tts?.reason ||
+  const unavailable = !runtimeCaptionsAvailable ? runtimeCaptionsUnavailableReason :
+    profile.capabilities?.tts?.reason ||
     (profile.voice_profiles?.length && !voiceChoices.length
       ? 'Voice is unavailable in this adapter.' : 'Captions-only locale.');
   return badges.join(' · ') + ' — ' + (voiceChoices.length
@@ -171,7 +173,8 @@ function renderRoleChoices() {
     button.className = 'roleChoice';
     button.type = 'button';
     button.dataset.locale = profile.id;
-    const badges = localVoices(profile).length ? 'Captions · Voice' : 'Captions-only';
+    const captionBadge = runtimeCaptionsAvailable ? 'Captions' : 'Caption runtime unavailable';
+    const badges = localVoices(profile).length ? captionBadge + ' · Voice' : captionBadge;
     button.innerHTML = '<strong></strong><span></span>';
     button.querySelector('strong').textContent = `${profile.native_name} · ${profile.display_name}`;
     button.querySelector('span').textContent = `${profile.id} · ${profile.region} · ${badges}`;
@@ -261,6 +264,11 @@ async function loadCapabilities() {
     }
     if (Array.isArray(value.runtime?.voice_profile_ids)) {
       runtimeVoiceProfileIds = new Set(value.runtime.voice_profile_ids);
+    }
+    if (typeof value.runtime?.captions_available === 'boolean') {
+      runtimeCaptionsAvailable = value.runtime.captions_available;
+      runtimeCaptionsUnavailableReason = String(value.runtime.captions_unavailable_reason ||
+        'Caption compute is unavailable in this adapter.');
     }
     fillLocaleSelect();
     renderRoleChoices();
@@ -518,6 +526,9 @@ async function handle(m) {
     await onSignal(m.from, m.data);
   } else if (m.type === 'caption') {
     renderCaption(m);
+  } else if (m.type === 'caption_status' && m.status === 'capacity' && m.scope === 'global') {
+    const retry = Number.isInteger(m.retry_after_ms) ? Math.ceil(m.retry_after_ms / 1000) : 1;
+    setStatus('Live captions are temporarily at global GPU capacity. Natural audio and video stay on; try again in about ' + retry + 's.', true);
   } else if (m.type === 'room_closed') {
     closeByHost();
   } else if (m.type === 'room_full') {

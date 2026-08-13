@@ -2,7 +2,8 @@ import { DurableObject } from "cloudflare:workers";
 import roomHtml from "../../windows/static/room.html";
 import {
   CATALOG_REVISION, M2M_MODEL, isJoinableLocale,
-  localeProfile, profilesForLocale, publicCatalog, voiceProfile,
+  localeProfile, publicCatalog, voiceProfile,
+  type LocaleProfile, type VoiceProfile,
 } from "./catalog";
 
 export interface Env {
@@ -48,7 +49,6 @@ const PCM_RATE_BYTES_PER_SECOND = 40_000;
 const PCM_BURST_BYTES = 64_000;
 const TTS_WINDOW_MS = 60_000;
 const TTS_REQUESTS_PER_WINDOW = 12;
-type VoiceStyle = "female" | "male" | null;
 type IceServer = {
   urls: string | string[];
   username?: string;
@@ -63,7 +63,6 @@ type ParticipantAttachment = {
   lang: string;
   name: string;
   voiceProfileId: string | null;
-  voiceStyle: VoiceStyle;
   lastSeenAt: number;
   ttsWindowStart: number;
   ttsCount: number;
@@ -83,6 +82,10 @@ type ComputeRoute = {
   sourceLanguage: string;
   targetLanguages: string[];
 };
+
+type LocaleVoiceSelection =
+  | { locale: LocaleProfile; voice: VoiceProfile | null }
+  | { reason: "unsupported locale" | "unsupported voice profile" };
 
 type PcmBudget = { tokens: number; updatedAt: number };
 
@@ -590,7 +593,6 @@ export class Room extends DurableObject<Env> {
         || typeof value.joined !== "boolean" || typeof value.locale !== "string"
         || typeof value.lang !== "string" || typeof value.name !== "string"
         || (value.voiceProfileId !== null && typeof value.voiceProfileId !== "string")
-        || (value.voiceStyle !== null && value.voiceStyle !== "female" && value.voiceStyle !== "male")
         || !Number.isFinite(value.lastSeenAt) || !Number.isFinite(value.ttsWindowStart)
         || typeof value.ttsCount !== "number" || !Number.isSafeInteger(value.ttsCount)
         || value.ttsCount < 0) return null;
@@ -600,8 +602,7 @@ export class Room extends DurableObject<Env> {
         : voiceProfile(value.voiceProfileId, value.locale);
       if (!locale || !isJoinableLocale(value.locale) || locale.language !== value.lang
           || (value.voiceProfileId === null && locale.voice_profiles.length > 0)
-          || (value.voiceProfileId !== null && !selected)
-          || (selected?.style || null) !== value.voiceStyle) return null;
+          || (value.voiceProfileId !== null && !selected)) return null;
     }
     return value as ParticipantAttachment;
   }
@@ -620,7 +621,6 @@ export class Room extends DurableObject<Env> {
       lang: meta.lang,
       name: meta.name,
       voice_profile: meta.voiceProfileId,
-      voice_style: meta.voiceStyle,
     };
   }
 
@@ -633,6 +633,22 @@ export class Room extends DurableObject<Env> {
       sourceLanguage: meta.lang,
       targetLanguages: targetLanguages.slice(0, MAX_PARTICIPANTS - 1),
     };
+  }
+
+  private resolveLocaleVoice(
+    localeId: unknown, requestedVoice: unknown,
+  ): LocaleVoiceSelection {
+    const locale = localeProfile(localeId);
+    if (!locale || !isJoinableLocale(localeId)) return { reason: "unsupported locale" };
+    if (requestedVoice !== null && typeof requestedVoice !== "string") {
+      return { reason: "unsupported voice profile" };
+    }
+    const voice = requestedVoice === null ? null : voiceProfile(requestedVoice, locale.id);
+    if ((requestedVoice === null && locale.voice_profiles.length)
+        || (typeof requestedVoice === "string" && !voice)) {
+      return { reason: "unsupported voice profile" };
+    }
+    return { locale, voice };
   }
 
   private refreshComputeRoutes(): void {
@@ -772,6 +788,19 @@ export class Room extends DurableObject<Env> {
     state.nextAttempt = Date.now() + delay;
   }
 
+  private reportComputeCapacity(
+    participantId: string, state: ComputeState, generation: number,
+    retryAfterMs: number,
+  ): void {
+    if (this.compute.get(participantId) !== state || state.generation !== generation) return;
+    const participant = this.participants().find(({ meta }) => meta.id === participantId);
+    if (!participant) return;
+    this.send(participant.socket, {
+      type: "caption_status", status: "capacity", scope: "global",
+      retry_after_ms: retryAfterMs,
+    });
+  }
+
   private closeCompute(id: string): void {
     const state = this.compute.get(id);
     this.compute.delete(id);
@@ -841,6 +870,34 @@ export class Room extends DurableObject<Env> {
     return this.env.MODAL_TEST ? this.env.MODAL_TEST.fetch(request) : fetch(request);
   }
 
+  private onComputeMessage(
+    participantId: string, state: ComputeState, generation: number,
+    socket: WebSocket, raw: unknown,
+  ): void {
+    if (typeof raw !== "string") {
+      try { socket.close(1008, "text compute messages required"); } catch { /* closed */ }
+      return;
+    }
+    if (new TextEncoder().encode(raw).byteLength > MAX_COMPUTE_MESSAGE_BYTES) return;
+    let data: Record<string, unknown>;
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+      data = parsed as Record<string, unknown>;
+    } catch {
+      return;
+    }
+    if (data.type === "stream_status" && data.status === "capacity"
+        && data.scope === "global" && Number.isInteger(data.retry_after_ms)
+        && (data.retry_after_ms as number) >= 250
+        && (data.retry_after_ms as number) <= COMPUTE_BACKOFF_MAX_MS) {
+      this.reportComputeCapacity(participantId, state, generation,
+        data.retry_after_ms as number);
+      return;
+    }
+    this.onComputeCaption(participantId, state, generation, socket, raw);
+  }
+
   private async ensureCompute(meta: ParticipantAttachment): Promise<WebSocket | null> {
     const state = this.computeState(meta.id);
     if (state.socket?.readyState === 1) return state.socket;
@@ -872,14 +929,8 @@ export class Room extends DurableObject<Env> {
         state.socket = socket;
         state.failures = 0;
         state.nextAttempt = 0;
-        socket.addEventListener("message", event => {
-          if (typeof event.data === "string") {
-            this.onComputeCaption(meta.id, state, generation, socket, event.data);
-          }
-          else {
-            try { socket.close(1008, "text captions required"); } catch { /* closed */ }
-          }
-        });
+        socket.addEventListener("message", event => this.onComputeMessage(
+          meta.id, state, generation, socket, event.data));
         socket.addEventListener("close", () => this.markComputeClosed(meta.id, socket));
         socket.addEventListener("error", () => this.markComputeClosed(meta.id, socket));
         socket.send(JSON.stringify({
@@ -1036,7 +1087,6 @@ export class Room extends DurableObject<Env> {
       lang: "en",
       name: "Speaker",
       voiceProfileId: "en-us-af-heart",
-      voiceStyle: "female",
       lastSeenAt: Date.now(),
       ttsWindowStart: 0,
       ttsCount: 0
@@ -1105,24 +1155,15 @@ export class Room extends DurableObject<Env> {
         socket.close(1013, "room full");
         return;
       }
-      const locale = localeProfile(data.locale);
-      if (!locale || !isJoinableLocale(data.locale)) {
-        return this.policyClose(socket, "unsupported locale");
-      }
-      const requestedVoice = data.voice_profile;
-      const selectedVoice = requestedVoice === null ? null : voiceProfile(requestedVoice, locale.id);
-      if ((requestedVoice !== null && typeof requestedVoice !== "string")
-          || (requestedVoice === null && locale.voice_profiles.length)
-          || (typeof requestedVoice === "string" && !selectedVoice)) {
-        return this.policyClose(socket, "unsupported voice profile");
-      }
+      const selection = this.resolveLocaleVoice(data.locale, data.voice_profile);
+      if ("reason" in selection) return this.policyClose(socket, selection.reason);
+      const { locale, voice: selectedVoice } = selection;
       meta.joined = true;
       meta.locale = locale.id;
       meta.lang = locale.language;
       const requestedName = typeof data.name === "string" ? data.name.trim() : "";
       meta.name = requestedName.slice(0, 40) || "Speaker";
       meta.voiceProfileId = selectedVoice?.id || null;
-      meta.voiceStyle = selectedVoice?.style || null;
       meta.lastSeenAt = Date.now();
       if (participants.length) {
         meta.ttsWindowStart = participants[0].meta.ttsWindowStart || 0;
@@ -1169,36 +1210,22 @@ export class Room extends DurableObject<Env> {
     }
 
     if (data.type === "set_locale") {
-      const locale = localeProfile(data.locale);
-      if (!locale || !isJoinableLocale(data.locale)) {
-        return this.policyClose(socket, "unsupported locale");
-      }
-      const requestedVoice = data.voice_profile;
-      const selectedVoice = requestedVoice === null ? null : voiceProfile(requestedVoice, locale.id);
-      if ((requestedVoice !== null && typeof requestedVoice !== "string")
-          || (requestedVoice === null && locale.voice_profiles.length)
-          || (typeof requestedVoice === "string" && !selectedVoice)) {
-        return this.policyClose(socket, "unsupported voice profile");
-      }
+      const selection = this.resolveLocaleVoice(data.locale, data.voice_profile);
+      if ("reason" in selection) return this.policyClose(socket, selection.reason);
+      const { locale, voice: selectedVoice } = selection;
       meta.locale = locale.id;
       meta.lang = locale.language;
       meta.voiceProfileId = selectedVoice?.id || null;
-      meta.voiceStyle = selectedVoice?.style || null;
       socket.serializeAttachment(meta);
       this.refreshComputeRoutes();
       this.broadcast({ type: "peer_update", ...this.publicParticipant(meta) });
       return;
     }
     if (data.type === "set_voice_profile") {
-      const selectedVoice = data.voice_profile === null
-        ? null : voiceProfile(data.voice_profile, meta.locale);
-      if ((data.voice_profile !== null && typeof data.voice_profile !== "string")
-          || (data.voice_profile === null && profilesForLocale(meta.locale).length)
-          || (typeof data.voice_profile === "string" && !selectedVoice)) {
-        return this.policyClose(socket, "unsupported voice profile");
-      }
+      const selection = this.resolveLocaleVoice(meta.locale, data.voice_profile);
+      if ("reason" in selection) return this.policyClose(socket, selection.reason);
+      const selectedVoice = selection.voice;
       meta.voiceProfileId = selectedVoice?.id || null;
-      meta.voiceStyle = selectedVoice?.style || null;
       socket.serializeAttachment(meta);
       this.broadcast({ type: "peer_update", ...this.publicParticipant(meta) });
       return;

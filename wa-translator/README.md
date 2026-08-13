@@ -13,10 +13,11 @@ catalog. It distinguishes six release-tested live-speech Languages from 100
 M2M100 text Languages, and four enabled TTS Languages / nine exact profiles.
 A Locale does not imply a distinct MT or ASR model.
 
-`windows/` — local multilingual video-room adapter: WebRTC video peer-to-peer,
-faster-whisper ASR and the same revision-pinned M2M100 CTranslate2 contract.
-It remains captions-only for TTS. See [`windows/README.md`](windows/README.md)
-to run it.
+`windows/` — local multilingual UI/protocol adapter. With explicitly
+pre-provisioned ASR/M2M artifacts it can exercise the same revision-pinned
+contract; by default it makes no model download or conversion and advertises
+caption compute as unavailable. It remains captions-only for TTS. See
+[`windows/README.md`](windows/README.md) to run it.
 
 `cloudflare/` + `modal_app.py` — signed 24-hour rooms, one deterministic Durable
 Object per room, hibernating browser sockets, dynamic TURN, unique-target

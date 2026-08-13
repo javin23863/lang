@@ -67,11 +67,20 @@ export default {
     server.accept();
     let init = null;
     let pendingFlush = false;
+    let capacityRefused = false;
     server.addEventListener("message", event => {
       if (typeof event.data === "string") {
         const control = JSON.parse(event.data);
         if (!init) {
           init = control;
+          if (init.source_lang === "de") {
+            capacityRefused = true;
+            server.send(JSON.stringify({
+              type: "stream_status", status: "capacity", scope: "global",
+              retry_after_ms: 1000
+            }));
+            server.close(1013, "stream capacity reached");
+          }
           return;
         }
         if (control.type === "speech_end" && pendingFlush) {
@@ -85,6 +94,7 @@ export default {
         }
         return;
       }
+      if (capacityRefused) return;
       if (!init) return server.close(1008, "start required");
       if (new Uint8Array(event.data)[0] === 7) {
         pendingFlush = true;

@@ -47,10 +47,10 @@ const profileFor = {
 } as const;
 
 async function join(client: SocketClient, lang: keyof typeof profileFor, name: string,
-                    voiceStyle: "female" | "male") {
+                    voiceKind: "female" | "male") {
   const profile = profileFor[lang];
   client.socket.send(JSON.stringify({
-    type: "join", locale: profile.locale, name, voice_profile: profile[voiceStyle]
+    type: "join", locale: profile.locale, name, voice_profile: profile[voiceKind]
   }));
   return client.next();
 }
@@ -104,10 +104,10 @@ describe("public room WebSocket interface", () => {
     const a2Welcome = await join(a2, "es", "A2", "male");
     expect(a2Welcome).toMatchObject({
       type: "welcome",
-      peers: [{ id: a1Welcome.id, lang: "en", name: "A1", voice_style: "female" }]
+      peers: [{ id: a1Welcome.id, lang: "en", name: "A1", voice_profile: "en-us-af-heart" }]
     });
     expect(await a1.next()).toMatchObject({
-      type: "peer_join", id: a2Welcome.id, voice_style: "male"
+      type: "peer_join", id: a2Welcome.id, voice_profile: "es-em-alex"
     });
 
     a1.socket.send(JSON.stringify({
@@ -118,7 +118,7 @@ describe("public room WebSocket interface", () => {
       type: "set_voice_profile", voice_profile: "es-ef-dora"
     }));
     expect(await b1.next()).toMatchObject({
-      type: "peer_update", id: b1Welcome.id, voice_style: "female"
+      type: "peer_update", id: b1Welcome.id, voice_profile: "es-ef-dora"
     });
 
     a1.socket.send(JSON.stringify({
@@ -137,8 +137,8 @@ describe("public room WebSocket interface", () => {
     }));
     expect(state.attachments).toHaveLength(2);
     expect(state.attachments).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: a1Welcome.id, joined: true, voiceStyle: "female" }),
-      expect.objectContaining({ id: a2Welcome.id, joined: true, voiceStyle: "male" })
+      expect.objectContaining({ id: a1Welcome.id, joined: true, voiceProfileId: "en-us-af-heart" }),
+      expect.objectContaining({ id: a2Welcome.id, joined: true, voiceProfileId: "es-em-alex" })
     ]));
     expect([...state.storage.keys()]).toEqual(["expiresAt"]);
 

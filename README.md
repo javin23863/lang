@@ -29,6 +29,13 @@ It prints a private `https://…/room/<random-code>` invitation. Open it on your
 phone, use Share/WhatsApp, and choose the Locale you speak. The application
 never receives a telephone number; the share target chooses the recipient.
 
+The local adapter starts in UI/protocol-only mode by default: it does not
+download or convert Whisper/M2M100 on Windows, and its capability badge says
+that live captions are unavailable. Use the permanent cloud dashboard (and the
+Desktop shortcut below) for production captions. An advanced developer may set
+`LANG_ROOM_LOCAL_MODEL_LOAD=1` only with an already provisioned, hash-valid
+local cache; Windows still never materializes the production model lane.
+
 Full runbook, checks and measured latency: [`wa-translator/windows/README.md`](wa-translator/windows/README.md).
 Architecture and the rules the implementation is held to: [`SPEC-v7.md`](SPEC-v7.md).
 
@@ -85,8 +92,13 @@ Stated plainly, because each of these will look like a bug otherwise:
   captions-only; the local development adapter also stays captions-only rather
   than pretending to reproduce cloud TTS.
 - **Model work belongs on the production L4.** The local adapter can use the
-  same catalog/contract and CPU M2M100 path for development, but it does not
-  download or benchmark the production model lane on this Windows host.
+  same catalog/contract and can read an already-provisioned CPU M2M100 cache
+  for development, but it never downloads, converts, or benchmarks the
+  production model lane on this Windows host.
+- **The one-L4 stream limit is global.** Each room can contain four people,
+  but the single scale-to-zero container has four active caption-stream slots
+  shared across all rooms. If other rooms occupy them, the affected speaker
+  sees an explicit capacity status; video and natural peer audio remain live.
 
 ## Repository layout
 

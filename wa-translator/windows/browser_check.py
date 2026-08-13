@@ -392,6 +392,9 @@ async def check_invitation_ui(tab, check):
     })()""")
     check(blocked["copied"] == blocked["href"],
           f"invite UI: blocked WhatsApp popup copies the private URL (got {blocked})")
+    await tab.js("handle({type:'caption_status',status:'capacity',scope:'global',retry_after_ms:1000})")
+    check("global GPU capacity" in await tab.js("$('status').textContent"),
+          "invite UI: global Modal capacity is visible instead of silently dropping speech")
     await tab.call("Emulation.clearDeviceMetricsOverride")
 
 

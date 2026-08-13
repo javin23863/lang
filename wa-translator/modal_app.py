@@ -75,8 +75,6 @@ def _live_voice_routes() -> dict[str, dict[str, str]]:
             continue
         for voice in locale["voice_profiles"]:
             route = {
-                "language": locale["language"],
-                "style": voice["style"],
                 "pipeline": voice["pipeline"],
                 "model_voice": voice["model_voice"],
             }
@@ -113,6 +111,7 @@ MAX_UTTERANCE_S = 15.0
 IDLE_DROP_S = 3.0
 MAX_STREAM_INPUTS = 4
 MAX_TTS_INPUTS = 1
+COMPUTE_CAPACITY_RETRY_MS = 1_000
 
 MODEL_ROOT = Path(os.environ.get("LANG_ROOM_MODEL_ROOT", "/model-cache/lang-room"))
 KOKORO_REPO = "hexgrad/Kokoro-82M"
@@ -666,6 +665,15 @@ def create_api(
             await websocket.close(code=1008, reason="unauthorized")
             return
         if not input_capacity.try_stream():
+            # There is one scale-to-zero L4 container. Accept long enough to
+            # send a bounded, explicit global-capacity status; the Worker can
+            # surface this to the affected speaker instead of silently losing
+            # PCM while another room owns the four stream slots.
+            await websocket.accept()
+            await websocket.send_json({
+                "type": "stream_status", "status": "capacity", "scope": "global",
+                "retry_after_ms": COMPUTE_CAPACITY_RETRY_MS,
+            })
             await websocket.close(code=1013, reason="stream capacity reached")
             return
         try:

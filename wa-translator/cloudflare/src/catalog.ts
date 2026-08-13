@@ -10,7 +10,7 @@ type RawLanguage = {
   rtl: boolean;
 };
 
-type VoiceProfile = {
+export type VoiceProfile = {
   id: string;
   style: "female" | "male";
   name: string;
@@ -149,10 +149,6 @@ export function localeProfile(locale: unknown): LocaleProfile | null {
   return typeof locale === "string" ? localeById.get(locale) || null : null;
 }
 
-export function baseLanguage(locale: unknown): string | null {
-  return localeProfile(locale)?.language || null;
-}
-
 export function isJoinableLocale(locale: unknown): boolean {
   return Boolean(localeProfile(locale)?.capabilities.asr.available);
 }
@@ -165,12 +161,4 @@ export function voiceProfile(id: unknown, locale?: unknown): VoiceProfile | null
     return null;
   }
   return candidate;
-}
-
-export function profilesForLocale(locale: unknown): VoiceProfile[] {
-  return localeProfile(locale)?.voice_profiles.map(voice => ({ ...voice })) || [];
-}
-
-export function defaultVoiceProfile(locale: unknown): VoiceProfile | null {
-  return profilesForLocale(locale)[0] || null;
 }

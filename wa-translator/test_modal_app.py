@@ -247,6 +247,25 @@ class ModalStreamTests(unittest.TestCase):
         capacity.release_stream()
         self.assertTrue(capacity.try_stream())
 
+    def test_global_stream_capacity_reports_status_before_closing(self):
+        capacity = modal_app.InputCapacity()
+        self.assertEqual([capacity.try_stream() for _ in range(4)], [True] * 4)
+        api = modal_app.create_api(
+            shared_secret=SECRET,
+            compute=FakeCompute(),
+            tts=FakeTTS(),
+            endpointer_factory=FakeEndpointer,
+            capacity=capacity,
+        )
+        with TestClient(api).websocket_connect(
+                "/stream", headers={"authorization": f"Bearer {SECRET}"}) as ws:
+            self.assertEqual(ws.receive_json(), {
+                "type": "stream_status", "status": "capacity",
+                "scope": "global", "retry_after_ms": modal_app.COMPUTE_CAPACITY_RETRY_MS,
+            })
+            with self.assertRaises(Exception):
+                ws.receive_json()
+
     def test_stream_rejects_missing_bad_credentials_and_bad_start(self):
         client, _compute, _tts = client_fixture()
         for headers in ({}, {"authorization": "Bearer wrong"}):
@@ -450,16 +469,18 @@ class ModalTTSTests(unittest.TestCase):
 
     def test_voice_routes_are_selected_style_not_inferred_biometrics(self):
         self.assertEqual(modal_app.VOICE_ROUTES, {
-            "en-us-af-heart": {"language": "en", "style": "female", "pipeline": "a", "model_voice": "af_heart"},
-            "en-us-am-michael": {"language": "en", "style": "male", "pipeline": "a", "model_voice": "am_michael"},
-            "en-gb-bf-emma": {"language": "en", "style": "female", "pipeline": "b", "model_voice": "bf_emma"},
-            "en-gb-bm-fable": {"language": "en", "style": "male", "pipeline": "b", "model_voice": "bm_fable"},
-            "es-ef-dora": {"language": "es", "style": "female", "pipeline": "e", "model_voice": "ef_dora"},
-            "es-em-alex": {"language": "es", "style": "male", "pipeline": "e", "model_voice": "em_alex"},
-            "fr-ff-siwis": {"language": "fr", "style": "female", "pipeline": "f", "model_voice": "ff_siwis"},
-            "ja-jf-alpha": {"language": "ja", "style": "female", "pipeline": "j", "model_voice": "jf_alpha"},
-            "ja-jm-kumo": {"language": "ja", "style": "male", "pipeline": "j", "model_voice": "jm_kumo"},
+            "en-us-af-heart": {"pipeline": "a", "model_voice": "af_heart"},
+            "en-us-am-michael": {"pipeline": "a", "model_voice": "am_michael"},
+            "en-gb-bf-emma": {"pipeline": "b", "model_voice": "bf_emma"},
+            "en-gb-bm-fable": {"pipeline": "b", "model_voice": "bm_fable"},
+            "es-ef-dora": {"pipeline": "e", "model_voice": "ef_dora"},
+            "es-em-alex": {"pipeline": "e", "model_voice": "em_alex"},
+            "fr-ff-siwis": {"pipeline": "f", "model_voice": "ff_siwis"},
+            "ja-jf-alpha": {"pipeline": "j", "model_voice": "jf_alpha"},
+            "ja-jm-kumo": {"pipeline": "j", "model_voice": "jm_kumo"},
         })
+        self.assertEqual(modal_app.language_catalog.voice_profile(
+            "fr-ff-siwis")["style"], "female")
         self.assertEqual(len(modal_app.KOKORO_REVISION), 40)
         self.assertEqual(len(modal_app.WHISPER_REVISION), 40)
 

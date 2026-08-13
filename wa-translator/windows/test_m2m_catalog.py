@@ -1,8 +1,10 @@
 """M2M100 adapter contract tests; no model download or GPU is required."""
 
 from types import SimpleNamespace
+import tempfile
 import unittest
 
+import asr_whisper
 import mt_ct2
 
 
@@ -88,6 +90,16 @@ class M2M100CatalogTests(unittest.TestCase):
                          "55c2e61bbf05dfb8d7abccdc3fae6fc8512fd636")
         self.assertEqual(mt_ct2.M2M100_LICENSE, "MIT")
         self.assertEqual(mt_ct2.MAX_TARGET_LANGUAGES, 3)
+
+    def test_local_adapter_never_materializes_the_heavy_model_lane(self):
+        """A pre-provisioned local cache may be read, never downloaded/converted."""
+        self.assertFalse(mt_ct2.can_materialize_models(False))
+        self.assertTrue(mt_ct2.can_materialize_models(True))
+        with self.assertRaisesRegex(RuntimeError, "downloads are disabled"):
+            asr_whisper.resolve_model_reference("large-v3-turbo", model_path="")
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertEqual(asr_whisper.resolve_model_reference(
+                "large-v3-turbo", model_path=folder), folder)
 
 
 if __name__ == "__main__":

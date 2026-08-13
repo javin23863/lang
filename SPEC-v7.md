@@ -8,8 +8,10 @@
 
 > The current implementation retains v7's symmetric browser room while adding
 > a shared capability catalog, one transcription to unique-target M2M100 fanout
-> and up to four participants. The Windows machine is a local development
-> adapter; the production compute lane is the one AP-routed, scale-to-zero L4.
+> and up to four participants per room. The Windows machine is a local
+> UI/protocol development adapter that does not materialize production models;
+> the production compute lane is the one AP-routed, scale-to-zero L4 with four
+> caption streams shared globally across rooms.
 
 ## Why v6 could not do this
 
@@ -31,7 +33,7 @@ Browsers (up to 4, explicit BCP-47 Locale) ─ WebRTC P2P: camera + voice
       │
       └──── WebSocket: 16kHz int16 PCM + control/signalling ───────────┘
                                │
-            local translation_server.py / production Modal L4
+     optional pre-provisioned local translation_server.py / production Modal L4
                    faster-whisper large-v3-turbo (fp16)
        CTranslate2 M2M100 418M (one model; int8_float16 GPU / int8 CPU)
                    Silero VAD endpointing, rolling partials
@@ -43,6 +45,11 @@ Video and call audio never reach the server: it relays SDP and ICE without
 parsing them. Only the ASR feed is uploaded, downsampled in the browser to
 16 kHz int16 — ~32 KB/s per speaker instead of v6's ~192 KB/s, which matters
 because the other person's phone is also carrying the video uplink.
+
+The ordinary local adapter starts without ASR/MT artifacts and presents that
+state through its capability overlay. It can read an explicitly provisioned
+local cache for contract development, but only the deployed Modal runtime may
+download or convert the pinned model lane.
 
 ## Private invitations
 

@@ -32,6 +32,27 @@ class DeploymentDriftTests(unittest.TestCase):
                   "voice_profiles": ["voice-a", "voice-b"]}
         self.assertEqual(verifier.deployment_drift(catalog, catalog, health), [])
 
+    def test_fixed_receipts_are_mandatory_and_fail_on_semantic_miss(self):
+        calls = []
+
+        def request(url, *, secret, body):
+            calls.append((url, secret, body))
+            fixture_id = body["fixture_id"]
+            return {
+                "fixture_id": fixture_id,
+                "target_language": "es",
+                "translation": "fixed translation",
+                "semantic_token_group_matches": [fixture_id != "en-ar-room-time"],
+                "model": {"model": "facebook/m2m100_418M", "revision": "mt-a"},
+            }
+
+        fixtures, errors = verifier.verify_fixture_receipts(
+            "https://modal.test", "fixture-secret", "mt-a", request=request)
+
+        self.assertEqual(len(calls), len(verifier.FIXTURE_IDS))
+        self.assertEqual(len(fixtures), len(verifier.FIXTURE_IDS))
+        self.assertIn("fixture en-ar-room-time semantic hints did not match", errors)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

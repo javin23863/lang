@@ -18,7 +18,7 @@ async function createRoom(): Promise<string> {
   return (await response.json<{ path: string }>()).path;
 }
 
-async function open(path: string, lang: "en" | "es" | "fr", localeOverride?: string): Promise<Client> {
+async function open(path: string, lang: "en" | "es" | "fr" | "de", localeOverride?: string): Promise<Client> {
   const response = await exports.default.fetch(
     `${ORIGIN}${path.replace("/room/", "/ws/")}`,
     { headers: { Origin: ORIGIN, Upgrade: "websocket" } }
@@ -40,6 +40,7 @@ async function open(path: string, lang: "en" | "es" | "fr", localeOverride?: str
     en: ["en-US", "en-us-af-heart"],
     es: ["es-ES", "es-ef-dora"],
     fr: ["fr-FR", "fr-ff-siwis"],
+    de: ["de-DE", null],
   } as const;
   socket.send(JSON.stringify({
     type: "join", locale: localeOverride || profile[lang][0], name: lang,
@@ -58,13 +59,23 @@ describe("authenticated independent Modal compute proxy", () => {
       const meta = {
         kind: "browser", id: "race", joined: true,
         locale: "en-US", lang: "en", name: "race",
-        voiceProfileId: "en-us-af-heart", voiceStyle: "female"
+        voiceProfileId: "en-us-af-heart"
       };
       const pending = room.ensureCompute(meta);
       room.closeCompute(meta.id);
       expect(await pending).toBeNull();
       expect(room.compute.has(meta.id)).toBe(false);
     });
+  });
+
+  it("reports global L4 stream capacity instead of silently dropping speech", async () => {
+    const room = await createRoom();
+    const speaker = await open(room, "de");
+    speaker.socket.send(new Uint8Array(3200).buffer);
+    expect(await speaker.next()).toEqual({
+      type: "caption_status", status: "capacity", scope: "global", retry_after_ms: 1000
+    });
+    speaker.socket.close(1000, "done");
   });
 
   it("routes speech_end to Modal so mute finalizes pending speech", async () => {

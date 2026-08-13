@@ -110,6 +110,9 @@ class DeploymentConfigTests(unittest.TestCase):
                        "active outbound modal", "replayable", "24 hours", "cost ceiling",
                        "no database", "workers.dev"):
             self.assertIn(phrase, docs)
+        self.assertIn("global", docs)
+        self.assertIn("caption_status", WORKER)
+        self.assertIn("COMPUTE_CAPACITY_RETRY_MS", MODAL)
 
     def test_exact_acceptance_values_name_reproducible_commands(self):
         for command in ("probe_kokoro_tts.py", "probe_stream.py", "browser_check.py",
@@ -120,6 +123,8 @@ class DeploymentConfigTests(unittest.TestCase):
         self.assertIn("deployment_drift", VERIFIER)
         self.assertIn("/api/capabilities", VERIFIER)
         self.assertIn("mt-receipt", VERIFIER)
+        self.assertIn("verify_fixture_receipts", VERIFIER)
+        self.assertNotIn("--run-fixtures", VERIFIER)
 
 
 if __name__ == "__main__":

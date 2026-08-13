@@ -95,10 +95,13 @@ async function loadCapabilitySummary() {
         || !Number.isInteger(counts.voice_profiles)) throw new Error("invalid capability catalog");
     const runtimeVoiceCount = Array.isArray(value.runtime?.voice_profile_ids)
       ? value.runtime.voice_profile_ids.length : counts.voice_profiles;
+    const runtimeCaptionNote = value.runtime?.captions_available === false
+      ? ' · local caption runtime disabled' : '';
     $("catalogSummary").textContent =
       `${counts.live_speech_languages} release-tested live-speech languages · ` +
       `${counts.text_languages} text-translation base languages · ` +
-      `${counts.locale_profiles} locale profiles · ${runtimeVoiceCount} enabled voice profiles.`;
+      `${counts.locale_profiles} locale profiles · ${runtimeVoiceCount} enabled voice profiles` +
+      runtimeCaptionNote + '.';
   } catch (_) {
     $("catalogSummary").textContent =
       "Language capability information is unavailable. Participants will verify support before they join.";

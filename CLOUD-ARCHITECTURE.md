@@ -102,14 +102,17 @@ ephemeral.
 ## Runtime and cost controls
 
 - Start with at most one Modal L4 container and four participants per room. The
-  container exposes four reserved stream inputs plus one bounded TTS input. Each
-  participant stream is independent, so correctness never depends on two Modal
-  WebSockets retaining the same process. This is an explicit beta ceiling, not
-  a scale claim.
+  container exposes four reserved stream inputs **across all rooms** plus one
+  bounded TTS input. If all global stream slots are in use, the Worker reports
+  an explicit capacity status to the affected speaker and drops only stale
+  caption PCM; natural peer media remains live. Each participant stream is
+  independent, so correctness never depends on two Modal WebSockets retaining
+  the same process. This is an explicit beta ceiling, not a scale claim.
 - The GPU is primarily for low-latency Whisper transcription and M2M100
   CTranslate2 (`int8_float16`), and also accelerates Kokoro when a declared
-  Voice Profile is enabled. Local CPU parity is a development fallback only;
-  it is not a production-quality receipt.
+  Voice Profile is enabled. Local CPU parity can read an explicitly
+  pre-provisioned cache for contract development only; it never downloads or
+  converts this model lane and is not a production-quality receipt.
 - Modal scales to zero after the last active connection. Model files use a
   persistent Modal Volume so a container restart does not download them again.
   A process restart loses in-memory decoder state; the Durable Object reconnects

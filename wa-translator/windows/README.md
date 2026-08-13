@@ -27,9 +27,12 @@ people; one transcription fans out once to the unique listener base Languages
 the permanent public dashboard and desktop shortcut target the Cloudflare
 origin, not this process.
 
-Do not start this adapter on any inherited room port/process. For an isolated
-UI check, set `LANG_ROOM_SKIP_MODEL_LOAD=1` and choose a unique test port; that
-mode proves browser/protocol behavior only and does not prove model output.
+Do not start this adapter on any inherited room port/process. It is
+UI/protocol-only by default and explicitly reports that local caption compute
+is unavailable; it never downloads or converts Whisper/M2M100 on Windows. For
+an audited local read of an already provisioned cache only, set
+`LANG_ROOM_LOCAL_MODEL_LOAD=1`. That advanced path is not a production model
+receipt. Choose a unique test port for every isolated UI check.
 
 ## What runs where
 
@@ -64,11 +67,12 @@ receipt and does not claim cloud TTS is locally available.
 
 ## Model and quality boundary
 
-The M2M100 artifacts are revision-pinned and hash-checked when the adapter is
-actually used. The user-authorized production model conversion and performance
-work belongs on Modal's AP-routed L4; no heavy conversion or benchmark is run
-on this Windows host. Read [`../MULTILINGUAL-SOURCES.md`](../MULTILINGUAL-SOURCES.md)
-for the official coverage, license, artifact pins and quality limitations.
+The M2M100 artifacts are revision-pinned and hash-checked when a
+pre-provisioned local cache is actually used. The user-authorized production
+model download, conversion and performance work belongs on Modal's AP-routed
+L4; Windows never materializes that lane. Read
+[`../MULTILINGUAL-SOURCES.md`](../MULTILINGUAL-SOURCES.md) for the official
+coverage, license, artifact pins and quality limitations.
 
 The historical bilingual/OPUS-MT benchmarks and old CPU-TTS receipts remain in
 Git as past evidence only. They do not validate this multilingual M2M100
@@ -80,6 +84,8 @@ release, its non-English pairs, or human-audible playback.
   `workers.dev` origin and its own room lifecycle.
 - The local adapter has no production TURN relay or cloud TTS; test those on
   the deployed Worker/Modal path.
+- The default local runtime has no caption model either; its capability overlay
+  says so instead of presenting a non-running model as enabled.
 - A catalog entry is not a quality guarantee. Text coverage, live-speech
   coverage and TTS coverage are separately declared and unsupported choices
   fail closed.

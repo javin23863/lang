@@ -46,6 +46,18 @@ M2M100_LANGUAGES = frozenset(
     language["code"] for language in language_catalog.public_catalog()["languages"])
 
 
+def can_materialize_models(remote_runtime: bool | None = None) -> bool:
+    """Only the deployed Modal runtime may download or convert M2M100 artifacts.
+
+    A local developer can read an already provisioned, hash-valid cache, but
+    must not accidentally start a multi-gigabyte download/conversion simply by
+    opening a room or a Linux review checkout. The Modal image is the one
+    authorized materializer.
+    """
+    return (os.environ.get("MODAL_IS_REMOTE") == "1"
+            if remote_runtime is None else remote_runtime)
+
+
 def _strip(value: str) -> str:
     return value.strip()
 
@@ -186,6 +198,10 @@ class M2M100CT2:
             self._validate_snapshot(snapshot)
             return snapshot
         except RuntimeError:
+            if not can_materialize_models():
+                raise RuntimeError(
+                    "M2M100 source artifacts are not provisioned; the local adapter never "
+                    "downloads the production model lane")
             # A partial or stale cache must never look valid.  The targeted
             # directory is entirely ours, so replacing it is recoverable.
             if snapshot.exists():
@@ -214,6 +230,10 @@ class M2M100CT2:
                     return converted
             except json.JSONDecodeError:
                 pass
+        if not can_materialize_models():
+            raise RuntimeError(
+                "M2M100 converted artifacts are not provisioned; the local adapter never "
+                "converts the production model lane")
         if converted.exists():
             shutil.rmtree(converted)
         temporary = converted.with_name(f"{converted.name}.building")

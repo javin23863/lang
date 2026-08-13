@@ -13,9 +13,12 @@ implementation now in this branch. The current locally verified contract is:
   Languages; same-base Locale listeners share one translation;
 - M2M100 418M is pinned to `55c2e61bbf05dfb8d7abccdc3fae6fc8512fd636` under
   MIT; its source weights/tokenizer and enabled Kokoro voices are hash-checked;
+- the one-L4 four-stream limit is global across rooms; the affected speaker
+  receives an explicit capacity status while natural WebRTC media remains live;
 - local contract checks are green, but no deployed M2M100/voice/public-room
-  receipt belongs to this new model version until the deployment verifier and
-  fixed fixtures run on the AP-routed L4.
+  receipt belongs to this new model version until the deployment verifier runs
+  all seven fixed semantic fixtures (now mandatory, not an opt-in flag) on the
+  AP-routed L4.
 
 A8 remains **partial**: a real live Modal replacement during an observed
 natural WebRTC call and an explicit Windows-host-off receipt are still missing.

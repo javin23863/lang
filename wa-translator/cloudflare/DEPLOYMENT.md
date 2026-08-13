@@ -20,8 +20,11 @@ system, native wrapper or custom domain.
   from release live-speech locales: American/British English, Spanish, French
   female, and Japanese. Arabic and German are captions-only in this release;
   no wrong-language voice fallback is permitted.
-- One L4 Modal container serves at most four participants: four stream slots
-  reserved for their long-lived WebSockets and one TTS slot. A second
+- One L4 Modal container has four stream slots reserved for global captions, shared by
+  every room, plus one TTS slot. A room still admits up to four participants,
+  but a fifth active speaker across rooms receives an explicit
+  `caption_status` capacity message rather than silently dropping PCM; natural
+  WebRTC audio/video remain live while the Worker retries. A second
   simultaneous TTS request fails fast instead of taking a stream slot. The
   active deployment exposes only the AP-routed `web_ap_south` Modal Function;
   per-function `max_containers=1` is therefore also the app-wide L4 ceiling.

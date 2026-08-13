@@ -12,6 +12,7 @@ import os
 import re
 import time
 import asyncio
+from pathlib import Path
 
 import numpy as np
 from fastapi.testclient import TestClient
@@ -170,6 +171,13 @@ def test_private_room_http_flow():
         "live_speech_languages": 6, "text_languages": 100,
         "voice_languages": 4, "voice_profiles": 9,
     }
+    disabled_runtime = srv.local_runtime_capabilities(model_loading_enabled=False)
+    assert disabled_runtime["captions_available"] is False
+    assert "not load" in disabled_runtime["captions_unavailable_reason"].lower()
+    assert disabled_runtime["voice_profile_ids"] == []
+    allowed, reason = srv.local_model_load_preflight(
+        True, whisper_model_path=None)
+    assert allowed is False and "already provisioned" in reason
 
     expired_id = path.split("/")[-1]
     srv.rooms[expired_id] = time.time() - 1
@@ -342,15 +350,44 @@ def test_room_peer_discovery_is_isolated():
 
 def test_ingest_ignores_silence():
     srv.participants.clear()
-    p = Participant(id=1, ws=None, lang="en")
-    srv.participants[1] = p
-    before = len(srv.jobs)
-    for _ in range(50):  # 5s of digital silence
-        srv.ingest(p, np.zeros(1600, dtype=np.float32))
-    assert len(srv.jobs) == before, "silence queued ASR work"
-    assert p.seq == 0, "silence opened an utterance"
-    assert p.ep.duration_ms <= srv.IDLE_DROP_S * 1000, "silence buffer grew unbounded"
+    srv._asr_ready.set()
+    try:
+        p = Participant(id=1, ws=None, lang="en")
+        srv.participants[1] = p
+        before = len(srv.jobs)
+        for _ in range(50):  # 5s of digital silence
+            srv.ingest(p, np.zeros(1600, dtype=np.float32))
+        assert len(srv.jobs) == before, "silence queued ASR work"
+        assert p.seq == 0, "silence opened an utterance"
+        assert p.ep.duration_ms <= srv.IDLE_DROP_S * 1000, "silence buffer grew unbounded"
+    finally:
+        srv._asr_ready.clear()
+        srv.participants.clear()
+
+
+def test_unloaded_local_caption_runtime_drops_pcm_without_queueing():
     srv.participants.clear()
+    srv._asr_ready.clear()
+    srv.jobs = JobQueue()
+    p = Participant(id=1, ws=None, lang="en")
+    srv.participants[p.id] = p
+    try:
+        srv.ingest(p, np.full(1600, 0.25, dtype=np.float32))
+        assert len(srv.jobs) == 0
+        assert p.seq == 0
+    finally:
+        srv.participants.clear()
+
+
+def test_local_launcher_accepts_the_captions_only_adapter_health():
+    """The development launcher must not wait for intentionally disabled models."""
+    launcher = Path(__file__).with_name("persistent_host.ps1").read_text(
+        encoding="utf-8")
+    assert "$health.status -eq 'ok'" in launcher
+    assert "$health.models_ready" not in launcher
+    assert "$health.tts.en" not in launcher
+    assert "$publicUrl = 'https://spoken-translation-room.spoken-translation-cloudflare.workers.dev/'" in launcher
+    assert "--app=$publicUrl" in launcher
 
 
 def test_no_partial_below_min_speech():
@@ -368,26 +405,30 @@ def test_no_partial_below_min_speech():
     clip = clip.astype(np.float32) / 32768.0
 
     srv.participants.clear()
-    p = Participant(id=1, ws=None, lang="es")
-    srv.participants[1] = p
-    srv.jobs = JobQueue()
-    shortest = None
-    for i in range(0, int(srv.SAMPLE_RATE * 1.4), 1600):
-        srv.ingest(p, clip[i:i + 1600])
-        if len(srv.jobs) and shortest is None:
-            shortest = srv.jobs.get().audio
-    assert shortest is not None, "no partial was ever queued for 1.4s of speech"
-    # The fixture opens with 0.5s of silence. Measuring the queued buffer's
-    # total length would count that silence as speech and pass at 0.4s of real
-    # audio, which is the bug this test exists for — so measure the speech.
-    from endpointer import speech_probs, SPEECH_THRESHOLD, WINDOW
-    probs = speech_probs(shortest)
-    voiced = np.nonzero(probs >= SPEECH_THRESHOLD)[0]
-    assert voiced.size, "queued a partial containing no speech at all"
-    speech_s = (len(shortest) - int(voiced[0]) * WINDOW) / srv.SAMPLE_RATE
-    assert speech_s >= srv.MIN_PARTIAL_S - 0.25, \
-        f"queued a partial on {speech_s:.2f}s of speech, below MIN_PARTIAL_S"
-    srv.participants.clear()
+    srv._asr_ready.set()
+    try:
+        p = Participant(id=1, ws=None, lang="es")
+        srv.participants[1] = p
+        srv.jobs = JobQueue()
+        shortest = None
+        for i in range(0, int(srv.SAMPLE_RATE * 1.4), 1600):
+            srv.ingest(p, clip[i:i + 1600])
+            if len(srv.jobs) and shortest is None:
+                shortest = srv.jobs.get().audio
+        assert shortest is not None, "no partial was ever queued for 1.4s of speech"
+        # The fixture opens with 0.5s of silence. Measuring the queued buffer's
+        # total length would count that silence as speech and pass at 0.4s of real
+        # audio, which is the bug this test exists for — so measure the speech.
+        from endpointer import speech_probs, SPEECH_THRESHOLD, WINDOW
+        probs = speech_probs(shortest)
+        voiced = np.nonzero(probs >= SPEECH_THRESHOLD)[0]
+        assert voiced.size, "queued a partial containing no speech at all"
+        speech_s = (len(shortest) - int(voiced[0]) * WINDOW) / srv.SAMPLE_RATE
+        assert speech_s >= srv.MIN_PARTIAL_S - 0.25, \
+            f"queued a partial on {speech_s:.2f}s of speech, below MIN_PARTIAL_S"
+    finally:
+        srv._asr_ready.clear()
+        srv.participants.clear()
 
 
 def main():
