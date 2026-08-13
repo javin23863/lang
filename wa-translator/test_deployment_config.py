@@ -17,6 +17,9 @@ VERIFIER = (ROOT / "verify_multilingual_deployment.py").read_text(encoding="utf-
 
 class DeploymentConfigTests(unittest.TestCase):
     def test_modal_beta_ceiling_and_persistent_cache_are_explicit(self):
+        # The Modal CLI resolves a conventional ``app`` export for file deploys.
+        # Keep the descriptive internal name while exposing that stable entrypoint.
+        self.assertIn("app = modal_application", MODAL)
         for literal in ('gpu="L4"', "max_containers=1", "min_containers=0",
                         "scaledown_window=60", "timeout=86_400",
                         "@modal.concurrent(max_inputs=5, target_inputs=5)",

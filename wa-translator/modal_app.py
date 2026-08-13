@@ -836,3 +836,7 @@ else:
     modal_image = None
     modal_volume = None
     modal_application = None
+
+# Modal's file-mode CLI resolves this conventional export.  It aliases the
+# single descriptive App above; it does not create another function or GPU lane.
+app = modal_application
