@@ -42,11 +42,15 @@ BASE = os.environ.get("ROOM_BASE", f"http://localhost:{DEFAULT_PORT}").rstrip("/
 ROOM = os.environ.get("ROOM_URL")
 FORCE_RELAY = os.environ.get("FORCE_RELAY") == "1"
 HEADLESS = os.environ.get("BROWSER_CHECK_HEADLESS") == "1"
+PROBE_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "Chrome/140 Safari/537.36"
+)
 
 
 def create_room_url():
     req = urllib.request.Request(f"{BASE}/api/rooms", method="POST", data=b"",
-                                 headers={"Origin": BASE})
+                                 headers={"Origin": BASE, "User-Agent": PROBE_USER_AGENT})
     with urllib.request.urlopen(req, timeout=5) as response:
         return BASE + json.load(response)["path"]
 
@@ -105,6 +109,7 @@ STATE = """(async () => {
     remoteSize: v.videoWidth + 'x' + v.videoHeight,
     micLabel: document.getElementById('micBtn').textContent.trim(),
     remoteMuted: v.muted,
+    hasMedia: !!mediaStream,
     voiceOn,
     selectedLocalType: null,
     selectedRemoteType: null,
@@ -145,8 +150,11 @@ def _test_wav_base64():
 
 
 CONTROLLED_TTS_SPY = r"""(() => {
-  window.__voice = {requests: [], starts: 0, playing: 0, ended: 0,
-                    paused: 0, errors: [], duration: 0, currentTime: 0};
+  window.__resetVoiceSpy = () => {
+    window.__voice = {requests: [], starts: 0, playing: 0, ended: 0,
+                      paused: 0, errors: [], duration: 0, currentTime: 0};
+  };
+  window.__resetVoiceSpy();
   window.__ttsFail = false;
   const wav = Uint8Array.from(atob('__TEST_WAV__'), c => c.charCodeAt(0));
   const realFetch = window.fetch.bind(window);
@@ -234,13 +242,27 @@ async def check_voice_modes(tab, other_tab, my_id, other_id, check):
     # Exercise the real Windows/Chrome speech engine before the controlled
     # server-WAV checks. No speech API or lifecycle event is stubbed here.
     native_before = await tab.js("window.__worklet.length")
-    await tab.js("$('voiceBtn').click();speak('Device voice check', myLocale, myVoiceProfileId)")
+    selected_device = await tab.js("""(() => {
+      const option = [...$('publishVoiceSel').options]
+        .find(item => item.value.startsWith('device:'));
+      if (!option) return null;
+      const realSend = send;
+      send = () => {};
+      $('publishVoiceSel').value = option.value;
+      $('publishVoiceSel').dispatchEvent(new Event('change'));
+      send = realSend;
+      $('voiceBtn').click();
+      speak('Device voice check', myLocale, myVoiceProfileId);
+      return myVoiceChoice;
+    })()""")
     native_done = await _wait_js(
         tab, "!speaking && !asrPaused && voiceOn && !$('remoteVideo').muted", timeout=10)
     native_posts = await tab.js("window.__worklet.slice(" + str(native_before) + ")")
-    check(native_done and False in native_posts and native_posts[-1] is True,
-          f"voice: real device speech completed with the ASR safety lifecycle (got {native_posts})")
-    await tab.js("$('voiceBtn').click()")
+    check(selected_device and selected_device.startswith("device:") and native_done
+          and False in native_posts and native_posts[-1] is True,
+          "voice: real device speech completed with the ASR safety lifecycle "
+          f"(choice={selected_device}, posts={native_posts})")
+    await tab.js("$('voiceBtn').click();window.__resetVoiceSpy()")
 
     # This is an explicit test-only capability override, never an app fallback.
     await tab.js("runtimeVoiceProfileIds=null;applyLocale('en-US','en-us-af-heart');updateVoiceButton()")
@@ -346,6 +368,7 @@ async def check_voice_modes(tab, other_tab, my_id, other_id, check):
 async def check_role_picker(tab, check):
     await tab.call("Emulation.setDeviceMetricsOverride", width=360, height=640,
                    deviceScaleFactor=1, mobile=True)
+    await tab.js("$('termsAgree').checked=true;$('termsAgree').dispatchEvent(new Event('change',{bubbles:true}))")
     picker = await tab.js("""(() => {
       const gate = $('roleGate');
       const card = gate.querySelector('.roleCard');
@@ -476,12 +499,13 @@ async def check_invitation_ui(tab, check):
     check(native["payload"] and native["payload"]["url"] == native["href"],
           f"invite UI: native phone share receives the exact private URL (got {native})")
 
-    shared = await tab.js("""(() => {
+    shared = await tab.js("""(async () => {
       Object.defineProperty(navigator, 'share', {value: undefined, configurable: true});
       const realOpen = window.open;
       let opened = '';
       window.open = url => { opened = String(url); return {}; };
       document.getElementById('shareBtn').click();
+      await new Promise(resolve => setTimeout(resolve, 0));
       window.open = realOpen;
       return {opened, href: location.href};
     })()""")
@@ -558,6 +582,35 @@ async def check_dashboard_ui(check):
         with open(mobile_path, "wb") as output:
             output.write(base64.b64decode(mobile["data"]))
         print("dashboard 360px screenshot:", mobile_path)
+
+        await tab.call("Emulation.setDeviceMetricsOverride", width=360, height=800,
+                       deviceScaleFactor=1, mobile=True)
+        store = await tab.call("Page.captureScreenshot", format="png")
+        store_path = os.path.join(tempfile.gettempdir(), "room_dashboard_store.png")
+        with open(store_path, "wb") as output:
+            output.write(base64.b64decode(store["data"]))
+        print("dashboard store screenshot:", store_path)
+
+        await tab.js("createRoom()")
+        active = await _wait_js(
+            tab,
+            "currentRoom && !busy && !$('roomPanel').hidden && $('shareLink').value.startsWith(location.origin + '/room/')",
+            timeout=8,
+        )
+        check(active, "dashboard: a saved private room exposes its participant controls")
+        active_shot = await tab.call("Page.captureScreenshot", format="png")
+        active_path = os.path.join(tempfile.gettempdir(), "room_dashboard_active_store.png")
+        with open(active_path, "wb") as output:
+            output.write(base64.b64decode(active_shot["data"]))
+        print("active dashboard store screenshot:", active_path)
+
+        await tab.js("closeRoom(false)")
+        closed = await _wait_js(
+            tab,
+            "!currentRoom && !busy && $('roomPanel').hidden && $('roomState').dataset.state === 'closed'",
+            timeout=8,
+        )
+        check(closed, "dashboard: the same control closes its disposable screenshot room")
         await tab.call("Emulation.clearDeviceMetricsOverride")
 
 
@@ -625,6 +678,7 @@ async def run():
 
             print("pre-join locale picker:")
             await check_role_picker(a, check)
+            await b.js("$('termsAgree').checked=true;$('termsAgree').dispatchEvent(new Event('change',{bubbles:true}))")
             await a.js("chooseLocale('en-US')")
             await b.js("chooseLocale('es-ES')")
 
@@ -633,23 +687,22 @@ async def run():
             print("host dashboard UI:")
             await check_dashboard_ui(check)
 
-            # The peer connection is established by joining alone — nothing here
-            # calls into page internals, so this is the flow a user actually gets.
+            # Joining creates signalling peers but must not prompt for media.
             for _ in range(20):
                 states = [await t.js(STATE) for t in (a, b)]
-                if all(s.get("peerCount") and s.get("outgoingAudio") is not None
-                       for s in states):
+                if all(s.get("peerCount") for s in states):
                     break
                 await asyncio.sleep(1)
 
             print("before Start (peer connected, mic never pressed):")
             for name, st in zip("AB", states):
-                check(st["outgoingAudio"] is False,
-                      f"{name}: peer is not receiving audio before Start "
-                      f"(enabled={st['outgoingAudio']})")
+                check(st["outgoingAudio"] in (None, False) and not st["hasMedia"],
+                      f"{name}: joining did not request media "
+                      f"(sender={st['outgoingAudio']}, media={st['hasMedia']})")
 
             for t in (a, b):
                 await t.js("document.getElementById('micBtn').click()")
+                await t.js("document.getElementById('camBtn').click()")
             await asyncio.sleep(6)
 
             print("after Start:")
@@ -668,6 +721,40 @@ async def run():
                           f"protocol={st['selectedProtocol']})")
                 check(st["remoteVideo"] and st["remoteSize"] != "0x0",
                       f"{name}: remote video is playing ({st['remoteSize']})")
+
+            print("after microphone and camera permission revocation:")
+            await a.js("""(() => {
+              const audio = mediaStream.getAudioTracks()[0];
+              const video = mediaStream.getVideoTracks()[0];
+              audio.stop();
+              video.stop();
+              // MediaStreamTrack.stop() deliberately does not emit `ended`;
+              // browser/OS permission revocation does. Dispatch that browser
+              // event so this gate exercises the production recovery handler.
+              audio.dispatchEvent(new Event('ended'));
+              video.dispatchEvent(new Event('ended'));
+            })()""")
+            revoked = await _wait_js(
+                a,
+                "!micOn && !camOn && audioMediaPromise === null && "
+                "videoMediaPromise === null && mediaStream.getTracks().length === 0",
+                timeout=8,
+            )
+            check(revoked, "A: revoked mic and camera clear cached permission state")
+            await a.js("document.getElementById('micBtn').click()")
+            await a.js("document.getElementById('camBtn').click()")
+            recovered = await _wait_js(
+                a,
+                "micOn && camOn && audioInputNode && "
+                "mediaStream.getAudioTracks().some(t=>t.readyState==='live') && "
+                "mediaStream.getVideoTracks().some(t=>t.readyState==='live') && "
+                "[...peers.values()].every(p=>p.pc.getSenders().filter(s=>s.track).some(s=>"
+                "s.track.kind==='audio'&&s.track.readyState==='live') && "
+                "p.pc.getSenders().filter(s=>s.track).some(s=>"
+                "s.track.kind==='video'&&s.track.readyState==='live'))",
+                timeout=12,
+            )
+            check(recovered, "A: Start and Camera reacquire live tracks after revocation")
 
             # Runs while the mic is on: the ASR feed can only be observed
             # pausing and resuming if it was open to begin with.

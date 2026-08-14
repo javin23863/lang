@@ -82,9 +82,11 @@ class DeploymentConfigTests(unittest.TestCase):
         self.assertNotIn("`wss://.../stream`", docs)
         self.assertIn('url.protocol !== "https:"', WORKER)
 
-    def test_one_durable_object_binding_uses_hibernation_attachments_only(self):
+    def test_durable_objects_bound_only_to_rooms_abuse_and_private_reports(self):
         self.assertEqual(WRANGLER["durable_objects"]["bindings"], [
-            {"name": "ROOMS", "class_name": "Room"}
+            {"name": "ROOMS", "class_name": "Room"},
+            {"name": "ABUSE", "class_name": "AbuseGate"},
+            {"name": "REPORTS", "class_name": "ReportInbox"},
         ])
         self.assertIn("this.ctx.acceptWebSocket", WORKER)
         self.assertIn("serializeAttachment", WORKER)
@@ -120,7 +122,7 @@ class DeploymentConfigTests(unittest.TestCase):
         for phrase in ("cold start", "short utterance", "one l4", "four participants",
                        "four stream slots", "one tts slot",
                        "active outbound modal", "replayable", "24 hours", "cost ceiling",
-                       "no database", "workers.dev"):
+                       "no account or", "bounded durable object inbox", "workers.dev"):
             self.assertIn(phrase, docs)
         self.assertIn("global", docs)
         self.assertIn("caption_status", WORKER)

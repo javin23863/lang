@@ -35,6 +35,15 @@ def join_message(locale: str, name: str, voice_profile: str | None = None) -> di
             "voice_profile": voice_profile}
 
 
+def test_shared_app_runtime_is_served_by_local_adapter():
+    with TestClient(srv.app) as client:
+        response = client.get("/app-runtime.js")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/javascript")
+    assert "window.LinguaRuntime" in response.text
+    assert response.headers["cache-control"] == "no-store"
+
+
 def job(pid, seq, final, lang="en"):
     return Job(pid=pid, audio=np.zeros(16000, dtype=np.float32), lang=lang,
                targets=["es"], seq=seq, final=final, onset=time.time())
@@ -141,7 +150,10 @@ def test_private_room_http_flow():
 
     page = client.get(path)
     assert page.status_code == 200
-    assert 'id="shareBtn"' in page.text and "navigator.share" in page.text
+    assert 'id="shareBtn"' in page.text and 'src="/app-runtime.js"' in page.text
+    runtime = client.get("/app-runtime.js")
+    assert runtime.status_code == 200
+    assert "navigator.share" in runtime.text
     assert page.headers["cache-control"] == "no-store"
     assert page.headers["referrer-policy"] == "no-referrer"
     token = path.split("/")[-1]
@@ -156,7 +168,8 @@ def test_private_room_http_flow():
     landing = client.get("/")
     assert landing.status_code == 200
     assert 'id="createBtn"' in landing.text and 'id="closeBtn"' in landing.text
-    assert "localStorage" in landing.text and "navigator.share" in landing.text
+    assert 'src="/app-runtime.js"' in landing.text
+    assert "localStorage" in runtime.text and "navigator.share" in runtime.text
     assert len(srv.rooms) == rooms_before, "a GET allocated a private room"
     opened = client.post("/rooms", headers=SAME_ORIGIN, follow_redirects=False)
     assert opened.status_code == 303

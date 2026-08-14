@@ -1,0 +1,33 @@
+{
+  "name": "lingua-relay-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=22"},
+  "scripts": {
+    "build:bridge": "esbuild src/mobile-bridge.ts --bundle --format=iife --platform=browser --target=es2022 --outfile=www/mobile-bridge.js",
+    "build:web": "node scripts/prepare-web.mjs && npm run build:bridge",
+    "assets": "python scripts/generate-assets.py",
+    "screenshots": "python scripts/prepare-store-screenshots.py",
+    "sync": "npm run build:web && cap sync",
+    "check": "npm run typecheck && npm run build:web && node --test test/*.test.mjs",
+    "typecheck": "tsc --noEmit",
+    "android:bundle": "npm run sync && cd android && gradlew.bat bundleRelease"
+  },
+  "dependencies": {
+    "@aparajita/capacitor-secure-storage": "8.0.0",
+    "@capacitor/android": "8.5.0",
+    "@capacitor/app": "8.1.1",
+    "@capacitor/core": "8.5.0",
+    "@capacitor/ios": "8.5.0",
+    "@capacitor/share": "8.0.1",
+    "@capacitor/splash-screen": "8.0.1",
+    "@capacitor/status-bar": "8.0.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.0",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  },
+  "overrides": {"uuid": "11.1.1"}
+}

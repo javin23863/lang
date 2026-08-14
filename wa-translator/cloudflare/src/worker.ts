@@ -1,5 +1,8 @@
 import { DurableObject } from "cloudflare:workers";
+import privacyHtml from "../../windows/static/privacy.html";
 import roomHtml from "../../windows/static/room.html";
+import supportHtml from "../../windows/static/support.html";
+import termsHtml from "../../windows/static/terms.html";
 import {
   CATALOG_REVISION, M2M_MODEL, isJoinableLocale,
   localeProfile, publicCatalog, voiceProfile,
@@ -9,6 +12,9 @@ import {
 export interface Env {
   ASSETS: Fetcher;
   ROOMS: DurableObjectNamespace<Room>;
+  ABUSE: DurableObjectNamespace<AbuseGate>;
+  REPORTS: DurableObjectNamespace<ReportInbox>;
+  REPORTS_TEST?: Fetcher;
   PUBLIC_ORIGIN?: string;
   ROOM_SIGNING_KEY: string;
   TURN_TTL_SECONDS: string;
@@ -19,6 +25,9 @@ export interface Env {
   MODAL_WS_URL: string;
   MODAL_TTS_URL: string;
   MODAL_TEST?: Fetcher;
+  MOBILE_ANDROID_CERT_SHA256?: string;
+  MOBILE_APPLE_TEAM_ID?: string;
+  MOBILE_REPORT_ADMIN_TOKEN?: string;
 }
 
 const ROOM_ID_BYTES = 18;
@@ -49,6 +58,38 @@ const PCM_RATE_BYTES_PER_SECOND = 40_000;
 const PCM_BURST_BYTES = 64_000;
 const TTS_WINDOW_MS = 60_000;
 const TTS_REQUESTS_PER_WINDOW = 12;
+const MOBILE_PROTOCOL = 1;
+const MOBILE_MINIMUM_BUILD = 1;
+const MOBILE_APP_ID = "com.javin23863.linguarelay";
+const MOBILE_ORIGINS = new Set(["https://localhost", "capacitor://localhost"]);
+const REPORT_CATEGORIES = new Set(["harassment", "threat", "sexual", "hate", "scam", "other"]);
+const REPORT_PLATFORMS = new Set(["web", "native", "android", "ios"]);
+const ROOM_CREATION_WINDOW_MS = 10 * 60 * 1000;
+const ROOM_CREATION_LIMIT = 12;
+const TURN_IP_WINDOW_MS = 60 * 60 * 1000;
+const TURN_IP_LIMIT = 48;
+const TURN_ROOM_WINDOW_MS = 60 * 60 * 1000;
+const TURN_ROOM_LIMIT = 12;
+const REPORT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const REPORT_MAX_RECORDS = 500;
+const REPORT_ROOM_LIMIT = 8;
+const REPORT_IP_LIMIT = 12;
+const REPORT_IP_WINDOW_MS = 24 * 60 * 60 * 1000;
+const MOBILE_API_ALIASES = new Map([
+  ["/api/v1/capabilities", "/api/capabilities"],
+  ["/api/v1/rooms", "/api/rooms"],
+  ["/api/v1/room", "/api/room"],
+  ["/api/v1/room-control", "/api/room-control"],
+  ["/api/v1/room-control/close", "/api/room-control/close"],
+  ["/api/v1/turn", "/api/turn"],
+  ["/api/v1/reports", "/api/reports"],
+  ["/api/v1/tts", "/tts"],
+]);
+const PUBLIC_PAGES = new Map([
+  ["/privacy", privacyHtml],
+  ["/terms", termsHtml],
+  ["/support", supportHtml],
+]);
 type IceServer = {
   urls: string | string[];
   username?: string;
@@ -66,6 +107,7 @@ type ParticipantAttachment = {
   lastSeenAt: number;
   ttsWindowStart: number;
   ttsCount: number;
+  reported?: boolean;
 };
 
 type ComputeState = {
@@ -196,16 +238,104 @@ function expectedOrigin(request: Request, env: Env): string {
   return env.PUBLIC_ORIGIN || new URL(request.url).origin;
 }
 
+function nativeOrigin(request: Request): string | null {
+  const origin = request.headers.get("Origin");
+  return origin && MOBILE_ORIGINS.has(origin) ? origin : null;
+}
+
 function sameOrigin(request: Request, env: Env): boolean {
-  return request.headers.get("Origin") === expectedOrigin(request, env);
+  return request.headers.get("Origin") === expectedOrigin(request, env)
+    || nativeOrigin(request) !== null;
 }
 
 function sameOriginBrowserGet(request: Request, env: Env): boolean {
   const origin = request.headers.get("Origin");
-  if (origin !== null) return origin === expectedOrigin(request, env);
+  if (origin !== null) return origin === expectedOrigin(request, env)
+    || MOBILE_ORIGINS.has(origin);
   return request.method === "GET"
     && request.headers.get("Sec-Fetch-Site") === "same-origin"
     && ["cors", "same-origin"].includes(request.headers.get("Sec-Fetch-Mode") || "");
+}
+
+function mobileCors(request: Request, response: Response): Response {
+  const origin = nativeOrigin(request);
+  if (!origin || response.webSocket) return response;
+  const headers = new Headers(response.headers);
+  headers.set("Access-Control-Allow-Origin", origin);
+  headers.set("Vary", "Origin");
+  return new Response(response.body, { status: response.status, headers });
+}
+
+function mobilePreflight(request: Request): Response {
+  const origin = nativeOrigin(request);
+  if (!origin) return new Response("Forbidden", { status: 403 });
+  const requestedMethod = request.headers.get("Access-Control-Request-Method");
+  if (!requestedMethod || !["GET", "POST"].includes(requestedMethod.toUpperCase())) {
+    return new Response("Method Not Allowed", { status: 405 });
+  }
+  return new Response(null, { status: 204, headers: {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Participant-ID",
+    "Access-Control-Max-Age": "86400",
+    "Cache-Control": "no-store",
+    "Vary": "Origin",
+  }});
+}
+
+function mobileBootstrap(request: Request, env: Env): Response {
+  return Response.json({
+    protocol: MOBILE_PROTOCOL,
+    minimum_client_build: MOBILE_MINIMUM_BUILD,
+    public_origin: expectedOrigin(request, env),
+    account_mode: "none",
+    call_lifecycle: "foreground",
+    room_ttl_seconds: ROOM_TOKEN_TTL_SECONDS,
+    max_room_participants: MAX_PARTICIPANTS,
+    compute_capacity: { global_streams: 4, state: "beta-limited" },
+    endpoints: {
+      capabilities: "/api/v1/capabilities",
+      rooms: "/api/v1/rooms",
+      room: "/api/v1/room",
+      room_control: "/api/v1/room-control",
+      turn: "/api/v1/turn",
+      reports: "/api/v1/reports",
+      tts: "/api/v1/tts",
+      websocket: "/ws/v1/{token}",
+    }
+  }, { headers: { "Cache-Control": "no-store" } });
+}
+
+function androidAssociation(env: Env): Response {
+  const fingerprint = (env.MOBILE_ANDROID_CERT_SHA256 || "").toUpperCase();
+  if (!/^([0-9A-F]{2}:){31}[0-9A-F]{2}$/.test(fingerprint)) {
+    return new Response("Android association is not configured", {
+      status: 503, headers: { "Cache-Control": "no-store" }
+    });
+  }
+  return Response.json([{
+    relation: ["delegate_permission/common.handle_all_urls"],
+    target: {
+      namespace: "android_app",
+      package_name: MOBILE_APP_ID,
+      sha256_cert_fingerprints: [fingerprint],
+    }
+  }], { headers: { "Cache-Control": "public, max-age=3600" } });
+}
+
+function appleAssociation(env: Env): Response {
+  const teamId = env.MOBILE_APPLE_TEAM_ID || "";
+  if (!/^[A-Z0-9]{10}$/.test(teamId)) {
+    return new Response("Apple association is not configured", {
+      status: 503, headers: { "Cache-Control": "no-store" }
+    });
+  }
+  return Response.json({ applinks: {
+    apps: [], details: [{
+      appID: `${teamId}.${MOBILE_APP_ID}`,
+      components: [{ "/": "/room/*", comment: "Private Lingua Relay rooms" }],
+    }]
+  }}, { headers: { "Cache-Control": "public, max-age=3600" } });
 }
 
 function privateHeaders(source?: Headers): Headers {
@@ -229,6 +359,10 @@ async function createRoomResponse(request: Request, env: Env): Promise<Response>
   if (!signingSecretIsValid(env.ROOM_SIGNING_KEY)) {
     return new Response("Room service is unavailable", { status: 503 });
   }
+  const limited = await consumeIpQuota(
+    request, env, "room-create", ROOM_CREATION_LIMIT, ROOM_CREATION_WINDOW_MS
+  );
+  if (limited) return limited;
   const roomBytes = crypto.getRandomValues(new Uint8Array(ROOM_ID_BYTES));
   const expiresAt = Math.floor(Date.now() / 1000) + ROOM_TOKEN_TTL_SECONDS;
   const roomId = base64url(roomBytes);
@@ -463,7 +597,22 @@ function validIceServers(value: unknown): IceServer[] | null {
 
 async function turnCredentials(request: Request, env: Env): Promise<Response> {
   if (request.method !== "GET") return new Response("Method Not Allowed", { status: 405 });
-  if (!await authorizedRoom(request, env, true)) return new Response("Forbidden", { status: 403 });
+  const room = await authorizedRoom(request, env, true);
+  if (!room) return new Response("Forbidden", { status: 403 });
+  const ipLimited = await consumeIpQuota(
+    request, env, "turn", TURN_IP_LIMIT, TURN_IP_WINDOW_MS
+  );
+  if (ipLimited) return ipLimited;
+  const roomQuota = await env.ROOMS.get(env.ROOMS.idFromName(room.id)).fetch(
+    new Request("https://room.internal/turn-quota", {
+      method: "POST", headers: {"X-Room-Expires": String(room.expiresAt)}
+    })
+  );
+  if (roomQuota.status !== 204) {
+    const headers = privateHeaders();
+    headers.set("Retry-After", roomQuota.headers.get("Retry-After") || "60");
+    return new Response("TURN rate limit reached", {status: 429, headers});
+  }
   if (!env.TURN_KEY_ID || !env.TURN_API_TOKEN) {
     return new Response("TURN is unavailable", { status: 503 });
   }
@@ -493,6 +642,140 @@ async function turnCredentials(request: Request, env: Env): Promise<Response> {
     iceServers,
     expires_at: Math.floor(Date.now() / 1000) + ttl
   }, { headers: privateHeaders() });
+}
+
+async function abuseReport(request: Request, env: Env): Promise<Response> {
+  if (request.method !== "POST") return new Response("Method Not Allowed", {status: 405});
+  const room = await authorizedRoom(request, env);
+  if (!room) return new Response("Forbidden", {status: 403, headers: privateHeaders()});
+  if (contentLengthTooLarge(request, 512)) {
+    return new Response("Request body is too large", {status: 413, headers: privateHeaders()});
+  }
+  const raw = await readLimited(request.body, 512);
+  if (!raw) return new Response("Request body is too large", {status: 413, headers: privateHeaders()});
+  let data: Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(new TextDecoder().decode(raw)) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+    data = parsed as Record<string, unknown>;
+  } catch {
+    return Response.json({error: "invalid JSON"}, {status: 400, headers: privateHeaders()});
+  }
+  if (Object.keys(data).sort().join(",") !== "category,platform"
+      || typeof data.category !== "string" || !REPORT_CATEGORIES.has(data.category)
+      || typeof data.platform !== "string" || !REPORT_PLATFORMS.has(data.platform)) {
+    return Response.json({error: "invalid report"}, {status: 422, headers: privateHeaders()});
+  }
+  const participantId = request.headers.get("X-Participant-ID") || "";
+  if (!/^[A-Za-z0-9_-]{16}$/.test(participantId)) {
+    return new Response("Forbidden", {status: 403, headers: privateHeaders()});
+  }
+  const roomStub = env.ROOMS.get(env.ROOMS.idFromName(room.id));
+  const quota = await roomStub.fetch(
+    new Request("https://room.internal/report-quota", {
+      method: "POST",
+      headers: {"X-Room-Expires": String(room.expiresAt), "X-Participant-ID": participantId}
+    })
+  );
+  if (quota.status !== 204) {
+    const status = quota.status === 409 ? 409 : quota.status === 429 ? 429 : 403;
+    const headers = privateHeaders();
+    if (status === 429) headers.set("Retry-After", quota.headers.get("Retry-After") || "3600");
+    return new Response(status === 409 ? "Report already received"
+      : status === 429 ? "Rate limit reached" : "Forbidden", {
+      status, headers
+    });
+  }
+  const rollbackReservation = async (): Promise<void> => {
+    try {
+      await roomStub.fetch(new Request("https://room.internal/report-rollback", {
+        method: "POST",
+        headers: {"X-Room-Expires": String(room.expiresAt), "X-Participant-ID": participantId}
+      }));
+    } catch { /* keep the request failed closed */ }
+  };
+  const ipLimited = await consumeIpQuota(
+    request, env, "report", REPORT_IP_LIMIT, REPORT_IP_WINDOW_MS
+  );
+  if (ipLimited) {
+    await rollbackReservation();
+    return ipLimited;
+  }
+  const roomRef = base64url(await crypto.subtle.digest(
+    "SHA-256", new TextEncoder().encode(room.id)
+  )).slice(0, 16);
+  const submissionId = base64url(await crypto.subtle.digest(
+    "SHA-256", new TextEncoder().encode(`${room.id}:${participantId}`)
+  )).slice(0, 22);
+  let stored: Response | null = null;
+  try {
+    const reportRequest = new Request("https://reports.internal/", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        category: data.category, platform: data.platform, room_ref: roomRef,
+        submission_id: submissionId, room_id: room.id, room_expires: room.expiresAt
+      })
+    });
+    stored = env.REPORTS_TEST && request.headers.get("X-Test-Report-Failure") === "1"
+      ? await env.REPORTS_TEST.fetch(reportRequest)
+      : await env.REPORTS.get(env.REPORTS.idFromName("global")).fetch(reportRequest);
+  } catch { /* rollback below */ }
+  if (!stored?.ok) {
+    await rollbackReservation();
+    return new Response("Report service unavailable", {status: 503, headers: privateHeaders()});
+  }
+  return Response.json({status: "received"}, {status: 201, headers: privateHeaders()});
+}
+
+function secretEquals(left: string, right: string): boolean {
+  if (left.length !== right.length) return false;
+  let mismatch = 0;
+  for (let index = 0; index < left.length; index++) {
+    mismatch |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return mismatch === 0;
+}
+
+async function reportInbox(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const closeMatch = url.pathname.match(/^\/api\/internal\/reports\/([A-Za-z0-9_-]{22})\/close$/);
+  if (!(request.method === "GET" && url.pathname === "/api/internal/reports")
+      && !(request.method === "POST" && closeMatch)) {
+    return new Response("Method Not Allowed", {status: 405});
+  }
+  const secret = env.MOBILE_REPORT_ADMIN_TOKEN || "";
+  if (secret.length < 32) {
+    return new Response("Report administration unavailable", {status: 503, headers: privateHeaders()});
+  }
+  const authorization = request.headers.get("Authorization") || "";
+  const provided = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+  if (!secretEquals(provided, secret)) {
+    return new Response("Forbidden", {status: 403, headers: privateHeaders()});
+  }
+  const reports = env.REPORTS.get(env.REPORTS.idFromName("global"));
+  if (!closeMatch) {
+    const response = await reports.fetch(new Request("https://reports.internal/"));
+    return new Response(response.body, {
+      status: response.status, headers: privateHeaders(response.headers)
+    });
+  }
+  const resolved = await reports.fetch(
+    new Request(`https://reports.internal/resolve/${closeMatch[1]}`)
+  );
+  if (resolved.status === 404) return new Response("Report not found", {status: 404});
+  if (!resolved.ok) return new Response("Report administration unavailable", {status: 503});
+  const target = await resolved.json<{room_id?: unknown; room_expires?: unknown}>();
+  if (typeof target.room_id !== "string" || !/^[A-Za-z0-9_-]{24}$/.test(target.room_id)
+      || !Number.isSafeInteger(target.room_expires)) {
+    return new Response("Report administration unavailable", {status: 503});
+  }
+  const closed = await env.ROOMS.get(env.ROOMS.idFromName(target.room_id)).fetch(
+    new Request("https://room.internal/close", {
+      method: "POST", headers: {"X-Room-Expires": String(target.room_expires)}
+    })
+  );
+  if (!closed.ok) return new Response("Room is no longer available", {status: 410});
+  return Response.json({state: "closed"}, {headers: privateHeaders()});
 }
 
 async function translatedVoice(request: Request, env: Env): Promise<Response> {
@@ -866,6 +1149,47 @@ export class Room extends DurableObject<Env> {
     return { allowed: true, retryAfter: 0 };
   }
 
+  private async reserveReport(participantId: string): Promise<number> {
+    this.sweepExpiredSockets(Date.now());
+    const participant = this.participants().find(({meta}) => meta.id === participantId);
+    if (!participant) return 403;
+    if (participant.meta.reported) return 409;
+    const count = await this.ctx.storage.get<number>("reportCount") || 0;
+    if (count >= REPORT_ROOM_LIMIT) return 429;
+    participant.meta.reported = true;
+    participant.socket.serializeAttachment(participant.meta);
+    await this.ctx.storage.put("reportCount", count + 1);
+    return 204;
+  }
+
+  private async rollbackReport(participantId: string): Promise<void> {
+    const participant = this.participants().find(({meta}) => meta.id === participantId);
+    if (participant?.meta.reported) {
+      participant.meta.reported = false;
+      participant.socket.serializeAttachment(participant.meta);
+    }
+    const count = await this.ctx.storage.get<number>("reportCount") || 0;
+    if (count > 1) await this.ctx.storage.put("reportCount", count - 1);
+    else if (count === 1) await this.ctx.storage.delete("reportCount");
+  }
+
+  private async consumeStoredQuota(
+    key: string, limit: number, windowMs: number,
+  ): Promise<{allowed: boolean; retryAfter: number}> {
+    const now = Date.now();
+    const state = await this.ctx.storage.get<{windowStart: number; count: number}>(key);
+    const current = !state || now - state.windowStart >= windowMs
+      ? {windowStart: now, count: 0} : state;
+    if (current.count >= limit) {
+      return {allowed: false, retryAfter: Math.max(
+        1, Math.ceil((current.windowStart + windowMs - now) / 1000)
+      )};
+    }
+    current.count += 1;
+    await this.ctx.storage.put(key, current);
+    return {allowed: true, retryAfter: 0};
+  }
+
   private async computeFetch(request: Request): Promise<Response> {
     return this.env.MODAL_TEST ? this.env.MODAL_TEST.fetch(request) : fetch(request);
   }
@@ -1067,6 +1391,25 @@ export class Room extends DurableObject<Env> {
         status: 429, headers: { "Retry-After": String(result.retryAfter) }
       });
     }
+    if (request.method === "POST" && url.pathname === "/report-quota") {
+      const status = await this.reserveReport(request.headers.get("X-Participant-ID") || "");
+      const headers = status === 429 ? {"Retry-After": "86400"} : undefined;
+      return new Response(status === 204 ? null : status === 409 ? "Already reported"
+        : status === 429 ? "Rate limit reached" : "Forbidden", {status, headers});
+    }
+    if (request.method === "POST" && url.pathname === "/report-rollback") {
+      await this.rollbackReport(request.headers.get("X-Participant-ID") || "");
+      return new Response(null, {status: 204});
+    }
+    if (request.method === "POST" && url.pathname === "/turn-quota") {
+      const result = await this.consumeStoredQuota(
+        "turnQuota", TURN_ROOM_LIMIT, TURN_ROOM_WINDOW_MS
+      );
+      if (result.allowed) return new Response(null, {status: 204});
+      return new Response("Rate limit reached", {
+        status: 429, headers: {"Retry-After": String(result.retryAfter)}
+      });
+    }
     if (request.method !== "GET"
         || request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
       return new Response("Expected WebSocket", { status: 426 });
@@ -1089,7 +1432,8 @@ export class Room extends DurableObject<Env> {
       voiceProfileId: "en-us-af-heart",
       lastSeenAt: Date.now(),
       ttsWindowStart: 0,
-      ttsCount: 0
+      ttsCount: 0,
+      reported: false
     };
     server.serializeAttachment(meta);
     this.ctx.acceptWebSocket(server, ["browser"]);
@@ -1276,8 +1620,126 @@ export class Room extends DurableObject<Env> {
   }
 }
 
-export default {
-  async fetch(request, env): Promise<Response> {
+export class AbuseGate extends DurableObject<Env> {
+  async fetch(request: Request): Promise<Response> {
+    if (request.method !== "POST") return new Response("Method Not Allowed", {status: 405});
+    const limit = Number(request.headers.get("X-Quota-Limit"));
+    const windowMs = Number(request.headers.get("X-Quota-Window-Ms"));
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000
+        || !Number.isSafeInteger(windowMs) || windowMs < 1000
+        || windowMs > 24 * 60 * 60 * 1000) {
+      return new Response("Invalid quota", {status: 400});
+    }
+    const now = Date.now();
+    const state = await this.ctx.storage.get<{windowStart: number; count: number}>("quota");
+    const current = !state || now - state.windowStart >= windowMs
+      ? {windowStart: now, count: 0} : state;
+    if (current.count >= limit) {
+      return new Response("Rate limit reached", {
+        status: 429,
+        headers: {"Retry-After": String(Math.max(
+          1, Math.ceil((current.windowStart + windowMs - now) / 1000)
+        ))}
+      });
+    }
+    current.count += 1;
+    await this.ctx.storage.put("quota", current);
+    await this.ctx.storage.setAlarm(current.windowStart + windowMs);
+    return new Response(null, {status: 204});
+  }
+
+  async alarm(): Promise<void> {
+    await this.ctx.storage.deleteAll();
+  }
+}
+
+type StoredReport = {
+  id: string;
+  created_at: string;
+  category: string;
+  platform: string;
+  room_ref: string;
+  room_id: string;
+  room_expires: number;
+};
+
+export class ReportInbox extends DurableObject<Env> {
+  private async retained(): Promise<Map<string, StoredReport>> {
+    const rows = await this.ctx.storage.list<StoredReport>({prefix: "report:"});
+    const cutoff = Date.now() - REPORT_RETENTION_MS;
+    const expired = [...rows].filter(([, value]) => Date.parse(value.created_at) < cutoff);
+    if (expired.length) await this.ctx.storage.delete(expired.map(([key]) => key));
+    for (const [key] of expired) rows.delete(key);
+    if (rows.size > REPORT_MAX_RECORDS) {
+      const oldest = [...rows.entries()].sort((left, right) =>
+        left[1].created_at.localeCompare(right[1].created_at)
+      ).slice(0, rows.size - REPORT_MAX_RECORDS).map(([key]) => key);
+      await this.ctx.storage.delete(oldest);
+      for (const key of oldest) rows.delete(key);
+    }
+    if (rows.size) {
+      const earliestExpiry = Math.min(...[...rows.values()].map(
+        report => Date.parse(report.created_at) + REPORT_RETENTION_MS
+      ));
+      await this.ctx.storage.setAlarm(Math.max(Date.now() + 1000, earliestExpiry));
+    } else {
+      await this.ctx.storage.deleteAlarm();
+    }
+    return rows;
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    const resolveMatch = url.pathname.match(/^\/resolve\/([A-Za-z0-9_-]{22})$/);
+    if (request.method === "GET" && resolveMatch) {
+      const report = await this.ctx.storage.get<StoredReport>(`report:${resolveMatch[1]}`);
+      if (!report) return new Response("Not found", {status: 404});
+      return Response.json({room_id: report.room_id, room_expires: report.room_expires});
+    }
+    if (request.method === "GET") {
+      const rows = await this.retained();
+      return Response.json({reports: [...rows.values()].sort(
+        (left, right) => right.created_at.localeCompare(left.created_at)
+      ).map(({id, created_at, category, platform, room_ref}) => ({
+        id, created_at, category, platform, room_ref
+      }))}, {headers: {"Cache-Control": "no-store"}});
+    }
+    if (request.method !== "POST") return new Response("Method Not Allowed", {status: 405});
+    let data: Partial<StoredReport> & {submission_id?: unknown};
+    try { data = await request.json<Partial<StoredReport> & {submission_id?: unknown}>(); }
+    catch { return new Response("Invalid report", {status: 400}); }
+    if (!data.category || !REPORT_CATEGORIES.has(data.category)
+        || !data.platform || !REPORT_PLATFORMS.has(data.platform)
+        || !data.room_ref || !/^[A-Za-z0-9_-]{16}$/.test(data.room_ref)
+        || typeof data.submission_id !== "string"
+        || !/^[A-Za-z0-9_-]{22}$/.test(data.submission_id)
+        || !data.room_id || !/^[A-Za-z0-9_-]{24}$/.test(data.room_id)
+        || !Number.isSafeInteger(data.room_expires)) {
+      return new Response("Invalid report", {status: 400});
+    }
+    const key = `report:${data.submission_id}`;
+    if (await this.ctx.storage.get<StoredReport>(key)) {
+      await this.retained();
+      return Response.json({status: "stored"}, {status: 200});
+    }
+    const now = new Date();
+    const id = data.submission_id;
+    const report: StoredReport = {
+      id, created_at: now.toISOString(), category: data.category,
+      platform: data.platform, room_ref: data.room_ref,
+      room_id: data.room_id, room_expires: data.room_expires!
+    };
+    await this.ctx.storage.put(key, report);
+    await this.retained();
+    return Response.json({status: "stored"}, {status: 201});
+  }
+
+  async alarm(): Promise<void> {
+    await this.retained();
+  }
+}
+
+async function routeRequest(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/health") {
       return Response.json({ status: "ok" }, {
@@ -1287,8 +1749,20 @@ export default {
     if (request.method === "GET" && url.pathname === "/api/capabilities") {
       return Response.json(publicCatalog(), { headers: { "Cache-Control": "no-store" } });
     }
+    if (request.method === "GET" && url.pathname === "/.well-known/assetlinks.json") {
+      return androidAssociation(env);
+    }
+    if (request.method === "GET"
+        && url.pathname === "/.well-known/apple-app-site-association") {
+      return appleAssociation(env);
+    }
     if (url.pathname === "/api/room") return roomPreflight(request, env);
     if (url.pathname === "/api/turn") return turnCredentials(request, env);
+    if (url.pathname === "/api/reports") return abuseReport(request, env);
+    if (url.pathname === "/api/internal/reports"
+        || /^\/api\/internal\/reports\/[A-Za-z0-9_-]{22}\/close$/.test(url.pathname)) {
+      return reportInbox(request, env);
+    }
     if (url.pathname === "/tts") return translatedVoice(request, env);
     if (url.pathname === "/api/room-control") return hostRoomStatus(request, env);
     if (url.pathname === "/api/room-control/close") return closeHostRoom(request, env);
@@ -1320,6 +1794,13 @@ export default {
       return stub.fetch(new Request("https://room.internal/socket", { headers }));
     }
     if (request.method !== "GET") return new Response("Method Not Allowed", { status: 405 });
+    const publicPage = PUBLIC_PAGES.get(url.pathname);
+    if (publicPage) {
+      const headers = privateHeaders();
+      headers.set("Content-Type", "text/html; charset=utf-8");
+      headers.set("Cache-Control", "no-store");
+      return new Response(publicPage, { headers });
+    }
     if (url.pathname === "/" || url.pathname === "/index.html") {
       const asset = await env.ASSETS.fetch(request);
       return new Response(asset.body, { status: asset.status, headers: privateHeaders(asset.headers) });
@@ -1336,5 +1817,60 @@ export default {
     headers.set("Service-Worker-Allowed", "/");
     headers.set("Cache-Control", "no-store");
     return new Response(asset.body, { status: asset.status, headers });
+}
+
+async function consumeIpQuota(
+  request: Request, env: Env, action: string, limit: number, windowMs: number,
+): Promise<Response | null> {
+  const ip = request.headers.get("CF-Connecting-IP");
+  // Cloudflare supplies this header in production. Local development and unit
+  // tests without an edge identity stay usable; callers testing the quota send
+  // the same edge-owned header explicitly.
+  if (!ip) return null;
+  const digest = base64url(await crypto.subtle.digest(
+    "SHA-256", new TextEncoder().encode(ip)
+  ));
+  const response = await env.ABUSE.get(env.ABUSE.idFromName(`${action}:${digest}`)).fetch(
+    new Request("https://abuse.internal/consume", {
+      method: "POST",
+      headers: {"X-Quota-Limit": String(limit), "X-Quota-Window-Ms": String(windowMs)}
+    })
+  );
+  if (response.status === 204) return null;
+  if (response.status !== 429) {
+    return new Response("Abuse controls unavailable", {
+      status: 503, headers: {"Cache-Control": "no-store"}
+    });
+  }
+  return new Response("Rate limit reached", {
+    status: 429,
+    headers: {"Retry-After": response.headers.get("Retry-After") || "60", "Cache-Control": "no-store"}
+  });
+}
+
+export default {
+  async fetch(request, env): Promise<Response> {
+    const url = new URL(request.url);
+    if (request.method === "OPTIONS" && url.pathname.startsWith("/api/v1/")) {
+      return mobilePreflight(request);
+    }
+    if (url.pathname === "/api/v1/mobile/bootstrap") {
+      if (request.method !== "GET") return mobileCors(
+        request, new Response("Method Not Allowed", { status: 405 })
+      );
+      return mobileCors(request, mobileBootstrap(request, env));
+    }
+    const alias = MOBILE_API_ALIASES.get(url.pathname);
+    if (url.pathname.startsWith("/api/v1/")) {
+      if (!alias) return mobileCors(request, new Response("Not Found", { status: 404 }));
+      url.pathname = alias;
+      return mobileCors(request, await routeRequest(new Request(url, request), env));
+    }
+    const socket = url.pathname.match(/^\/ws\/v1\/(.+)$/);
+    if (socket) {
+      url.pathname = `/ws/${socket[1]}`;
+      return routeRequest(new Request(url, request), env);
+    }
+    return routeRequest(request, env);
   }
 } satisfies ExportedHandler<Env>;

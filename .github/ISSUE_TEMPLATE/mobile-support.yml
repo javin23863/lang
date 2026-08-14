@@ -1,0 +1,35 @@
+name: Mobile support
+description: Report a mobile app problem without sharing private call content
+title: "[Mobile] "
+labels: [support]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include room links, names, phone numbers, transcripts, audio, video, or screenshots of a private call.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options: [Android, iPhone, Mobile browser]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      placeholder: For example, 1.0 (build 1)
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the controls used and the visible error without including conversation content.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true

@@ -1,5 +1,13 @@
 # lang — live multilingual video room
 
+## Mobile app
+
+The Android/iOS store shell lives in `wa-translator/mobile`. It reuses the same
+room interface and permanent cloud backend; it does not depend on Codex, a
+Windows server, or a remote-webview shortcut. Start with
+[`MOBILE-STORE-HANDOFF.md`](MOBILE-STORE-HANDOFF.md) for builds, store account
+setup, and the physical-device release gates.
+
 One private link, up to four browsers. Camera and natural voice go directly
 between peers while a single transcription fans out to the unique base
 languages of current listeners. Captions-only is the default; a listener can

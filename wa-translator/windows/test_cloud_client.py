@@ -41,7 +41,7 @@ class CloudClientContractTests(unittest.TestCase):
         self.assertIn("setNaturalAudioMuted(true)", native_body)
 
     def test_turn_and_tts_keep_bearer_in_headers(self):
-        self.assertIn("fetch('/api/turn'", HTML)
+        self.assertIn("fetch(runtime.apiUrl('/api/turn')", HTML)
         self.assertIn("'Authorization': 'Bearer ' + roomId", HTML)
         self.assertIn("voice_profile: item.voiceProfileId", HTML)
         self.assertNotIn("turn?token=", HTML)
@@ -52,6 +52,47 @@ class CloudClientContractTests(unittest.TestCase):
         self.assertIn("pc.setConfiguration({iceServers})", HTML)
         self.assertIn("pc.restartIce()", HTML)
         self.assertIn("iceExpiresAt - Date.now() - 60000", HTML)
+
+    def test_join_never_requests_media_before_an_explicit_media_action(self):
+        peer_start = HTML.index("function startPeer")
+        peer_end = HTML.index("\nasync function onSignal", peer_start)
+        self.assertNotIn("getMedia()", HTML[peer_start:peer_end])
+        self.assertIn("for (const p of peers.values()) addTracks(p.pc)", HTML)
+
+    def test_invite_only_room_requires_terms_and_can_be_reported_and_blocked(self):
+        self.assertIn('id="termsAgree"', HTML)
+        self.assertIn('id="termsLink"', HTML)
+        self.assertIn('id="reportBtn"', HTML)
+        self.assertIn("profile?.capabilities?.asr?.available && termsAccepted()", HTML)
+        self.assertIn("runtime.contentUrl('terms')", HTML)
+        self.assertIn("runtime.apiUrl('/api/reports')", HTML)
+        self.assertIn("'X-Participant-ID': myId", HTML)
+        self.assertIn('id="reportCategory"', HTML)
+        self.assertIn("localStorage.setItem(blockedRoomKey", HTML)
+        self.assertNotIn("location.href = 'support.html#report'", HTML)
+
+    def test_microphone_and_camera_permissions_are_independent(self):
+        self.assertIn("function getAudioMedia()", HTML)
+        self.assertIn("function getVideoMedia()", HTML)
+        audio_start = HTML.index("function getAudioMedia()")
+        audio_end = HTML.index("\n}", audio_start)
+        video_start = HTML.index("function getVideoMedia()")
+        video_end = HTML.index("\n}", video_start)
+        self.assertIn("audio:", HTML[audio_start:audio_end])
+        self.assertIn("video: false", HTML[audio_start:audio_end])
+        self.assertIn("audio: false", HTML[video_start:video_end])
+        self.assertIn("video:", HTML[video_start:video_end])
+        self.assertNotIn("function getMedia()", HTML)
+
+    def test_revoked_media_tracks_clear_their_cached_permission_promises(self):
+        audio_start = HTML.index("function getAudioMedia()")
+        audio_end = HTML.index("\n}\n\nfunction getVideoMedia", audio_start)
+        video_start = HTML.index("function getVideoMedia()")
+        video_end = HTML.index("\n}\n\n// Single owner", video_start)
+        self.assertIn("stream.removeTrack(track)", HTML[audio_start:audio_end])
+        self.assertIn("audioMediaPromise = null", HTML[audio_start:audio_end])
+        self.assertIn("stream.removeTrack(track)", HTML[video_start:video_end])
+        self.assertIn("videoMediaPromise = null", HTML[video_start:video_end])
 
     def test_reconnect_preflights_expiry_and_stops_on_terminal_denial(self):
         self.assertIn("async function preflightRoom", HTML)

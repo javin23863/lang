@@ -2,8 +2,10 @@
 
 This is the production shape described in `CLOUD-ARCHITECTURE.md`: Cloudflare
 owns the room and Modal supplies independent authenticated compute. A
-`workers.dev` URL is the intended beta endpoint. There is no database, account
-system, native wrapper or custom domain.
+`workers.dev` URL is the intended beta endpoint. There is no account or
+conversation-history database and no custom domain. The Android and iPhone
+products are a thin Capacitor wrapper over the same bundled room client. A
+bounded Durable Object inbox retains category-only abuse reports for 30 days.
 
 ## Fixed beta ceilings
 
@@ -44,12 +46,14 @@ system, native wrapper or custom domain.
   it is never included in the participant URL. The host may inspect or revoke
   its room through `/api/room-control`; a missing, forged, cross-origin or
   expired host bearer fails closed.
-- The Durable Object stores expiry and, after revocation, a closed tombstone
-  through that expiry. It sends `room_closed` and close code 4001 to current
-  sockets, cancels compute, and refuses later participant page, preflight and
-  WebSocket access. Presence and explicitly selected voice profile and the small per-room
-  TTS quota counters otherwise live in hibernation
-  attachments; captions and media are never stored.
+- The room Durable Object stores expiry and, after revocation, a closed tombstone
+  through that expiry, plus small per-room TURN/report quota counters. It sends
+  `room_closed` and close code 4001 to current sockets, cancels compute, and
+  refuses later participant page, preflight and WebSocket access. Presence,
+  explicitly selected voice profile, and TTS quota counters otherwise live in
+  hibernation attachments. The abuse object deletes hashed per-IP counters at
+  window expiry. The report inbox automatically deletes category-only reports
+  after 30 days. Captions, transcripts, audio, and video are never stored.
   Ordinary memory is disposable. An active outbound Modal WebSocket prevents
   Durable Object hibernation while that compute stream is open.
 - The client renews its presence lease every 10 seconds. Leave and a delivered
@@ -107,9 +111,12 @@ No secret value belongs in git, a URL, browser code or logs. Before deployment:
 2. Create the Modal named secret `spoken-translation-modal` containing only
    `MODAL_SHARED_SECRET`. Generate at least 32 random bytes. Put the same value
    into Cloudflare with `npx wrangler secret put MODAL_SHARED_SECRET`.
-3. Put `ROOM_SIGNING_KEY` (at least 32 random bytes), `TURN_KEY_ID`, and
-   `TURN_API_TOKEN` into Cloudflare secrets. The TURN long-term API token must
-   never be returned to the browser.
+3. Put `ROOM_SIGNING_KEY` (at least 32 random bytes), `TURN_KEY_ID`,
+   `TURN_API_TOKEN`, and a separate random `MOBILE_REPORT_ADMIN_TOKEN` (at
+   least 32 bytes) into Cloudflare secrets. Keep the report token in the
+   operator's password manager; it is the only credential accepted by the
+   private report inbox. TURN and report credentials must never be returned to
+   a browser, URL, or log.
 4. Deploy Modal with `modal deploy wa-translator/modal_app.py`. On Windows,
    set `PYTHONUTF8=1` and `PYTHONIOENCODING=utf-8` for the CLI process. Record
    the ASGI HTTPS URL. Put its `https://.../stream` and `https://.../tts` endpoints into
@@ -126,11 +133,14 @@ They are reproducible instructions. The current authenticated deployment and
 its public receipts are recorded below and in
 [`../../MULTILINGUAL-PRODUCT-HANDOFF.md`](../../MULTILINGUAL-PRODUCT-HANDOFF.md).
 
-## Current deployed receipt — 2026-08-14 08:06 +07
+## Current deployed receipt — 2026-08-14 11:04 +07
 
 - Worker: `https://spoken-translation-room.spoken-translation-cloudflare.workers.dev`,
-  version `6d146fda-aa50-4c98-966b-67aa75a24c05`, from runtime source
-  `4cb8c25f6c9d104ca3117876a8f32a0ad27ebbb1`.
+  version `f2c94502-82f3-4281-809f-3aed424bb25b`, from runtime source
+  `b7b0fffdd41816b45cf0e1ee53893b6802d75853`, deployed at 10:55 +07. The
+  deployed mobile bootstrap, legal pages, well-known association surfaces,
+  category-only report path, private bounded report inbox, and moderator room
+  close path are part of this version.
 - Modal: app `ap-BGN0rYSJePL3mDbezdmZOe`, version `v22`, deployed at 08:00 +07 to
   `https://m2747076--spoken-translation-compute-web-ap-south.ap-south.modal.run`.
   It exposes one AP-routed Function with `gpu="L4"`, `max_containers=1`,
@@ -149,6 +159,14 @@ its public receipts are recorded below and in
   additionally returned valid non-silent 24 kHz WAVs for Hindi, Italian and
   Brazilian Portuguese. These are model/runtime receipts, not
   a native-speaker quality certification or A11 human-audibility proof.
+- The no-secret public mobile probe returned health 200, bootstrap 200, room
+  creation 201, WebSocket welcome, report 201, private list 200, moderator close
+  200, and closed-room preflight 410. `MOBILE_REPORT_ADMIN_TOKEN` is installed;
+  its DPAPI-encrypted operator backup is outside the repository at
+  `C:\Users\MSI\AppData\Local\LiveTranslator\report-admin-token.dpapi`.
+- The live public two-tab browser gate passed native-name-first Khmer and Arabic
+  selection, 360px/RTL layouts, WebRTC audio/video, permission revoke/regrant,
+  device and included voice lifecycles, feedback protection, and room release.
 
 ## Live receipts required after deployment
 

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Lingua Relay</string>
+    <string name="title_activity_main">Lingua Relay</string>
+    <string name="package_name">com.javin23863.linguarelay</string>
+    <string name="custom_url_scheme">com.javin23863.linguarelay</string>
+</resources>

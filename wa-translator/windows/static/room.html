@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#111b21">
 <link rel="manifest" href="/manifest.webmanifest">
+<script src="/app-runtime.js"></script>
 <title>Lingua Relay · Private room</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}:root{color-scheme:dark;--ink:#eef3f5;--muted:#aab8c1;--canvas:#09141e;--panel:#10212e;--panel-2:#172d3b;--line:#294455;--accent:#67e0bc;--accent-ink:#06251e;--danger:#df6572;--focus:#a9ecff;--shadow:0 18px 48px #0008}html,body{height:100%}body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:radial-gradient(circle at top right,#17445b 0,#09141e 37rem);color:var(--ink);display:flex;flex-direction:column;overflow:hidden;letter-spacing:.005em}button,select,input{font:inherit}button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
@@ -17,7 +18,7 @@
           border:2px solid rgba(255,255,255,.25);background:#111b21;
           box-shadow:0 3px 12px rgba(0,0,0,.5)}
 #selfVideo{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
-#videoNote{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:16px;font-size:13px;color:var(--muted);background:linear-gradient(135deg,#09141e,#102b3a)}
+#videoNote{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:16px;padding-inline-end:calc(min(27vw,130px) + 30px);font-size:13px;color:var(--muted);background:linear-gradient(135deg,#09141e,#102b3a)}
 #videoNote.hidden{display:none}
 
 /* ── captions ────────────────────────────────────────────── */
@@ -33,7 +34,7 @@
 #bar{flex:0 0 auto;background:#0b1924ee;backdrop-filter:blur(16px);padding:10px clamp(9px,2vw,20px) calc(10px + env(safe-area-inset-bottom));display:grid;grid-template-columns:minmax(110px,1fr) repeat(4,42px);gap:8px;align-items:center;border-top:1px solid var(--line)}button{border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;padding:10px 12px;min-height:42px;color:var(--ink)}#micBtn{background:var(--accent);color:var(--accent-ink);min-width:0;white-space:nowrap;overflow:hidden}#micBtn.on{background:var(--danger);color:#fff}
 #micBtn .dot{display:inline-block;width:9px;height:9px;border-radius:50%;
              background:#fff;margin-right:7px;animation:blink 1s infinite}
-#settingsBtn{font-size:12px}.icon{background:var(--panel-2);color:var(--ink);padding:8px;width:42px}.icon.off{background:transparent;color:var(--muted);border-color:var(--line)}#settings{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:9px;border-top:1px solid var(--line);padding-top:10px}.setting{display:flex;flex-direction:column;gap:4px;min-width:0;color:var(--muted);font-size:11px;text-align:left}.setting select,.setting input{width:100%;min-width:0;background:var(--panel-2);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:9px 8px;font-size:13px}.setting input{padding:8px}.capability{font-size:11px;color:var(--muted);line-height:1.35;padding:8px 10px;border-radius:9px;background:#0a2930;border:1px solid #286457}.capability.warning{background:#352928;border-color:#795848;color:#f3d0bc}
+#settingsBtn{font-size:12px}.icon{background:var(--panel-2);color:var(--ink);padding:8px;width:42px}.icon.off{background:transparent;color:var(--muted);border-color:var(--line)}#settings{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:9px;border-top:1px solid var(--line);padding-top:10px}.setting{display:flex;flex-direction:column;gap:4px;min-width:0;color:var(--muted);font-size:11px;text-align:left}.setting select,.setting input{width:100%;min-width:0;background:var(--panel-2);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:9px 8px;font-size:13px}.setting input{padding:8px}.capability{font-size:11px;color:var(--muted);line-height:1.35;padding:8px 10px;border-radius:9px;background:#0a2930;border:1px solid #286457}.capability.warning{background:#352928;border-color:#795848;color:#f3d0bc}#capabilityNote,#reportBtn{grid-column:1/-1}#reportBtn{background:transparent;border-color:#87515a;color:#f1c7cb}.termsAgree{display:flex;align-items:center;gap:8px;margin:12px 0;color:var(--muted);font-size:12px}.termsAgree input{width:18px;height:18px;accent-color:var(--accent)}.termsAgree a{color:var(--ink)}
 #status{position:absolute;top:9px;left:50%;transform:translateX(-50%);padding:5px 10px;text-align:center;font-size:11px;color:var(--ink);background:#061019b8;border:1px solid #ffffff22;border-radius:999px;z-index:5;max-width:calc(100% - 32px)}#participantCount{position:absolute;top:9px;left:9px;padding:5px 8px;border-radius:999px;font-size:11px;color:var(--ink);background:#061019b8;border:1px solid #ffffff22;z-index:5;direction:ltr;unicode-bidi:plaintext}
 #roleGate{position:fixed;inset:0;z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:18px;overflow-y:auto;background:rgba(4,13,20,.94);backdrop-filter:blur(14px)}
 #roleGate[hidden]{display:none}
@@ -58,6 +59,7 @@ html[dir=rtl] #selfWrap{left:10px;right:auto}html[dir=rtl] #participantCount{rig
       <select id="roleLocaleSel" aria-describedby="roleCapability" disabled></select>
     </label>
     <p id="roleCapability" class="capability" role="status" aria-live="polite">Loading…</p>
+    <label class="termsAgree"><input id="termsAgree" type="checkbox">I agree to the <a id="termsLink" href="/terms">Terms</a></label>
     <button id="joinBtn" class="roleJoin" type="button" disabled>Join room</button>
   </div>
 </div>
@@ -75,19 +77,24 @@ html[dir=rtl] #selfWrap{left:10px;right:auto}html[dir=rtl] #participantCount{rig
 <div id="bar">
   <button id="micBtn">Start microphone</button>
   <button id="shareBtn" class="icon" title="Share this private room" aria-label="Share this private room">Share</button>
-  <button id="camBtn" class="icon" title="Turn camera on or off" aria-label="Camera">Camera</button>
+  <button id="camBtn" class="icon off" title="Turn camera on or off" aria-label="Camera">Camera</button>
   <button id="voiceBtn" class="icon off" title="Turn translated voice on or off" aria-label="Translated voice">Voice</button>
   <button id="leaveBtn" class="icon" title="Leave this room" aria-label="Leave room">Leave</button>
   <div id="settings">
     <label class="setting">Language<select id="localeSel" aria-describedby="capabilityNote"></select></label>
     <label class="setting">Voice<select id="publishVoiceSel"></select></label>
+    <label class="setting">Report reason<select id="reportCategory"><option value="harassment">Harassment</option><option value="threat">Threats</option><option value="sexual">Sexual content</option><option value="hate">Hate</option><option value="scam">Scam</option><option value="other">Other</option></select></label>
     <p id="capabilityNote" class="capability" role="status">Loading…</p>
+    <button id="reportBtn" type="button">Report &amp; block this room</button>
   </div>
 </div>
 
 <script>
 const $ = (id) => document.getElementById(id);
-const roomId = location.pathname.split('/').filter(Boolean).pop();
+const runtime = window.LinguaRuntime;
+const roomId = runtime.roomToken();
+const termsKey = 'lingua-relay.terms.2026-08-14';
+const blockedRoomKey = 'lingua-relay.blocked-room.' + roomId;
 
 let ws, myId = null, ttsToken = null, myLang = null, myLocale = null;
 let myVoiceProfileId = null, myVoiceChoice = null, catalog = null, catalogRevision = null;
@@ -97,8 +104,8 @@ const locales = new Map();
 const voices = new Map();
 const deviceVoicesById = new Map();
 
-let mediaStream = null, audioCtx = null, workletNode = null;
-let micOn = false, camOn = true, roomFull = false, reconnectFailures = 0;
+let mediaStream = null, audioCtx = null, audioInputNode = null, workletNode = null;
+let micOn = false, camOn = false, roomFull = false, reconnectFailures = 0;
 let terminalRoom = false, leaving = false, turnRefreshTimer = null, iceRefreshPromise = null;
 let explicitLeave = false;
 let presenceHeartbeatTimer = null;
@@ -176,11 +183,13 @@ function roleCapabilityText(profile) {
 }
 function updateRoleGate() {
   const profile = localeProfile($('roleLocaleSel').value);
-  const joinable = Boolean(profile?.capabilities?.asr?.available);
+  const blocked = localStorage.getItem(blockedRoomKey) === '1';
+  const joinable = Boolean(profile?.capabilities?.asr?.available && termsAccepted() && !blocked);
   $('joinBtn').disabled = !joinable;
-  $('roleCapability').textContent = roleCapabilityText(profile);
+  $('roleCapability').textContent = blocked ? 'Blocked on this device' : roleCapabilityText(profile);
   $('roleCapability').classList.toggle('warning', !joinable || !runtimeCaptionsAvailable);
 }
+function termsAccepted() { return $('termsAgree').checked; }
 function previewRoleLocale() {
   const profile = localeProfile($('roleLocaleSel').value);
   if (profile) {
@@ -303,8 +312,10 @@ function applyLocale(localeId, preferredVoiceId = null) {
 }
 let roleChosen = false;
 function chooseLocale(localeId) {
-  if (roleChosen || !applyLocale(localeId,
+  if (roleChosen || !termsAccepted() || localStorage.getItem(blockedRoomKey) === '1'
+      || !applyLocale(localeId,
       localStorage.getItem('lingua-relay.voice-profile'))) return;
+  localStorage.setItem(termsKey, '1');
   roleChosen = true;
   $('roleGate').hidden = true;
   setStatus('Joining as ' + localeName(myLocale) + '…', true);
@@ -312,7 +323,7 @@ function chooseLocale(localeId) {
 }
 async function loadCapabilities() {
   try {
-    const response = await fetch('/api/capabilities', {cache: 'no-store', headers: {Accept: 'application/json'}});
+    const response = await fetch(runtime.apiUrl('/api/capabilities'), {cache: 'no-store', headers: {Accept: 'application/json'}});
     if (!response.ok) throw new Error('HTTP ' + response.status);
     const value = await response.json();
     if (!value || typeof value.revision !== 'string' || !Array.isArray(value.locales)
@@ -390,7 +401,7 @@ async function refreshIceServers(force = false) {
   if (iceRefreshPromise) return iceRefreshPromise;
   iceRefreshPromise = (async () => {
     try {
-      const response = await fetch('/api/turn', {
+      const response = await fetch(runtime.apiUrl('/api/turn'), {
         headers: {'Authorization': 'Bearer ' + roomId, 'Accept': 'application/json'}
       });
       if (response.status === 404) return; // Local adapter intentionally uses STUN.
@@ -418,7 +429,7 @@ async function refreshIceServers(force = false) {
 async function preflightRoom() {
   if (terminalRoom) return false;
   try {
-    const response = await fetch('/api/room', {
+    const response = await fetch(runtime.apiUrl('/api/room'), {
       headers: {'Authorization': 'Bearer ' + roomId, 'Accept': 'application/json'}
     });
     if (response.status === 401 || response.status === 410) {
@@ -441,8 +452,7 @@ async function connect() {
   if (leaving) return;
   if (!await preflightRoom()) return;
   await refreshIceServers();
-  ws = new WebSocket((location.protocol === 'https:' ? 'wss' : 'ws') + '://' +
-                     location.host + '/ws/' + encodeURIComponent(roomId));
+  ws = new WebSocket(runtime.websocketUrl(roomId));
   ws.binaryType = 'arraybuffer';
   ws.onopen = () => {
     reconnectFailures = 0;
@@ -500,7 +510,10 @@ function disconnectRoom(notifyServer, preserveServerClose = false) {
   peers.clear();
   if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
   mediaStream = null;
-  mediaPromise = null;
+  audioMediaPromise = null;
+  videoMediaPromise = null;
+  if (audioInputNode) audioInputNode.disconnect();
+  audioInputNode = null;
   workletNode = null;
   if (audioCtx) audioCtx.close().catch(() => {});
   audioCtx = null;
@@ -522,6 +535,29 @@ function leaveRoom() {
   disconnectRoom(true);
   setStatus('You left this room', true);
   showVideoNote('You left this private room.');
+}
+
+async function reportAndBlockRoom() {
+  if (!confirm('Send a private report and block this room on this device?')) return;
+  const category = $('reportCategory').value;
+  $('reportBtn').disabled = true;
+  let sent = false;
+  try {
+    const response = await fetch(runtime.apiUrl('/api/reports'), {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + roomId,
+        'X-Participant-ID': myId || '',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({category, platform: runtime.isNative ? 'native' : 'web'})
+    });
+    sent = response.ok;
+  } catch (_) {}
+  localStorage.setItem(blockedRoomKey, '1');
+  leaveRoom();
+  setStatus(sent ? 'Report sent. Room blocked on this device.'
+                 : 'Room blocked. Report could not be sent.', true);
 }
 
 function suspendRoom() {
@@ -739,7 +775,7 @@ async function requestFallbackSpeech(item) {
     const retryDeadline = Date.now() + 30000;
     let response, retryDelay = 250;
     while (true) {
-      response = await fetch('/tts', {
+      response = await fetch(runtime.apiUrl('/tts'), {
         method: 'POST',
         headers,
         body,
@@ -934,16 +970,11 @@ $('shareBtn').onclick = async () => {
   const invite = {
     title: 'Private translated video call',
     text: 'Join my private translated video call.',
-    url: location.href
+    url: runtime.inviteUrl('/room/' + roomId)
   };
-  if (navigator.share) {
-    try {
-      await navigator.share(invite);
-      setStatus('Invitation shared');
-      return;
-    } catch (error) {
-      if (error.name === 'AbortError') return;
-    }
+  if (await runtime.share(invite)) {
+    setStatus('Invitation shared');
+    return;
   }
   const message = invite.text + '\n' + invite.url;
   const opened = window.open('https://wa.me/?text=' + encodeURIComponent(message),
@@ -966,30 +997,64 @@ $('shareBtn').onclick = async () => {
 // camera button can all ask for media at once; guarding on `mediaStream` lets
 // each of them open its own capture, and then the tracks published to the peer
 // belong to a different stream than the one mute toggles.
-let mediaPromise = null;
+let audioMediaPromise = null, videoMediaPromise = null;
 
-function getMedia() {
-  if (!mediaPromise) {
-    mediaPromise = navigator.mediaDevices.getUserMedia({
-      video: {facingMode: 'user', width: {ideal: 640}, height: {ideal: 480}},
+function combinedMediaStream() {
+  if (!mediaStream) mediaStream = new MediaStream();
+  return mediaStream;
+}
+
+function getAudioMedia() {
+  if (!audioMediaPromise) {
+    audioMediaPromise = navigator.mediaDevices.getUserMedia({
+      video: false,
       audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true}
-    }).then(stream => {
-      mediaStream = stream;
-      $('selfVideo').srcObject = stream;
-      stream.getAudioTracks().forEach(track => {
-        track.onended = () => { if (micOn) setMicEnabled(false); };
+    }).then(captured => {
+      const stream = combinedMediaStream();
+      captured.getAudioTracks().forEach(track => {
+        track.onended = () => {
+          stream.removeTrack(track);
+          audioMediaPromise = null;
+          if (audioInputNode) audioInputNode.disconnect();
+          audioInputNode = null;
+          if (micOn) setMicEnabled(false);
+        };
+        stream.addTrack(track);
       });
-      // The camera may be wanted before the mic is. The audio track exists from
-      // here on and gets published to the peer as soon as one connects, so it
-      // starts disabled and only setMicEnabled turns it on.
       setMicEnabled(micOn);
       return stream;
     }).catch(err => {
-      mediaPromise = null;   // let the user retry after granting permission
+      audioMediaPromise = null;
       throw err;
     });
   }
-  return mediaPromise;
+  return audioMediaPromise;
+}
+
+function getVideoMedia() {
+  if (!videoMediaPromise) {
+    videoMediaPromise = navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {facingMode: 'user', width: {ideal: 640}, height: {ideal: 480}}
+    }).then(captured => {
+      const stream = combinedMediaStream();
+      captured.getVideoTracks().forEach(track => {
+        track.onended = () => {
+          stream.removeTrack(track);
+          videoMediaPromise = null;
+          camOn = false;
+          $('camBtn').className = 'icon off';
+        };
+        stream.addTrack(track);
+      });
+      $('selfVideo').srcObject = stream;
+      return stream;
+    }).catch(err => {
+      videoMediaPromise = null;
+      throw err;
+    });
+  }
+  return videoMediaPromise;
 }
 
 // Single owner of mic state. Every consumer of the microphone is toggled here:
@@ -1011,7 +1076,7 @@ function setMicEnabled(on) {
 }
 
 async function startCapture() {
-  const stream = await getMedia();
+  const stream = await getAudioMedia();
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     await audioCtx.audioWorklet.addModule('/static/pcm-worklet.js');
@@ -1019,10 +1084,12 @@ async function startCapture() {
     workletNode.port.onmessage = (e) => {
       if (ws && ws.readyState === WebSocket.OPEN) ws.send(e.data);
     };
-    audioCtx.createMediaStreamSource(stream).connect(workletNode);
     // Not connected to destination: this branch exists to be captured, not
     // heard. The other person's voice arrives over WebRTC instead.
   }
+  if (audioInputNode) audioInputNode.disconnect();
+  audioInputNode = audioCtx.createMediaStreamSource(stream);
+  audioInputNode.connect(workletNode);
   if (audioCtx.state === 'suspended') await audioCtx.resume();
 }
 
@@ -1046,10 +1113,23 @@ $('micBtn').onclick = async () => {
 };
 
 $('camBtn').onclick = async () => {
-  await getMedia();
-  camOn = !camOn;
-  mediaStream.getVideoTracks().forEach(t => t.enabled = camOn);
-  $('camBtn').className = 'icon' + (camOn ? '' : ' off');
+  if (camOn) {
+    camOn = false;
+    if (mediaStream) mediaStream.getVideoTracks().forEach(t => { t.enabled = false; });
+    $('camBtn').className = 'icon off';
+    return;
+  }
+  try {
+    await getVideoMedia();
+    camOn = true;
+    mediaStream.getVideoTracks().forEach(t => { t.enabled = true; });
+    for (const p of peers.values()) addTracks(p.pc);
+    $('camBtn').className = 'icon';
+  } catch (_) {
+    camOn = false;
+    $('camBtn').className = 'icon off';
+    setStatus('Camera unavailable — microphone still works', true);
+  }
 };
 
 $('localeSel').onchange = () => {
@@ -1069,8 +1149,14 @@ function showVideoNote(text) {
 
 function addTracks(pc) {
   if (!mediaStream) return;
-  const existing = pc.getSenders().map(s => s.track);
-  mediaStream.getTracks().forEach(t => { if (!existing.includes(t)) pc.addTrack(t, mediaStream); });
+  const senders = pc.getSenders();
+  mediaStream.getTracks().forEach(track => {
+    if (senders.some(sender => sender.track === track)) return;
+    const ended = senders.find(sender =>
+      sender.track?.kind === track.kind && sender.track.readyState === 'ended');
+    if (ended) ended.replaceTrack(track).catch(() => {});
+    else pc.addTrack(track, mediaStream);
+  });
 }
 
 // Synchronous and idempotent on purpose. This used to await getMedia() before
@@ -1096,10 +1182,8 @@ function startPeer(peer) {
                  voiceProfileId: peer?.voice_profile || null};
   peers.set(peerId, state);
 
-  // Media may not be granted yet. Adding tracks later fires negotiationneeded
-  // on its own, which is what drives the offer — on both sides, with the
-  // polite/impolite rule below resolving the collision.
-  getMedia().then(() => addTracks(pc)).catch(() => {});
+  // Joining never asks for camera or microphone permission. Start/Camera adds
+  // tracks later and negotiationneeded drives the offer from that user action.
 
   pc.ontrack = (e) => {
     $('remoteVideo').srcObject = e.streams[0];
@@ -1158,16 +1242,40 @@ async function onSignal(from, data) {
 
 window.addEventListener('pagehide', suspendRoom);
 window.addEventListener('pageshow', restoreSuspendedRoom);
+window.addEventListener('lingua-app-state', event => {
+  if (!event.detail?.isActive) {
+    suspendRoom();
+    setStatus('Call paused while Lingua Relay is in the background', true);
+    return;
+  }
+  if (explicitLeave || terminalRoom || !roleChosen || !leaving) return;
+  leaving = false;
+  roomFull = false;
+  reconnectFailures = 0;
+  myId = null;
+  setStatus('Rejoining this room…', true);
+  connect();
+});
 $('roleLocaleSel').onchange = previewRoleLocale;
+$('termsLink').href = runtime.contentUrl('terms');
+$('termsAgree').checked = localStorage.getItem(termsKey) === '1';
+$('termsAgree').onchange = updateRoleGate;
 $('joinBtn').onclick = () => chooseLocale($('roleLocaleSel').value);
+$('reportBtn').onclick = reportAndBlockRoom;
 if ('speechSynthesis' in window) {
   refreshDeviceVoices();
   speechSynthesis.addEventListener('voiceschanged', refreshDeviceVoices);
 }
-if ('serviceWorker' in navigator && location.protocol === 'https:') {
+if (!runtime.isNative && 'serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('/sw.js', {scope: '/'}).catch(() => {});
 }
-loadCapabilities();
+runtime.ready().then(loadCapabilities).catch(() => {
+  $('roleLocaleSel').disabled = true;
+  $('joinBtn').disabled = true;
+  $('roleCapability').textContent = 'App update or connection required';
+  $('roleCapability').classList.add('warning');
+  setStatus('App update or connection required', true);
+});
 </script>
 </body>
 </html>
