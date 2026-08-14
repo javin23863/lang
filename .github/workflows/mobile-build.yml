@@ -59,8 +59,14 @@ jobs:
           node-version: "24"
           cache: npm
           cache-dependency-path: wa-translator/mobile/package-lock.json
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+          working-directory: wa-translator/mobile
       - run: npm ci
       - run: npm run check
+      - run: bundle exec fastlane --version
       - run: npm run sync
       - run: >-
           xcodebuild -project ios/App/App.xcodeproj -scheme App
@@ -70,4 +76,9 @@ jobs:
         with:
           name: lingua-relay-ios-unsigned
           path: wa-translator/mobile/build/ios/Build/Products/Release-iphoneos/App.app
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lingua-relay-ruby-lock
+          path: wa-translator/mobile/Gemfile.lock
           if-no-files-found: error
