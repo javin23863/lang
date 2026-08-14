@@ -26,7 +26,7 @@ jobs:
         working-directory: wa-translator/mobile
     env:
       LINGUA_ANDROID_KEYSTORE: ${{ github.workspace }}/wa-translator/mobile/release.keystore
-      GOOGLE_PLAY_JSON_KEY: ${{ runner.temp }}/google-play.json
+      GOOGLE_PLAY_JSON_KEY: ${{ github.workspace }}/wa-translator/mobile/google-play.json
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -79,8 +79,8 @@ jobs:
       run:
         working-directory: wa-translator/mobile
     env:
-      APPLE_DISTRIBUTION_P12: ${{ runner.temp }}/distribution.p12
-      APPLE_PROVISIONING_PROFILE: ${{ runner.temp }}/lingua-relay.mobileprovision
+      APPLE_DISTRIBUTION_P12: ${{ github.workspace }}/wa-translator/mobile/distribution.p12
+      APPLE_PROVISIONING_PROFILE: ${{ github.workspace }}/wa-translator/mobile/lingua-relay.mobileprovision
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0

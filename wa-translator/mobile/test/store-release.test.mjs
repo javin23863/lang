@@ -40,6 +40,8 @@ test("credential-gated Fastlane lanes stop at beta tracks", async () => {
     const section = workflow.split(`\n  ${job}:`)[1].split("\n  ")[0];
     assert.doesNotMatch(section.split("\n    steps:")[0], /\$\{\{ secrets\./);
   }
+  assert.doesNotMatch(workflow, /\$\{\{\s*runner\.temp\s*\}\}/,
+    "runner context is invalid in a job-level env block");
   assert.doesNotMatch(workflow, /uses:\s+[^\n]+@(v\d+|main|master)\s*$/m);
   assert.ok(workflow.indexOf("npm ci && npm run check && npm run sync")
     < workflow.indexOf("Materialize signing credentials"));
