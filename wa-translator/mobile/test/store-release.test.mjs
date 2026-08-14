@@ -15,7 +15,10 @@ test("credential-free CI builds both native products", async () => {
 
 test("credential-gated Fastlane lanes stop at beta tracks", async () => {
   const fastfile = await read("../fastlane/Fastfile");
+  const gemfile = await read("../Gemfile");
   const workflow = await read("../../../.github/workflows/mobile-beta.yml");
+  assert.match(gemfile, /gem "fastlane", "2\.238\.0"/);
+  assert.match(gemfile, /gem "multi_json", "1\.21\.1"/);
   assert.match(fastfile, /track: "internal"/);
   assert.match(fastfile, /upload_to_testflight/);
   assert.doesNotMatch(fastfile, /track: "production"/);
