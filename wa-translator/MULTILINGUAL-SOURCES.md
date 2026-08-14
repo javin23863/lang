@@ -219,12 +219,12 @@ wheel SHA-256             = a129dc6364a286bd6a92c396e9862459d3d3e45f2c15596ed5a9
 ```
 
 The package wheel hash comes from the official PyPI release metadata [S15].
-The enabled production subset is smaller than the upstream inventory: it is
-three TTS language codes and seven explicitly selected profiles (English,
-Spanish and French). The deployment found that the pinned Hugging Face resolve
+The free release subset remains smaller than the upstream inventory: it is six
+TTS language codes and thirteen explicitly selected profiles (English,
+Spanish, French, Hindi, Italian, and Brazilian Portuguese). The deployment found that the pinned Hugging Face resolve
 response's `ETag` is **not** the SHA-256 of its delivered `.pt` bytes. On
-2026-08-14, all nine candidate resolve responses were downloaded and SHA-256
-hashed locally; the runtime pins only the seven release-enabled delivered bytes
+2026-08-14, every release candidate below was downloaded and SHA-256
+hashed locally; the runtime pins the delivered bytes
 rather than treating an `ETag` as a content digest [S19]:
 
 ```text
@@ -235,6 +235,12 @@ en-gb-bm-fable  d44935f3135257a9064df99f007fc1342ff1aa767552b4a4fa4c3b2e6e59079c
 es-ef-dora      d9d69b0f8a2b87a345f269d89639f89dfbd1a6c9da0c498ae36dd34afcf35530
 es-em-alex      5eac53f767c3f31a081918ba531969aea850bed18fe56419b804d642c6973431
 fr-ff-siwis     8073bf2d2c4b9543a90f2f0fd2144de4ed157e2d4b79ddeb0d5123066171fbc9
+hi-hf-alpha     06906fe05746d13a79c5c01e21fd7233b05027221a933c9ada650f5aafc8f044
+hi-hm-omega     b55f02a8e8483fffe0afa566e7d22ed8013acf47ad4f6bbee2795a840155703e
+it-if-sara      6c0b253b955fe32f1a1a86006aebe83d050ea95afd0e7be15182f087deedbf55
+it-im-nicola    234ed06648649f9bd874b37508ea17560b9c993ef85b4ddb3e3a71e062bd2c12
+pt-br-pf-dora   07e4ff987c5d5a8c3995efd15cc4f0db7c4c15e881b198d8ab7f67ecf51f5eb7
+pt-br-pm-alex   cf0ba8c573c2480fc54123683a35cf1e2ae130428e441eb91f9149bdb188a526
 
 # documented Japanese candidates, audited but NOT release-enabled
 ja-jf-alpha     1bf4c9dc69e45ee46183b071f4db766349aac5592acbcfeaf051018048a5d787
@@ -250,10 +256,11 @@ dictionary is an additional dependency and that full UniDic needs a separate
 download [S21]. A future Japanese voice route must pin, license-notice and
 test one exact frontend/dictionary configuration before it can be enabled.
 
-The remaining documented Kokoro groups (`ja`, `zh`, `hi`, `it`, and `pt`) are
-not enabled in this release. They remain captions-only even though their
-upstream voices are documented, until their live-speech ASR/MT/TTS route is
-separately validated.
+The remaining documented Kokoro groups (`ja` and `zh`) are not enabled in this
+release. Japanese remains blocked on the frontend/dictionary decision above;
+Mandarin requires the separately locked `misaki[zh]` dependency set and a live
+route receipt. Both remain captions-only rather than falling back to another
+language.
 
 The upstream limitations are unusually relevant to a conversation product
 [S13]:

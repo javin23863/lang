@@ -7,21 +7,22 @@ system, native wrapper or custom domain.
 
 ## Fixed beta ceilings
 
-- The catalog declares **100 M2M100 base text languages**, **122 BCP-47 locale
-  profiles**, and **six release-tested live-speech base languages**: Arabic,
-  German, English, Spanish, French, and Japanese. A locale maps to one base
-  language; it never claims a regional ASR or MT model or dialect-specific
-  quality. Unknown/mismatched profiles fail closed.
+- The catalog declares **100 M2M100 text languages**, **84 free
+  Whisper→M2M100 microphone-language candidates**, and **106 selectable BCP-47
+  locale profiles**. Arabic, German, English, Spanish, French, and Japanese are
+  the exercised `Tested` tier; every other joinable route is marked `Preview`.
+  A locale maps to one base language and never claims a regional ASR/MT model
+  or dialect-specific quality. Unknown/mismatched profiles fail closed.
 - Each browser explicitly chooses its speaking locale before it joins. One ASR
   transcript fans out once to the unique base languages of current listeners
   (at most three); Spanish regional listeners share one Spanish translation.
   Translated voice is incoming-only.
-- The production runtime exposes only exact pinned Kokoro profiles reachable
-  from release live-speech locales: American/British English, Spanish, and
-  French female. Japanese has documented upstream voices but is captions-only
-  until its dictionary/runtime dependency is pinned and license-reviewed;
-  Arabic and German are also captions-only. No wrong-language voice fallback
-  is permitted.
+- The production runtime exposes thirteen exact pinned Kokoro profiles for
+  American/British English, Spanish, French, Hindi, Italian, and Brazilian
+  Portuguese. The client additionally lists
+  exact-locale or same-base voices installed on the user's browser/device;
+  those voices stay local and do not become server profile IDs. No
+  wrong-language voice fallback is permitted.
 - One L4 Modal container has four stream slots reserved for global captions, shared by
   every room, plus one TTS slot. A room still admits up to four participants,
   but a fifth active speaker across rooms receives an explicit

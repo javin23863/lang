@@ -2,17 +2,18 @@
 
 This is the local development adapter for the same browser room used in the
 cloud beta. It shares [`../capabilities.json`](../capabilities.json): **100
-M2M100 base text Languages**, **122 BCP-47 Locale profiles**, and the
-release-tested live-speech set **Arabic, German, English, Spanish, French and
-Japanese**. A Locale maps to one base Language; for example, every Spanish
-regional Locale maps to `es` and makes no dialect-specific ASR/MT claim.
+M2M100 text Languages**, **84 free microphone-language candidates**, and **106
+selectable regional Locale profiles**. Arabic, German, English, Spanish,
+French and Japanese are the exercised `Tested` tier; the remaining routes are
+marked `Preview`. A Locale maps to one base Language; every Spanish regional
+Locale maps to `es` and makes no dialect-specific ASR/MT claim.
 
 The local adapter validates the same Locale and multi-target room protocol, but
-deliberately advertises no TTS profiles. It is captions-only rather than
-silently substituting a local or wrong-language voice. Production TTS runs only
-on the single Modal L4 with the seven exact catalog-declared Kokoro profiles
-for English, Spanish and French. Japanese remains captions-only until its
-dictionary/runtime dependency is pinned and license-reviewed.
+deliberately advertises no server TTS profiles. The shared client can still use
+an exact-language voice installed on the browser/device; it never substitutes
+a neighboring language. Production also offers thirteen pinned included
+profiles for English, Spanish, French, Hindi, Italian, and Brazilian Portuguese
+on the single Modal L4.
 
 ## Run it
 

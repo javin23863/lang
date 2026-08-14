@@ -45,7 +45,7 @@ except ModuleNotFoundError:  # pragma: no cover - exercised by import itself
 
 
 CATALOG = language_catalog.public_catalog()
-LANGUAGES = tuple(CATALOG["release_live_speech_languages"])
+LANGUAGES = tuple(CATALOG["model_live_speech_languages"])
 M2M_LANGUAGE_CODES = frozenset(entry["code"] for entry in CATALOG["languages"])
 CATALOG_REVISION = CATALOG["revision"]
 M2M100_REVISION = CATALOG["models"]["mt"]["revision"]
@@ -260,7 +260,10 @@ class ModelRuntime:
             raise ModelInitializationError(error) from error
         import mt_ct2
 
-        original = self._asr.transcribe(pcm, source_lang, partial=not final)
+        asr_lang = language_catalog.asr_language(source_lang)
+        if not asr_lang:
+            raise RuntimeError("unsupported ASR source language")
+        original = self._asr.transcribe(pcm, asr_lang, partial=not final)
         translated: dict[str, str] = {}
         if original:
             translated, _reason = mt_ct2.translate_many(
@@ -458,8 +461,8 @@ def _valid_start(value: object) -> dict[str, Any] | None:
             or any(not isinstance(target, str) or target not in M2M_LANGUAGE_CODES
                    for target in target_langs)):
         return None
-    # The data catalog is authoritative even though the M2M model has a wider
-    # text set. Compute streams are opened only for declared release speech.
+    # The shared catalog is authoritative. Compute opens for the explicit
+    # Whisper-to-M2M model intersection; its verified tier stays separate.
     unique_targets = list(dict.fromkeys(target_langs))
     return {"stream_id": stream_id, "source_lang": source_lang,
             "target_langs": unique_targets}

@@ -444,7 +444,10 @@ def _handle(job: Job):
 
     if _asr is None:
         return
-    text = _asr.transcribe(job.audio, job.lang, partial=not job.final)
+    asr_lang = language_catalog.asr_language(job.lang)
+    if not asr_lang:
+        return
+    text = _asr.transcribe(job.audio, asr_lang, partial=not job.final)
 
     translations = {}
     if text and job.targets:

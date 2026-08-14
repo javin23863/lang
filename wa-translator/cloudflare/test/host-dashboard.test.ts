@@ -33,6 +33,7 @@ describe("installed host dashboard client", () => {
     expect(html).toContain('clearCurrentRoom("closed", "This room is closed. Its participant link no longer works.")');
     expect(html).toContain('window.open("about:blank", "_blank")');
     expect(html).toContain("opened.opener = null");
+    expect(html).toContain(".room[hidden]{display:none}");
     expect(html).toContain("@media(max-width:380px)");
     expect(html).not.toContain('action="/rooms"');
   });

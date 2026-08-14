@@ -6,15 +6,16 @@ languages of current listeners. Captions-only is the default; a listener can
 independently choose an exact declared synthetic Voice Profile where one is
 enabled.
 
-The shared catalog currently declares **100 M2M100 base text Languages**,
-**122 BCP-47 Locale profiles**, and **six release-tested live-speech
-Languages** (Arabic, German, English, Spanish, French, Japanese). Those counts
-are deliberately separate: locale variants such as `es-MX` map to base `es` and
-do not claim a distinct ASR/MT model or dialect quality. Production TTS is
-enabled for three Languages (English, Spanish, French) through seven pinned
-profiles. Japanese, Arabic and German remain captions-only; Japanese has
-documented upstream voices but they are deliberately not enabled until its
-dictionary/runtime dependency is pinned and licensed for this release.
+The shared catalog currently declares **100 M2M100 text Languages**, **84 free
+Whisper→M2M100 microphone-language candidates**, and **106 selectable BCP-47
+Locale profiles** across those candidates. Six Languages (Arabic, German,
+English, Spanish, French, Japanese) remain the separately marked, exercised
+`Tested` tier; the rest are visibly `Preview`, not quality-certified. Locale
+variants such as `es-MX` map to base `es` and do not claim a distinct ASR/MT
+model or dialect quality. Voice output combines thirteen pinned included
+profiles for English, Spanish, French, Hindi, Italian, and Brazilian Portuguese
+with exact-language voices installed on each user's browser/device. No
+neighboring-language voice fallback is allowed.
 
 There are two adapters. The Windows adapter below is the local development path.
 The production beta uses a permanent Cloudflare `workers.dev` room plus a
@@ -93,9 +94,9 @@ Stated plainly, because each of these will look like a bug otherwise:
   and translate it back forever. The other person still hears your real voice
   throughout — only the caption feed is held.
 - **Voice quality varies.** The cloud uses revision-pinned Kokoro artifacts
-  only for the seven profiles declared in the catalog. Unsupported languages are
-  captions-only; the local development adapter also stays captions-only rather
-  than pretending to reproduce cloud TTS.
+  only for the 13 profiles declared in the catalog. The browser may also offer
+  same-language voices installed on the listener's device. Other languages are
+  captions-only; the app never substitutes a voice from the wrong language.
 - **Model work belongs on the production L4.** The local adapter can use the
   same catalog/contract and can read an already-provisioned CPU M2M100 cache
   for development, but it never downloads, converts, or benchmarks the

@@ -141,8 +141,32 @@ class ModalComputeTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["cache-control"], "no-store")
         self.assertEqual(response.json()["revision"],
-                         "2026-08-14-m2m100-55c2e61-tts3")
+                         "2026-08-14-m2m100-55c2e61-free84-tts13")
         self.assertEqual(response.json()["counts"]["base_languages"], 100)
+        self.assertEqual(response.json()["counts"]["model_speech_languages"], 84)
+        self.assertEqual(response.json()["counts"]["joinable_locale_profiles"], 106)
+
+    def test_javanese_uses_whisper_jw_and_m2m_jv_codes(self):
+        calls = []
+
+        class ASR:
+            def transcribe(self, _pcm, language, partial):
+                calls.append(("asr", language, partial))
+                return "teks"
+
+        mt_ct2 = types.ModuleType("mt_ct2")
+        mt_ct2.translate_many = lambda text, source, targets, **kwargs: (
+            calls.append(("mt", text, source, targets, kwargs)) or ({"en": "text"}, ""))
+        runtime = modal_app.ModelRuntime()
+        runtime._asr = ASR()
+        with mock.patch.dict(sys.modules, {"mt_ct2": mt_ct2}):
+            original, translations = runtime.transcribe_translate(
+                np.ones(1600, np.float32), "jv", ["en"], "stream", True)
+
+        self.assertEqual(original, "teks")
+        self.assertEqual(translations, {"en": "text"})
+        self.assertEqual(calls[0], ("asr", "jw", False))
+        self.assertEqual(calls[1][2:4], ("jv", ["en"]))
 
     def test_fixed_mt_receipt_endpoint_rejects_arbitrary_input_and_reports_pin(self):
         client, _compute, _tts = client_fixture()
@@ -280,6 +304,15 @@ class ModalStreamTests(unittest.TestCase):
                           **START_REVISIONS})
             with self.assertRaises(Exception):
                 ws.receive_json()
+
+        with client.websocket_connect(
+                "/stream", headers={"authorization": f"Bearer {SECRET}"}) as ws:
+            ws.send_json({"type": "start", "stream_id": "preview",
+                          "source_lang": "pt", "source_locale": "pt-BR",
+                          "target_langs": ["en"], **START_REVISIONS})
+            ws.send_bytes(np.full(1600, 1000, dtype=np.int16).tobytes())
+            ws.send_json({"type": "speech_end"})
+            self.assertTrue(ws.receive_json()["final"])
 
     def test_public_stream_keeps_finals_and_attributes_language(self):
         compute = FakeCompute()
@@ -437,12 +470,15 @@ class ModalTTSTests(unittest.TestCase):
                     ), mock.patch.dict(sys.modules, {
                         "huggingface_hub": hub, "kokoro": kokoro, "torch": torch,
                     }):
-                audio = modal_app.KokoroTTS().synthesize("hello", "en-us-af-heart")
+                engine = modal_app.KokoroTTS()
+                audio = engine.synthesize("hello", "en-us-af-heart")
+                for profile in ("hi-hf-alpha", "it-if-sara", "pt-br-pf-dora"):
+                    self.assertTrue(engine.synthesize("hello", profile).startswith(b"RIFF"))
 
         self.assertTrue(audio.startswith(b"RIFF"))
         self.assertEqual(models[0].device, "cuda")
         self.assertFalse(models[0].training)
-        self.assertEqual(pipeline_languages, ["a"])
+        self.assertEqual(pipeline_languages, ["a", "h", "i", "p"])
 
     def test_tts_auth_caps_and_declared_release_voice_profiles(self):
         client, _compute, tts = client_fixture()
@@ -454,11 +490,13 @@ class ModalTTSTests(unittest.TestCase):
                                      json={"text": "x" * 301,
                                            "voice_profile": "en-us-af-heart"}).status_code, 422)
         self.assertEqual(client.post("/tts", headers=headers,
-                                     json={"text": "hi", "voice_profile": "hi-hf-alpha"}).status_code, 422)
+                                     json={"text": "hi", "voice_profile": "ja-jf-alpha"}).status_code, 422)
 
         profiles = [
             "en-us-af-heart", "en-us-am-michael", "en-gb-bf-emma", "en-gb-bm-fable",
             "es-ef-dora", "es-em-alex", "fr-ff-siwis",
+            "hi-hf-alpha", "hi-hm-omega", "it-if-sara", "it-im-nicola",
+            "pt-br-pf-dora", "pt-br-pm-alex",
         ]
         for voice_profile in profiles:
             response = client.post("/tts", headers=headers,
@@ -479,6 +517,12 @@ class ModalTTSTests(unittest.TestCase):
             "es-ef-dora": {"pipeline": "e", "model_voice": "ef_dora"},
             "es-em-alex": {"pipeline": "e", "model_voice": "em_alex"},
             "fr-ff-siwis": {"pipeline": "f", "model_voice": "ff_siwis"},
+            "hi-hf-alpha": {"pipeline": "h", "model_voice": "hf_alpha"},
+            "hi-hm-omega": {"pipeline": "h", "model_voice": "hm_omega"},
+            "it-if-sara": {"pipeline": "i", "model_voice": "if_sara"},
+            "it-im-nicola": {"pipeline": "i", "model_voice": "im_nicola"},
+            "pt-br-pf-dora": {"pipeline": "p", "model_voice": "pf_dora"},
+            "pt-br-pm-alex": {"pipeline": "p", "model_voice": "pm_alex"},
         })
         self.assertEqual(modal_app.language_catalog.voice_profile(
             "fr-ff-siwis")["style"], "female")

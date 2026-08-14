@@ -228,13 +228,35 @@ async def check_voice_modes(tab, other_tab, my_id, other_id, check):
 
     initial = await tab.js(STATE)
     check(not initial["voiceOn"] and not initial["remoteMuted"]
-          and await tab.js("$('voiceBtn').disabled"),
-          "voice: local captions-only capability keeps natural incoming audio audible")
+          and not await tab.js("$('voiceBtn').disabled"),
+          "voice: a free matching device voice is available while natural audio remains audible")
+
+    # Exercise the real Windows/Chrome speech engine before the controlled
+    # server-WAV checks. No speech API or lifecycle event is stubbed here.
+    native_before = await tab.js("window.__worklet.length")
+    await tab.js("$('voiceBtn').click();speak('Device voice check', myLocale, myVoiceProfileId)")
+    native_done = await _wait_js(
+        tab, "!speaking && !asrPaused && voiceOn && !$('remoteVideo').muted", timeout=10)
+    native_posts = await tab.js("window.__worklet.slice(" + str(native_before) + ")")
+    check(native_done and False in native_posts and native_posts[-1] is True,
+          f"voice: real device speech completed with the ASR safety lifecycle (got {native_posts})")
+    await tab.js("$('voiceBtn').click()")
 
     # This is an explicit test-only capability override, never an app fallback.
     await tab.js("runtimeVoiceProfileIds=null;applyLocale('en-US','en-us-af-heart');updateVoiceButton()")
     check(await tab.js("!$('voiceBtn').disabled && myVoiceProfileId === 'en-us-af-heart'"),
           "voice: a declared, selected profile can enable translated playback")
+    device_menu = await tab.js("""(() => {
+      deviceVoicesById.set('device:test-en-US', {voiceURI:'test-en-US', lang:'en-US', name:'Windows English'});
+      deviceVoicesById.set('device:test-fr-FR', {voiceURI:'test-fr-FR', lang:'fr-FR', name:'Windows French'});
+      fillVoiceSelect();
+      return {groups:[...$('publishVoiceSel').querySelectorAll('optgroup')].map(x=>x.label),
+              values:[...$('publishVoiceSel').options].map(x=>x.value)};
+    })()""")
+    check(device_menu["groups"] == ["On this device", "Included"]
+          and "device:test-en-US" in device_menu["values"]
+          and "device:test-fr-FR" not in device_menu["values"],
+          f"voice: free device voices are language-matched beside included voices (got {device_menu})")
 
     before_bubbles = await tab.js("document.querySelectorAll('.msg').length")
     await tab.js(f"handle({caption(other_id, 50, False, 'Hola', {'en': 'Hello'})})")
@@ -286,7 +308,7 @@ async def check_voice_modes(tab, other_tab, my_id, other_id, check):
 
     # A second exact profile is a controlled choice, not a generic style.
     await tab.js("(()=>{const realSend=send;send=()=>{};const s=$('publishVoiceSel');"
-                 "s.value='en-us-am-michael';s.dispatchEvent(new Event('change'));send=realSend;return true})()")
+                 "s.value='cloud:en-us-am-michael';s.dispatchEvent(new Event('change'));send=realSend;return true})()")
     await tab.js(f"handle({caption(other_id, 52, True, 'Otra', {'en': 'Another'})})")
     await _wait_js(tab, "window.__voice.ended === 2", timeout=3)
     override = await tab.js("window.__voice.requests.at(-1).body.voice_profile")
@@ -344,7 +366,12 @@ async def check_role_picker(tab, check):
           join.getBoundingClientRect().left >= 0 && join.getBoundingClientRect().right <= innerWidth,
         scrollSafe: getComputedStyle(gate).overflowY === 'auto' &&
           getComputedStyle(card).overflowY === 'auto' && cardBounds.height <= innerHeight - 36,
-        labels: {esMX: option('es-MX'), jaJP: option('ja-JP'), arSA: option('ar-SA')},
+        labels: {esMX: option('es-MX'), jaJP: option('ja-JP'), arSA: option('ar-SA'),
+                 kmKH: option('km-KH')},
+        optionCount: select.options.length,
+        groups: [...select.querySelectorAll('optgroup')].map(group => group.label),
+        prose: [...document.querySelectorAll('#roleGate *')].map(node => node.textContent || '')
+          .filter(text => /maps to base|transcription|runtime|model|development/i.test(text)),
       };
     })()""")
     check(picker["open"] and picker["nativeSelect"] and picker["noChoiceWall"]
@@ -356,24 +383,39 @@ async def check_role_picker(tab, check):
         "esMX": "Español (México) — Spanish (Mexico)",
         "jaJP": "日本語 (Japan) — Japanese (Japan)",
         "arSA": "العربية (Saudi Arabia) — Arabic (Saudi Arabia)",
+        "kmKH": "ខ្មែរ (Cambodia) — Khmer (Cambodia)",
     }, f"role picker: catalog labels are native-name first (got {picker['labels']})")
+    check(picker["optionCount"] == 106 and picker["groups"] == ["Tested", "Preview"]
+          and not picker["prose"],
+          f"role picker: 106 free speaking profiles are compactly grouped without development prose (got {picker})")
     shot = await tab.call("Page.captureScreenshot", format="png")
     out_path = os.path.join(tempfile.gettempdir(), "room_role_picker_360.png")
     with open(out_path, "wb") as output:
         output.write(base64.b64decode(shot["data"]))
     print("role picker 360px screenshot:", out_path)
 
+    await tab.js("$('roleLocaleSel').value='km-KH';$('roleLocaleSel').dispatchEvent(new Event('change',{bubbles:true}))")
+    khmer_shot = await tab.call("Page.captureScreenshot", format="png")
+    khmer_path = os.path.join(tempfile.gettempdir(), "room_role_picker_khmer_360.png")
+    with open(khmer_path, "wb") as output:
+        output.write(base64.b64decode(khmer_shot["data"]))
+    print("role picker Khmer screenshot:", khmer_path)
+
     rtl = await tab.js("""(() => {
       const select = $('roleLocaleSel');
       select.value = 'ar-SA';
       select.dispatchEvent(new Event('change', {bubbles: true}));
       const card = $('roleGate').querySelector('.roleCard').getBoundingClientRect();
+      const join = $('joinBtn').getBoundingClientRect();
       return {dir: document.documentElement.dir, locale: myLocale,
               scroll: document.documentElement.scrollWidth, width: innerWidth,
-              fits: card.top >= 0 && card.bottom <= innerHeight};
+              fits: card.top >= 0 && card.bottom <= innerHeight,
+              joinVisible: join.width > 0 && join.height > 0 && join.bottom <= innerHeight,
+              joinDisabled: $('joinBtn').disabled};
     })()""")
     check(rtl["dir"] == "rtl" and rtl["locale"] is None
-          and rtl["scroll"] <= rtl["width"] and rtl["fits"],
+          and rtl["scroll"] <= rtl["width"] and rtl["fits"]
+          and rtl["joinVisible"] and not rtl["joinDisabled"],
           f"role picker: Arabic preview is RTL and remains reachable at 360px (got {rtl})")
     rtl_shot = await tab.call("Page.captureScreenshot", format="png")
     rtl_path = os.path.join(tempfile.gettempdir(), "room_role_picker_rtl_360.png")
@@ -462,8 +504,8 @@ async def check_invitation_ui(tab, check):
     check(blocked["copied"] == blocked["href"],
           f"invite UI: blocked WhatsApp popup copies the private URL (got {blocked})")
     await tab.js("handle({type:'caption_status',status:'capacity',scope:'global',retry_after_ms:1000})")
-    check("global GPU capacity" in await tab.js("$('status').textContent"),
-          "invite UI: global Modal capacity is visible instead of silently dropping speech")
+    check("Captions are busy" in await tab.js("$('status').textContent"),
+          "invite UI: caption capacity is visible without infrastructure language")
     await tab.call("Emulation.clearDeviceMetricsOverride")
 
 
@@ -471,7 +513,11 @@ async def check_dashboard_ui(check):
     page = devtools(f"/json/new?{BASE}/", method="PUT")
     async with Tab(page["webSocketDebuggerUrl"]) as tab:
         await tab.call("Runtime.enable")
-        ready = await _wait_js(tab, "document.readyState === 'complete'", timeout=8)
+        ready = await _wait_js(
+            tab,
+            "document.readyState === 'complete' && location.pathname === '/' && !!document.getElementById('createBtn')",
+            timeout=8,
+        )
         if not ready:
             raise RuntimeError("dashboard did not finish loading")
         dashboard = await tab.js("""(() => {
@@ -482,6 +528,7 @@ async def check_dashboard_ui(check):
                           'Create a private video room, share its link',
                           'Capability declarations never imply locale-specific ASR'];
           return {controls: ids.every(id => !!document.getElementById(id)),
+                  missing: ids.filter(id => !document.getElementById(id)),
                   banned: banned.filter(value => text.includes(value))};
         })()""")
         check(dashboard["controls"] and not dashboard["banned"],

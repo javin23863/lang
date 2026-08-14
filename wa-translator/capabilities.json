@@ -1,6 +1,6 @@
 {
   "schema_version": "1",
-  "revision": "2026-08-14-m2m100-55c2e61-tts3",
+  "revision": "2026-08-14-m2m100-55c2e61-free84-tts13",
   "models": {
     "mt": {
       "id": "facebook/m2m100_418M",
@@ -23,7 +23,13 @@
         "en-gb-bm-fable": "d44935f3135257a9064df99f007fc1342ff1aa767552b4a4fa4c3b2e6e59079c",
         "es-ef-dora": "d9d69b0f8a2b87a345f269d89639f89dfbd1a6c9da0c498ae36dd34afcf35530",
         "es-em-alex": "5eac53f767c3f31a081918ba531969aea850bed18fe56419b804d642c6973431",
-        "fr-ff-siwis": "8073bf2d2c4b9543a90f2f0fd2144de4ed157e2d4b79ddeb0d5123066171fbc9"
+        "fr-ff-siwis": "8073bf2d2c4b9543a90f2f0fd2144de4ed157e2d4b79ddeb0d5123066171fbc9",
+        "hi-hf-alpha": "06906fe05746d13a79c5c01e21fd7233b05027221a933c9ada650f5aafc8f044",
+        "hi-hm-omega": "b55f02a8e8483fffe0afa566e7d22ed8013acf47ad4f6bbee2795a840155703e",
+        "it-if-sara": "6c0b253b955fe32f1a1a86006aebe83d050ea95afd0e7be15182f087deedbf55",
+        "it-im-nicola": "234ed06648649f9bd874b37508ea17560b9c993ef85b4ddb3e3a71e062bd2c12",
+        "pt-br-pf-dora": "07e4ff987c5d5a8c3995efd15cc4f0db7c4c15e881b198d8ab7f67ecf51f5eb7",
+        "pt-br-pm-alex": "cf0ba8c573c2480fc54123683a35cf1e2ae130428e441eb91f9149bdb188a526"
       }
     }
   },
@@ -35,6 +41,15 @@
     "fr",
     "ja"
   ],
+  "model_live_speech_languages": [
+    "af", "am", "ar", "az", "ba", "be", "bg", "bn", "br", "bs", "ca", "cs",
+    "cy", "da", "de", "el", "en", "es", "et", "fa", "fi", "fr", "gl", "gu",
+    "ha", "he", "hi", "hr", "ht", "hu", "hy", "id", "is", "it", "ja", "jv",
+    "ka", "kk", "km", "kn", "ko", "lb", "ln", "lo", "lt", "lv", "mg", "mk",
+    "ml", "mn", "mr", "ms", "my", "ne", "nl", "no", "oc", "pa", "pl", "ps",
+    "pt", "ro", "ru", "sd", "si", "sk", "sl", "so", "sq", "sr", "su", "sv",
+    "sw", "ta", "th", "tl", "tr", "uk", "ur", "uz", "vi", "yi", "yo", "zh"
+  ],
   "release_tts_profile_ids": [
     "en-us-af-heart",
     "en-us-am-michael",
@@ -42,7 +57,13 @@
     "en-gb-bm-fable",
     "es-ef-dora",
     "es-em-alex",
-    "fr-ff-siwis"
+    "fr-ff-siwis",
+    "hi-hf-alpha",
+    "hi-hm-omega",
+    "it-if-sara",
+    "it-im-nicola",
+    "pt-br-pf-dora",
+    "pt-br-pm-alex"
   ],
   "languages": [
     {
@@ -434,6 +455,7 @@
     },
     {
       "code": "jv",
+      "asr_code": "jw",
       "display_name": "Javanese",
       "native_name": "Basa Jawa",
       "default_locale": "jv-ID",
@@ -1343,7 +1365,7 @@
   },
   "capability_notes": {
     "locale_mapping": "A locale maps to one base language. It does not imply a distinct MT model, dialect-specific ASR, or dialect-specific MT quality.",
-    "live_speech": "Live speech is enabled only for the release-tested Whisper ∩ M2M100 set.",
+    "live_speech": "Live speech includes the explicit Whisper ∩ M2M100 model intersection; release-tested languages remain a separate verified tier.",
     "captions": "Caption translation uses the pinned M2M100 base-language model. Text coverage is not a locale-quality claim.",
     "voice": "A voice profile is an explicitly selected synthetic voice; no biometric inference or voice cloning is used."
   }

@@ -18,7 +18,27 @@ class CloudClientContractTests(unittest.TestCase):
         self.assertIn("let voiceOn = false", HTML)
         self.assertIn('id="publishVoiceSel"', HTML)
         self.assertIn("voice_profile: myVoiceProfileId", HTML)
-        self.assertIn("Voice unavailable — captions only", HTML)
+        self.assertIn("Captions only", HTML)
+
+    def test_free_device_voices_are_locale_matched_and_never_sent_to_the_server(self):
+        self.assertIn("speechSynthesis.getVoices()", HTML)
+        self.assertIn("voiceschanged", HTML)
+        self.assertIn("new SpeechSynthesisUtterance", HTML)
+        self.assertIn("device:", HTML)
+        self.assertIn("cloud:", HTML)
+        self.assertIn("voice.lang.toLowerCase() === locale", HTML)
+        self.assertIn("voice.lang.split('-')[0].toLowerCase() === base", HTML)
+        self.assertIn("speechSynthesis.cancel()", HTML)
+        self.assertNotIn("voice_profile: myVoiceChoice", HTML)
+
+    def test_device_voice_pauses_asr_before_native_playback_and_mutes_on_start(self):
+        native_start = HTML.index("function requestDeviceSpeech")
+        native_end = HTML.index("\n}", native_start)
+        native_body = HTML[native_start:native_end]
+        self.assertLess(native_body.index("setAsrPaused(true)"),
+                        native_body.index("speechSynthesis.speak"))
+        self.assertIn("utterance.onstart", native_body)
+        self.assertIn("setNaturalAudioMuted(true)", native_body)
 
     def test_turn_and_tts_keep_bearer_in_headers(self):
         self.assertIn("fetch('/api/turn'", HTML)
@@ -87,7 +107,9 @@ class CloudClientContractTests(unittest.TestCase):
         self.assertIn("send({type: 'leave'})", HTML)
         self.assertIn("if (notifyServer) send({type: 'leave'})", HTML)
         self.assertIn("window.addEventListener('pagehide', suspendRoom)", HTML)
-        self.assertIn("closed devices clear within 90 seconds", HTML)
+        self.assertIn("Room is full (' + m.limit + ' people)", HTML)
+        self.assertNotIn("closed devices clear within", HTML)
+        self.assertNotIn("global GPU capacity", HTML)
 
     def test_language_role_is_explicit_before_the_room_connects(self):
         self.assertIn('id="roleGate"', HTML)
@@ -111,10 +133,14 @@ class CloudClientContractTests(unittest.TestCase):
         body = HTML[start:end]
         self.assertLess(body.index("roleChosen = true"), body.index("connect()"))
 
-    def test_role_summary_declares_the_shared_base_language_route(self):
-        self.assertIn('id="roleSummary"', HTML)
-        self.assertIn("it maps to base ${profile.language}", HTML)
-        self.assertIn("One transcription is shared with the unique listener languages", HTML)
+    def test_professional_ui_omits_implementation_explanations(self):
+        self.assertNotIn('id="roleSummary"', HTML)
+        self.assertNotIn("it maps to base", HTML)
+        self.assertNotIn("One transcription is shared", HTML)
+        self.assertNotIn("mapping_note", HTML)
+        self.assertNotIn("verified language options", HTML)
+        self.assertIn("document.createElement('optgroup')", HTML)
+        self.assertIn("group.label = tier === 'verified' ? 'Tested' : 'Preview'", HTML)
 
     def test_bfcache_restore_rejoins_but_explicit_leave_stays_terminal(self):
         self.assertIn("let explicitLeave = false", HTML)

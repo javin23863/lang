@@ -37,7 +37,7 @@
 #status{position:absolute;top:9px;left:50%;transform:translateX(-50%);padding:5px 10px;text-align:center;font-size:11px;color:var(--ink);background:#061019b8;border:1px solid #ffffff22;border-radius:999px;z-index:5;max-width:calc(100% - 32px)}#participantCount{position:absolute;top:9px;left:9px;padding:5px 8px;border-radius:999px;font-size:11px;color:var(--ink);background:#061019b8;border:1px solid #ffffff22;z-index:5;direction:ltr;unicode-bidi:plaintext}
 #roleGate{position:fixed;inset:0;z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:18px;overflow-y:auto;background:rgba(4,13,20,.94);backdrop-filter:blur(14px)}
 #roleGate[hidden]{display:none}
-.roleCard{width:min(100%,520px);max-height:calc(100dvh - 36px);margin:auto;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:clamp(18px,5vw,28px);box-shadow:var(--shadow)}.brand{font-weight:800;font-size:12px;letter-spacing:.13em;text-transform:uppercase;color:var(--accent);margin-bottom:10px}.roleCard h1{font-size:clamp(23px,6vw,31px);line-height:1.13;margin-bottom:16px}.roleLocale{display:grid;gap:6px;color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.03em}.roleLocale select{width:100%;min-width:0;min-height:44px;background:var(--panel-2);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:9px 8px;font-size:14px}.roleCard .capability{margin:10px 0}.roleJoin{width:100%;background:var(--accent);color:var(--accent-ink)}#roleSummary{grid-column:1/-1;color:var(--muted);font-size:11px;line-height:1.4;padding:2px 2px 0}
+.roleCard{width:min(100%,520px);max-height:calc(100dvh - 36px);margin:auto;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:clamp(18px,5vw,28px);box-shadow:var(--shadow)}.brand{font-weight:800;font-size:12px;letter-spacing:.13em;text-transform:uppercase;color:var(--accent);margin-bottom:10px}.roleCard h1{font-size:clamp(23px,6vw,31px);line-height:1.13;margin-bottom:16px}.roleLocale{display:grid;gap:6px;color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.03em}.roleLocale select{width:100%;min-width:0;min-height:44px;background:var(--panel-2);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:9px 8px;font-size:14px}.roleCard .capability{margin:10px 0}.roleJoin{width:100%;background:var(--accent);color:var(--accent-ink)}
 html[dir=rtl] #selfWrap{left:10px;right:auto}html[dir=rtl] #participantCount{right:9px;left:auto}html[dir=rtl] .msg.mine{align-self:flex-start;border-radius:3px 13px 13px 13px}html[dir=rtl] .msg.theirs{align-self:flex-end;border-radius:13px 3px 13px 13px}
 @media(max-width:380px){
   #stage{height:31vh;min-height:160px}
@@ -53,11 +53,11 @@ html[dir=rtl] #selfWrap{left:10px;right:auto}html[dir=rtl] #participantCount{rig
 
 <div id="roleGate" role="dialog" aria-modal="true" aria-labelledby="roleTitle">
   <div class="roleCard">
-    <p class="brand">Lingua Relay</p><h1 id="roleTitle">Choose your speaking locale</h1>
-    <label class="roleLocale" for="roleLocaleSel">I speak
+    <p class="brand">Lingua Relay</p><h1 id="roleTitle">Choose language</h1>
+    <label class="roleLocale" for="roleLocaleSel">Language
       <select id="roleLocaleSel" aria-describedby="roleCapability" disabled></select>
     </label>
-    <p id="roleCapability" class="capability" role="status" aria-live="polite">Loading verified language options…</p>
+    <p id="roleCapability" class="capability" role="status" aria-live="polite">Loading…</p>
     <button id="joinBtn" class="roleJoin" type="button" disabled>Join room</button>
   </div>
 </div>
@@ -70,7 +70,7 @@ html[dir=rtl] #selfWrap{left:10px;right:auto}html[dir=rtl] #participantCount{rig
   <div id="participantCount" aria-live="polite">0 / 4 people</div>
 </div>
 
-<div id="captions"><p id="captionEmpty">Captions will appear here when someone speaks. Natural call audio is always separate from translated voice.</p></div>
+<div id="captions"><p id="captionEmpty">Captions</p></div>
 
 <div id="bar">
   <button id="micBtn">Start microphone</button>
@@ -79,10 +79,9 @@ html[dir=rtl] #selfWrap{left:10px;right:auto}html[dir=rtl] #participantCount{rig
   <button id="voiceBtn" class="icon off" title="Turn translated voice on or off" aria-label="Translated voice">Voice</button>
   <button id="leaveBtn" class="icon" title="Leave this room" aria-label="Leave room">Leave</button>
   <div id="settings">
-    <label class="setting">I speak<select id="localeSel" aria-describedby="capabilityNote"></select></label>
-    <label class="setting">Spoken translation voice<select id="publishVoiceSel"></select></label>
-    <p id="capabilityNote" class="capability" role="status">Loading capabilities…</p>
-    <div id="roleSummary" aria-live="polite"></div>
+    <label class="setting">Language<select id="localeSel" aria-describedby="capabilityNote"></select></label>
+    <label class="setting">Voice<select id="publishVoiceSel"></select></label>
+    <p id="capabilityNote" class="capability" role="status">Loading…</p>
   </div>
 </div>
 
@@ -91,11 +90,12 @@ const $ = (id) => document.getElementById(id);
 const roomId = location.pathname.split('/').filter(Boolean).pop();
 
 let ws, myId = null, ttsToken = null, myLang = null, myLocale = null;
-let myVoiceProfileId = null, catalog = null, catalogRevision = null;
+let myVoiceProfileId = null, myVoiceChoice = null, catalog = null, catalogRevision = null;
 let runtimeVoiceProfileIds = null;
 let runtimeCaptionsAvailable = true, runtimeCaptionsUnavailableReason = '';
 const locales = new Map();
 const voices = new Map();
+const deviceVoicesById = new Map();
 
 let mediaStream = null, audioCtx = null, workletNode = null;
 let micOn = false, camOn = true, roomFull = false, reconnectFailures = 0;
@@ -131,45 +131,55 @@ function localeName(id) {
   const profile = localeProfile(id);
   return profile ? localeOptionLabel(profile) : String(id || 'Unknown locale');
 }
-function localVoices(profile) {
+function cloudVoices(profile) {
   if (!profile || !Array.isArray(profile.voice_profiles)) return [];
   return profile.voice_profiles.filter(voice =>
     runtimeVoiceProfileIds === null || runtimeVoiceProfileIds.has(voice.id));
 }
-function capabilityText(profile) {
-  if (!profile) return 'No verified language capability is selected.';
-  const voiceChoices = localVoices(profile);
-  const badges = [runtimeCaptionsAvailable ? 'Captions' : 'Caption runtime unavailable'];
-  if (voiceChoices.length) badges.push('Voice');
-  const unavailable = !runtimeCaptionsAvailable ? runtimeCaptionsUnavailableReason :
-    profile.capabilities?.tts?.reason ||
-    (profile.voice_profiles?.length && !voiceChoices.length
-      ? 'Voice is unavailable in this adapter.' : 'Captions-only locale.');
-  return badges.join(' · ') + ' — ' + (voiceChoices.length
-    ? profile.mapping_note : unavailable + ' ' + profile.mapping_note);
+function deviceVoiceId(voice) { return 'device:' + voice.voiceURI; }
+function deviceVoices(profile) {
+  if (!profile) return [];
+  const locale = profile.id.toLowerCase();
+  const base = profile.language.toLowerCase();
+  return [...deviceVoicesById.values()].filter(voice => {
+    const normalized = voice.lang.replaceAll('_', '-').toLowerCase();
+    const exact = voice.lang.toLowerCase() === locale || normalized === locale;
+    const sameBase = voice.lang.split('-')[0].toLowerCase() === base
+      || normalized.split('-')[0] === base;
+    return exact || sameBase;
+  }).sort((left, right) => {
+    const leftExact = left.lang.replaceAll('_', '-').toLowerCase() === locale;
+    const rightExact = right.lang.replaceAll('_', '-').toLowerCase() === locale;
+    return Number(rightExact) - Number(leftExact) || left.name.localeCompare(right.name);
+  });
 }
-function updateRoleSummary() {
+function availableVoiceCount(profile) {
+  return cloudVoices(profile).length + deviceVoices(profile).length;
+}
+function capabilityText(profile) {
+  if (!profile) return 'Choose language';
+  const badges = [profile.capabilities?.asr?.tier === 'verified' ? 'Tested' : 'Preview',
+    runtimeCaptionsAvailable ? 'Captions' : 'Captions unavailable'];
+  const voiceCount = availableVoiceCount(profile);
+  if (voiceCount) badges.push(voiceCount + (voiceCount === 1 ? ' voice' : ' voices'));
+  return badges.join(' · ');
+}
+function updateCapabilityNote() {
   const profile = localeProfile(myLocale);
   if (!profile) return;
-  $('roleSummary').textContent =
-    `You speak ${profile.native_name} (${profile.region}); it maps to base ${profile.language}. ` +
-    'One transcription is shared with the unique listener languages in this room.';
   $('capabilityNote').textContent = capabilityText(profile);
-  $('capabilityNote').classList.toggle('warning', !localVoices(profile).length);
+  $('capabilityNote').classList.toggle('warning', !runtimeCaptionsAvailable);
 }
 function roleCapabilityText(profile) {
-  if (!profile) return 'Select a verified speaking locale.';
-  if (!runtimeCaptionsAvailable) return runtimeCaptionsUnavailableReason;
-  if (localVoices(profile).length) return 'Captions · Voice';
-  return 'Captions · Voice unavailable — ' +
-    (profile.capabilities?.tts?.reason || 'captions only');
+  if (!profile) return 'Choose language';
+  return capabilityText(profile);
 }
 function updateRoleGate() {
   const profile = localeProfile($('roleLocaleSel').value);
   const joinable = Boolean(profile?.capabilities?.asr?.available);
   $('joinBtn').disabled = !joinable;
   $('roleCapability').textContent = roleCapabilityText(profile);
-  $('roleCapability').classList.toggle('warning', !joinable || !localVoices(profile).length);
+  $('roleCapability').classList.toggle('warning', !joinable || !runtimeCaptionsAvailable);
 }
 function previewRoleLocale() {
   const profile = localeProfile($('roleLocaleSel').value);
@@ -186,12 +196,19 @@ function fillLocaleSelect() {
     const select = $(id);
     const selected = myLocale || select.value || defaultLocale;
     select.replaceChildren();
-    for (const profile of profiles) {
-      const option = document.createElement('option');
-      option.value = profile.id;
-      option.textContent = localeOptionLabel(profile);
-      option.selected = profile.id === selected;
-      select.appendChild(option);
+    for (const tier of ['verified', 'preview']) {
+      const matching = profiles.filter(profile => profile.capabilities?.asr?.tier === tier);
+      if (!matching.length) continue;
+      const group = document.createElement('optgroup');
+      group.label = tier === 'verified' ? 'Tested' : 'Preview';
+      for (const profile of matching) {
+        const option = document.createElement('option');
+        option.value = profile.id;
+        option.textContent = localeOptionLabel(profile);
+        option.selected = profile.id === selected;
+        group.appendChild(option);
+      }
+      select.appendChild(group);
     }
     select.disabled = profiles.length === 0;
   }
@@ -200,39 +217,84 @@ function fillLocaleSelect() {
 function fillVoiceSelect() {
   const select = $('publishVoiceSel');
   const profile = localeProfile(myLocale);
-  const options = localVoices(profile);
+  const cloudOptions = cloudVoices(profile);
+  const deviceOptions = deviceVoices(profile);
   select.replaceChildren();
-  if (!options.length) {
+  if (!cloudOptions.length && !deviceOptions.length) {
     const option = document.createElement('option');
     option.value = '';
-    option.textContent = 'Voice unavailable — captions only';
+    option.textContent = 'Captions only';
     select.appendChild(option);
     select.disabled = true;
     myVoiceProfileId = null;
+    myVoiceChoice = null;
+    updateCapabilityNote();
     return;
   }
   select.disabled = false;
-  for (const voice of options) {
-    const option = document.createElement('option');
-    option.value = voice.id;
-    option.textContent = `${voice.name} · ${voice.style}`;
-    option.selected = voice.id === myVoiceProfileId;
-    select.appendChild(option);
+  if (deviceOptions.length) {
+    const group = document.createElement('optgroup');
+    group.label = 'On this device';
+    for (const voice of deviceOptions) {
+      const option = document.createElement('option');
+      option.value = deviceVoiceId(voice);
+      option.textContent = voice.name;
+      group.appendChild(option);
+    }
+    select.appendChild(group);
   }
-  if (!options.some(voice => voice.id === myVoiceProfileId)) myVoiceProfileId = options[0].id;
-  select.value = myVoiceProfileId;
+  if (cloudOptions.length) {
+    const group = document.createElement('optgroup');
+    group.label = 'Included';
+    for (const voice of cloudOptions) {
+      const option = document.createElement('option');
+      option.value = 'cloud:' + voice.id;
+      option.textContent = `${voice.name} · ${voice.style}`;
+      group.appendChild(option);
+    }
+    select.appendChild(group);
+  }
+  const saved = localStorage.getItem('lingua-relay.voice-choice.' + profile.id);
+  const legacy = localStorage.getItem('lingua-relay.voice-profile');
+  const valid = new Set([
+    ...deviceOptions.map(deviceVoiceId),
+    ...cloudOptions.map(voice => 'cloud:' + voice.id),
+  ]);
+  const preferred = [myVoiceChoice, saved, legacy && 'cloud:' + legacy]
+    .find(value => value && valid.has(value));
+  myVoiceChoice = preferred || (cloudOptions.length
+    ? 'cloud:' + cloudOptions[0].id : deviceVoiceId(deviceOptions[0]));
+  const selectedCloudId = myVoiceChoice.startsWith('cloud:') ? myVoiceChoice.slice(6) : null;
+  myVoiceProfileId = selectedCloudId || cloudOptions[0]?.id || null;
+  select.value = myVoiceChoice;
+  updateCapabilityNote();
+}
+function refreshDeviceVoices() {
+  deviceVoicesById.clear();
+  if ('speechSynthesis' in window) {
+    for (const voice of speechSynthesis.getVoices()) {
+      if (voice && voice.voiceURI && voice.lang) deviceVoicesById.set(deviceVoiceId(voice), voice);
+    }
+  }
+  if (myLocale && catalog) {
+    fillVoiceSelect();
+    updateVoiceButton();
+  } else {
+    updateRoleGate();
+  }
 }
 function applyLocale(localeId, preferredVoiceId = null) {
   const profile = localeProfile(localeId);
   if (!profile || !profile.capabilities?.asr?.available) return false;
   myLocale = profile.id;
   myLang = profile.language;
-  myVoiceProfileId = preferredVoiceId || myVoiceProfileId;
+  myVoiceProfileId = preferredVoiceId || null;
+  myVoiceChoice = preferredVoiceId ? 'cloud:' + preferredVoiceId : null;
   document.documentElement.lang = profile.id;
   document.documentElement.dir = profile.rtl ? 'rtl' : 'ltr';
   fillLocaleSelect();
   fillVoiceSelect();
-  updateRoleSummary();
+  updateCapabilityNote();
   localStorage.setItem('lingua-relay.locale', myLocale);
   if (myVoiceProfileId) localStorage.setItem('lingua-relay.voice-profile', myVoiceProfileId);
   else localStorage.removeItem('lingua-relay.voice-profile');
@@ -281,9 +343,9 @@ async function loadCapabilities() {
   } catch (error) {
     $('roleLocaleSel').disabled = true;
     $('joinBtn').disabled = true;
-    $('roleCapability').textContent = 'Capability catalog unavailable. This room will not join until its declared language support can be verified.';
+    $('roleCapability').textContent = 'Languages unavailable';
     $('roleCapability').classList.add('warning');
-    setStatus('Capability catalog unavailable', true);
+    setStatus('Languages unavailable', true);
   }
 }
 
@@ -500,7 +562,7 @@ async function handle(m) {
     ttsToken = m.tts_token;
     if (!catalog || m.catalog_revision !== catalogRevision) {
       terminalRoom = true;
-      setStatus('Language catalog changed — reload before joining', true);
+      setStatus('Languages updated — reload to continue', true);
       ws.close(1008, 'catalog revision mismatch');
       return;
     }
@@ -531,7 +593,7 @@ async function handle(m) {
     renderCaption(m);
   } else if (m.type === 'caption_status' && m.status === 'capacity' && m.scope === 'global') {
     const retry = Number.isInteger(m.retry_after_ms) ? Math.ceil(m.retry_after_ms / 1000) : 1;
-    setStatus('Live captions are temporarily at global GPU capacity. Natural audio and video stay on; try again in about ' + retry + 's.', true);
+    setStatus('Captions are busy. Try again in about ' + retry + 's.', true);
   } else if (m.type === 'room_closed') {
     closeByHost();
   } else if (m.type === 'room_full') {
@@ -539,7 +601,7 @@ async function handle(m) {
     // retries forever, looking like the server is down.
     roomFull = true;
     updateParticipantCount(m.participant_count);
-    setStatus('Room is full (' + m.limit + ' people) — closed devices clear within 90 seconds', true);
+    setStatus('Room is full (' + m.limit + ' people)', true);
     showVideoNote('Room is full. If someone just closed it, try again within 90 seconds.');
   }
 }
@@ -587,8 +649,8 @@ function renderCaption(m) {
 }
 
 // ── Spoken translation ────────────────────────────────────
-// Captions-only is the safe default. Cloud speech always comes from one of the
-// four controlled Kokoro routes; no browser voice or biometric inference is used.
+// Captions-only is the safe default. Device voices stay on this device; included
+// voices use the room's authenticated TTS route.
 let voiceOn = false, speaking = false, asrPaused = false;
 let speechGeneration = 0, ttsRequestId = 0, activeSpeech = null;
 const fallbackAudio = new Audio();
@@ -600,33 +662,65 @@ function setNaturalAudioMuted(muted) {
 }
 
 function updateVoiceButton() {
-  const available = Boolean(myVoiceProfileId && voices.has(myVoiceProfileId));
+  const available = Boolean(myVoiceChoice && (
+    (myVoiceChoice.startsWith('device:') && deviceVoicesById.has(myVoiceChoice)) ||
+    (myVoiceChoice.startsWith('cloud:') && voices.has(myVoiceChoice.slice(6)))
+  ));
   if (!available && voiceOn) failVoice();
   $('voiceBtn').className = 'icon' + (voiceOn && available ? '' : ' off');
   $('voiceBtn').textContent = voiceOn && available ? 'Voice on' : 'Voice off';
   $('voiceBtn').disabled = !available;
-  $('voiceBtn').title = available ? 'Turn translated voice on or off'
-    : 'No verified spoken-translation voice is available for this locale';
+  $('voiceBtn').title = available ? 'Turn translated voice on or off' : 'Captions only';
   $('voiceBtn').setAttribute('aria-pressed', String(voiceOn));
 }
 
 function speak(text, locale, voiceProfileId) {
-  if (!voiceOn || !text || !locale || !voiceProfileId || !voices.has(voiceProfileId)) return;
-  speakQueue.push({text, locale, voiceProfileId});
+  if (!voiceOn || !text || !locale || !myVoiceChoice) return;
+  const device = myVoiceChoice.startsWith('device:') && deviceVoicesById.has(myVoiceChoice);
+  const cloud = myVoiceChoice.startsWith('cloud:') && voiceProfileId && voices.has(voiceProfileId);
+  if (!device && !cloud) return;
+  speakQueue.push({text, locale, voiceProfileId, voiceChoice: myVoiceChoice});
   drainSpeech();
 }
 
 function drainSpeech() {
   if (speaking || !speakQueue.length) return;
-  const {text, locale, voiceProfileId} = speakQueue.shift();
+  const {text, locale, voiceProfileId, voiceChoice} = speakQueue.shift();
   const item = {
-    id: ++ttsRequestId, text, locale, voiceProfileId, generation: speechGeneration,
+    id: ++ttsRequestId, text, locale, voiceProfileId, voiceChoice, generation: speechGeneration,
     settled: false, controller: null, fallbackStarted: false,
-    playTimer: null, fetchTimer: null
+    playTimer: null, fetchTimer: null, utterance: null
   };
   speaking = true;
   activeSpeech = item;
-  requestFallbackSpeech(item);
+  if (voiceChoice.startsWith('device:')) requestDeviceSpeech(item);
+  else requestFallbackSpeech(item);
+}
+
+function requestDeviceSpeech(item) {
+  const voice = deviceVoicesById.get(item.voiceChoice);
+  if (!voice || !('speechSynthesis' in window) || typeof SpeechSynthesisUtterance !== 'function') {
+    finishSpeech(item, 'Voice unavailable');
+    return;
+  }
+  const utterance = new SpeechSynthesisUtterance(item.text);
+  item.utterance = utterance;
+  utterance.voice = voice;
+  utterance.lang = item.locale;
+  utterance.onstart = () => {
+    if (item.settled || item !== activeSpeech || item.generation !== speechGeneration || !voiceOn) return;
+    setNaturalAudioMuted(true);
+  };
+  utterance.onend = () => finishSpeech(item);
+  utterance.onerror = () => finishSpeech(item, 'Could not play spoken translation');
+  item.playTimer = setTimeout(
+    () => finishSpeech(item, 'Spoken translation playback timed out'), 60000);
+  setAsrPaused(true);
+  try {
+    speechSynthesis.speak(utterance);
+  } catch (_) {
+    finishSpeech(item, 'Could not play spoken translation');
+  }
 }
 
 async function requestFallbackSpeech(item) {
@@ -707,6 +801,9 @@ function finishSpeech(item, error) {
   clearTimeout(item.playTimer);
   clearTimeout(item.fetchTimer);
   if (item !== activeSpeech || item.generation !== speechGeneration) return;
+  if (item.utterance) {
+    item.utterance.onstart = item.utterance.onend = item.utterance.onerror = null;
+  }
   stopFallbackAudio();
   setNaturalAudioMuted(false);
   activeSpeech = null;
@@ -741,6 +838,7 @@ function cancelSpeech() {
     if (activeSpeech.controller) activeSpeech.controller.abort();
     activeSpeech = null;
   }
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
   stopFallbackAudio();
   setNaturalAudioMuted(false);
   if (needsTail) {
@@ -784,6 +882,7 @@ function unlockFallbackAudio() {
     fallbackAudio.removeAttribute('src');
     fallbackAudio.volume = 1;
   }).catch(() => {});
+  if ('speechSynthesis' in window) speechSynthesis.resume();
 }
 
 function setAsrPaused(p) {
@@ -800,8 +899,8 @@ function sendSpeechEnd() {
 
 $('voiceBtn').onclick = () => {
   unlockFallbackAudio();
-  if (!myVoiceProfileId || !voices.has(myVoiceProfileId)) {
-    setStatus('Spoken translation is unavailable for this locale — captions remain on', true);
+  if (!myVoiceChoice) {
+    setStatus('Captions only', true);
     return;
   }
   if (voiceOn) {
@@ -814,12 +913,18 @@ $('voiceBtn').onclick = () => {
 };
 
 $('publishVoiceSel').onchange = () => {
-  const selected = voices.get($('publishVoiceSel').value);
-  if (!selected) return;
-  myVoiceProfileId = selected.id;
-  localStorage.setItem('lingua-relay.voice-profile', myVoiceProfileId);
+  const choice = $('publishVoiceSel').value;
+  if (!choice) return;
+  const profile = localeProfile(myLocale);
+  const cloudOptions = cloudVoices(profile);
+  myVoiceChoice = choice;
+  myVoiceProfileId = choice.startsWith('cloud:') ? choice.slice(6) : cloudOptions[0]?.id || null;
+  localStorage.setItem('lingua-relay.voice-choice.' + myLocale, myVoiceChoice);
+  if (myVoiceProfileId) localStorage.setItem('lingua-relay.voice-profile', myVoiceProfileId);
+  else localStorage.removeItem('lingua-relay.voice-profile');
   cancelSpeech();
   send({type: 'set_voice_profile', voice_profile: myVoiceProfileId});
+  updateCapabilityNote();
   updateVoiceButton();
 };
 
@@ -936,7 +1041,7 @@ $('micBtn').onclick = async () => {
     setStatus('Mic on — speak ' + localeName(myLocale));
   } catch (err) {
     setMicEnabled(false);
-    setStatus('Mic blocked: ' + err.name, true);
+    setStatus('Microphone unavailable', true);
   }
 };
 
@@ -953,7 +1058,7 @@ $('localeSel').onchange = () => {
   cancelSpeech();
   sendSpeechEnd();
   send({type: 'set_locale', locale: myLocale, voice_profile: myVoiceProfileId});
-  setStatus('Locale changed to ' + localeName(myLocale));
+  setStatus('Language changed to ' + localeName(myLocale));
 };
 
 // ── WebRTC (perfect negotiation; lower id is polite) ──────
@@ -1055,6 +1160,10 @@ window.addEventListener('pagehide', suspendRoom);
 window.addEventListener('pageshow', restoreSuspendedRoom);
 $('roleLocaleSel').onchange = previewRoleLocale;
 $('joinBtn').onclick = () => chooseLocale($('roleLocaleSel').value);
+if ('speechSynthesis' in window) {
+  refreshDeviceVoices();
+  speechSynthesis.addEventListener('voiceschanged', refreshDeviceVoices);
+}
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('/sw.js', {scope: '/'}).catch(() => {});
 }

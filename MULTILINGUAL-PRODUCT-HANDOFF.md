@@ -25,10 +25,14 @@ function or warm reserve was enabled.
 ## What is implemented
 
 - One shared, data-first capability catalog drives browser, Worker, Modal, local
-  adapter and tests. It exposes **100 M2M100 base Languages**, **122 BCP-47
-  Locale profiles**, **6 release-tested live-speech Languages** (`ar`, `de`,
-  `en`, `es`, `fr`, `ja`), **100 text Languages**, and **3 enabled TTS
-  Languages / 7 Voice Profiles** (English, Spanish, French).
+  adapter and tests. It exposes **100 M2M100 text Languages**, **84 free
+  Whisper→M2M100 microphone candidates**, and **106 selectable BCP-47 Locale
+  profiles**. Six exercised Languages (`ar`, `de`, `en`, `es`, `fr`, `ja`) are
+  marked `Tested`; all other joinable routes are explicitly `Preview`.
+- Voice output combines **6 included TTS Languages / 13 pinned profiles** with
+  exact-language voices returned by each browser/device. Device voices remain
+  local and are never sent as server profile IDs; wrong-language fallback is
+  prohibited.
 - Locale is explicitly distinct from a base Language. The catalog includes the
   requested Spanish regional profiles (`es-ES`, `es-MX`, `es-US`, `es-AR`,
   `es-CO`, `es-CL`, `es-PE`, `es-VE`, `es-DO`, `es-PR`); they map to base `es`
@@ -40,8 +44,8 @@ function or warm reserve was enabled.
   model (`facebook/m2m100_418M@55c2e61bbf05dfb8d7abccdc3fae6fc8512fd636`,
   MIT), using explicit source token / target prefix semantics. The existing
   caption filter and partial/final dedup remain in place.
-- The native HTML/CSS/JS PWA has searchable Locale selection, native/display
-  names, RTL metadata, responsive 360 px layout, capability badges, room and
+- The native HTML/CSS/JS PWA has a compact grouped native Locale selector,
+  native/display names, RTL metadata, responsive 360 px layout, capability badges, room and
   connection state, a captions dock, settings/voice controls, dashboard and
   WhatsApp/native share flow. The Windows local adapter remains visibly
   captions-only by default and never downloads/converts models.

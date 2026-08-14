@@ -41,7 +41,7 @@ M2M100_SNAPSHOT_FILES = (
 )
 MAX_CAPTION_CHARS = 300
 MAX_TARGET_LANGUAGES = 3  # a room has four people: speaker plus up to three listeners
-ROOM_LANGS = tuple(language_catalog.public_catalog()["release_live_speech_languages"])
+ROOM_LANGS = tuple(language_catalog.public_catalog()["model_live_speech_languages"])
 M2M100_LANGUAGES = frozenset(
     language["code"] for language in language_catalog.public_catalog()["languages"])
 

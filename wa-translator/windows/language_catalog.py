@@ -16,7 +16,8 @@ from typing import Any
 
 _DOCUMENT_PATH = Path(__file__).resolve().parents[1] / "capabilities.json"
 _DOCUMENT = json.loads(_DOCUMENT_PATH.read_text(encoding="utf-8"))
-_LIVE_SPEECH = frozenset(_DOCUMENT["release_live_speech_languages"])
+_VERIFIED_SPEECH = frozenset(_DOCUMENT["release_live_speech_languages"])
+_MODEL_SPEECH = frozenset(_DOCUMENT["model_live_speech_languages"])
 _LANGUAGES = tuple(_DOCUMENT["languages"])
 _LANGUAGE_BY_CODE = {entry["code"]: entry for entry in _LANGUAGES}
 _VOICE_SETS: dict[str, list[dict[str, Any]]] = _DOCUMENT["voice_profiles"]
@@ -47,11 +48,13 @@ def _profile(
     voices = copy.deepcopy([
         voice for voice in documented_voices if voice["id"] in _RELEASE_TTS_PROFILE_IDS
     ])
-    speech_available = base in _LIVE_SPEECH
+    speech_available = base in _MODEL_SPEECH
+    speech_tier = ("verified" if base in _VERIFIED_SPEECH else
+                   "preview" if speech_available else "unavailable")
     return {
         "id": locale_id,
         "language": base,
-        "asr_code": base,
+        "asr_code": language.get("asr_code", base),
         "mt_code": base,
         "display_name": display_name,
         "native_name": native_name,
@@ -67,9 +70,10 @@ def _profile(
         "capabilities": {
             "asr": {
                 "available": speech_available,
-                "reason": "" if speech_available else (
-                    "Not in the release-tested Whisper ∩ M2M100 live-speech set."
-                ),
+                "tier": speech_tier,
+                "reason": ("" if speech_tier == "verified" else
+                           "Model-supported preview." if speech_tier == "preview" else
+                           "No Whisper to M2M100 source route."),
             },
             "captions": {
                 "available": True,
@@ -116,6 +120,8 @@ def _build_locales() -> tuple[dict[str, Any], ...]:
     ids = [entry["id"] for entry in locales]
     if len(_LANGUAGES) != 100 or len(_LANGUAGE_BY_CODE) != 100:
         raise RuntimeError("catalog must declare exactly 100 M2M100 base languages")
+    if len(_MODEL_SPEECH) != 84 or not _VERIFIED_SPEECH <= _MODEL_SPEECH:
+        raise RuntimeError("catalog must declare the exact verified/model speech tiers")
     if len(ids) != len(set(ids)):
         raise RuntimeError("catalog locale IDs must be unique")
     if len(locales) < 117:
@@ -148,11 +154,16 @@ def public_catalog() -> dict[str, Any]:
         "schema_version": _DOCUMENT["schema_version"],
         "revision": _DOCUMENT["revision"],
         "models": _DOCUMENT["models"],
-        "release_live_speech_languages": sorted(_LIVE_SPEECH),
+        "release_live_speech_languages": sorted(_VERIFIED_SPEECH),
+        "model_live_speech_languages": sorted(_MODEL_SPEECH),
         "counts": {
             "base_languages": len(_LANGUAGES),
             "locale_profiles": len(_LOCALES),
-            "live_speech_languages": len(_LIVE_SPEECH),
+            "live_speech_languages": len(_MODEL_SPEECH),
+            "model_speech_languages": len(_MODEL_SPEECH),
+            "verified_speech_languages": len(_VERIFIED_SPEECH),
+            "joinable_locale_profiles": sum(
+                1 for entry in _LOCALES if entry["capabilities"]["asr"]["available"]),
             "text_languages": len(_LANGUAGES),
             "voice_languages": len({entry["language"] for entry in _LOCALES
                                     if entry["voice_profiles"]}),
@@ -172,6 +183,14 @@ def locale_profile(locale_id: object) -> dict[str, Any] | None:
 def base_language(locale_id: object) -> str | None:
     profile = _LOCALE_BY_ID.get(locale_id) if isinstance(locale_id, str) else None
     return profile["language"] if profile else None
+
+
+def asr_language(language_code: object) -> str | None:
+    """Map one M2M source code to the exact Whisper tokenizer code."""
+    language = _LANGUAGE_BY_CODE.get(language_code) if isinstance(language_code, str) else None
+    if not language or language["code"] not in _MODEL_SPEECH:
+        return None
+    return language.get("asr_code", language["code"])
 
 
 def is_joinable_locale(locale_id: object) -> bool:

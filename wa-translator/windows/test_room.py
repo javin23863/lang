@@ -168,8 +168,10 @@ def test_private_room_http_flow():
     assert capabilities.headers["cache-control"] == "no-store"
     assert capabilities.json()["counts"] == {
         "base_languages": 100, "locale_profiles": 122,
-        "live_speech_languages": 6, "text_languages": 100,
-        "voice_languages": 3, "voice_profiles": 7,
+        "live_speech_languages": 84, "model_speech_languages": 84,
+        "verified_speech_languages": 6, "joinable_locale_profiles": 106,
+        "text_languages": 100,
+        "voice_languages": 6, "voice_profiles": 13,
     }
     disabled_runtime = srv.local_runtime_capabilities(model_loading_enabled=False)
     assert disabled_runtime["captions_available"] is False
@@ -376,6 +378,35 @@ def test_unloaded_local_caption_runtime_drops_pcm_without_queueing():
         assert len(srv.jobs) == 0
         assert p.seq == 0
     finally:
+        srv.participants.clear()
+
+
+def test_local_worker_uses_whisper_code_without_changing_m2m_source():
+    calls = []
+
+    class ASR:
+        def transcribe(self, _audio, lang, partial):
+            calls.append(("asr", lang, partial))
+            return "teks"
+
+    old_asr = srv._asr
+    old_translate = srv.mt_ct2.translate_many
+    old_broadcast = srv.broadcast_from_thread
+    srv.participants.clear()
+    srv.participants[1] = Participant(id=1, ws=None, lang="jv")
+    srv._asr = ASR()
+    srv.mt_ct2.translate_many = lambda text, source, targets, **kwargs: (
+        calls.append(("mt", text, source, targets, kwargs)) or ({"en": "text"}, ""))
+    srv.broadcast_from_thread = lambda *_args: None
+    try:
+        srv._handle(Job(pid=1, audio=np.ones(1600, np.float32), lang="jv",
+                        targets=["en"], seq=1, final=True, onset=time.time()))
+        assert calls[0] == ("asr", "jw", False)
+        assert calls[1][2:4] == ("jv", ["en"])
+    finally:
+        srv._asr = old_asr
+        srv.mt_ct2.translate_many = old_translate
+        srv.broadcast_from_thread = old_broadcast
         srv.participants.clear()
 
 
