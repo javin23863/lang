@@ -176,21 +176,28 @@ open, closed, or expired state, and asks before replacing an active room. A
 host who clears that device's browser storage loses its control bearer; this is
 a deliberate no-account ceiling, not participant access or media persistence.
 
-On 2026-08-13, the checked Windows shortcut receipt was:
+On 2026-08-14, the first-start repair and launch receipt was:
 
 - `C:\Users\MSI\Desktop\Live Translator.lnk`
 - target: `C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`
-- arguments: `--app=https://spoken-translation-room.spoken-translation-cloudflare.workers.dev`
+- arguments: `--app=https://spoken-translation-room.spoken-translation-cloudflare.workers.dev/`
 - icon: `C:\Users\MSI\AppData\Local\LiveTranslator\LiveTranslator.ico,0`
-- launch evidence: Edge process PID 19772 had window title `Live Translator`
-  and command line
-  `"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --app=https://spoken-translation-room.spoken-translation-cloudflare.workers.dev`.
+- the idempotent source installer is
+  `wa-translator\windows\persistent_host.ps1 -Action Install`
+- the installer left exactly one translator shortcut, removed the retired
+  `Live Translator Host` login task and legacy Open/Start/Stop shortcuts, and
+  left no listener on development port 8791
+- independent launch evidence: Edge process PID 17464 had window title
+  `Lingua Relay · Private rooms` and command line
+  `"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --app=https://spoken-translation-room.spoken-translation-cloudflare.workers.dev/`
+- Windows Computer Use visually showed the standalone dashboard with only the
+  product name, device room state, and `Create private room` action; snapshot:
+  `C:\Users\MSI\AppData\Local\Temp\live_translator_desktop_startup.jpg`.
 
-This proves the inspected shortcut target and a separately launched Edge app
-window, not an independent visual URL read: Windows Computer Use stopped before
-it could determine the current browser URL, so no further app UI action was
-taken. Re-run the non-invasive shortcut-property inspection and visible
-app-window check after changing its target or Edge installation.
+The visible app window has no address bar, so the URL receipt comes from both
+the inspected shortcut and the launched process command line. Re-run the
+installer, shortcut-property inspection, public `/health` probe, process check,
+and visible app-window snapshot after changing the target or Edge installation.
 
 ## Cost ceiling
 

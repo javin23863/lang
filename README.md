@@ -62,6 +62,17 @@ at the permanent origin; it does not depend on the Codex browser. The shortcut
 is device-local: clearing that app's browser storage loses the host control on
 this device, but never exposes it to a participant.
 
+Install or repair that one shortcut with:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\wa-translator\windows\persistent_host.ps1 -Action Install
+```
+
+The installer removes the retired login task and its old Open/Start/Stop
+shortcuts. It does not start a localhost server. After installation,
+double-click `Live Translator` on the Desktop; the shortcut is independent of
+this repository and opens the permanent hosted application directly.
+
 ## What it does
 
 - **Live captions, not turn-taking.** Text appears ~1.7s after you start

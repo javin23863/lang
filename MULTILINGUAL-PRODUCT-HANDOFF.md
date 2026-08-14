@@ -14,6 +14,7 @@ historical evidence and do not silently become multilingual quality proof.
 | Modal compute | App `ap-BGN0rYSJePL3mDbezdmZOe`, version **v22**, deployed 2026-08-14 08:00 +07; [Modal app](https://modal.com/apps/m2747076/main/deployed/spoken-translation-compute) |
 | Modal ingress | `https://m2747076--spoken-translation-compute-web-ap-south.ap-south.modal.run` |
 | Desktop shortcut | `C:\Users\MSI\Desktop\Live Translator.lnk` → `C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe --app=https://spoken-translation-room.spoken-translation-cloudflare.workers.dev` |
+| Desktop installer | `wa-translator\windows\persistent_host.ps1 -Action Install` creates/repairs the single public-app shortcut and removes the retired localhost login task plus legacy Open/Start/Stop shortcuts |
 
 The Modal function is AP-routed (`routing_region="ap-south"`), but the actual
 v20 model-load log reported `MODAL_REGION=us-east-2`. Do not describe v22 as
@@ -162,8 +163,9 @@ or a human-heard audio result.
 
 ## Resume, deploy and rollback
 
-Run from `C:\Users\MSI\lang-repo`; do not force-push or merge PR #3 during this
-wave. Re-run the local gates before any runtime change:
+Run from `C:\Users\MSI\lang-repo`. PR #3 is already merged; do not treat its
+old open-wave instructions as current. Re-run the local gates before any
+runtime change:
 
 ```powershell
 Push-Location wa-translator\windows
@@ -216,7 +218,9 @@ Pop-Location
 
 ## Host/process custody
 
-Do **not** stop, restart or mutate inherited room processes **7344, 9528 and
-11452**. Use isolated ports/processes for diagnostics and clean only those you
-start. The verified desktop shortcut must continue to target the public Worker
-origin above.
+On 2026-08-14 the retired `Live Translator Host` login task was unregistered,
+its verified local-development process tree (**7344, 9528 and 11452**) was
+stopped, and port 8791 had no listener. The three legacy Open/Start/Stop
+shortcuts were removed. Exactly one Desktop shortcut remains and it targets the
+public Worker origin above. Local adapter work is development-only: start it
+explicitly on an isolated port and clean only that owned process.

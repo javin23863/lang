@@ -15,6 +15,20 @@ a neighboring language. Production also offers thirteen pinned included
 profiles for English, Spanish, French, Hindi, Italian, and Brazilian Portuguese
 on the single Modal L4.
 
+## Install the desktop application
+
+From the repository root, run:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\wa-translator\windows\persistent_host.ps1 -Action Install
+```
+
+This creates one `Live Translator` Desktop shortcut that opens the permanent
+Cloudflare application in Edge app mode. It also removes the retired Windows
+login task and its old Open/Start/Stop shortcuts. The installed shortcut does
+not depend on Python, this repository, a localhost server, or the Codex browser.
+Run the installer again at any time to repair the shortcut safely.
+
 ## Run it
 
 ```powershell
@@ -27,8 +41,9 @@ The server creates a private bearer room. Open the link, use Share/WhatsApp if
 desired, choose your speaking Locale, and join. A room accepts at most four
 people; one transcription fans out once to the unique listener base Languages
 (maximum three targets). The local URL and quick tunnel are development tools;
-the permanent public dashboard and desktop shortcut target the Cloudflare
-origin, not this process.
+they are never installed or started by the Desktop application. The permanent
+public dashboard and Desktop shortcut target the Cloudflare origin, not this
+process.
 
 Do not start this adapter on any inherited room port/process. It is
 UI/protocol-only by default and explicitly reports that local caption compute
