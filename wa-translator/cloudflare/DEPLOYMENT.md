@@ -178,6 +178,8 @@ a deliberate no-account ceiling, not participant access or media persistence.
 
 On 2026-08-14, the first-start repair and launch receipt was:
 
+- source: [PR #4](https://github.com/javin23863/lang/pull/4), merged into
+  `main` at `3bdbad6f92ca61678d6dc86a369ca68367437fa5`
 - `C:\Users\MSI\Desktop\Live Translator.lnk`
 - target: `C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`
 - arguments: `--app=https://spoken-translation-room.spoken-translation-cloudflare.workers.dev/`
