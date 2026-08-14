@@ -42,11 +42,15 @@ BASE = os.environ.get("ROOM_BASE", f"http://localhost:{DEFAULT_PORT}").rstrip("/
 ROOM = os.environ.get("ROOM_URL")
 FORCE_RELAY = os.environ.get("FORCE_RELAY") == "1"
 HEADLESS = os.environ.get("BROWSER_CHECK_HEADLESS") == "1"
+PROBE_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "Chrome/140 Safari/537.36"
+)
 
 
 def create_room_url():
     req = urllib.request.Request(f"{BASE}/api/rooms", method="POST", data=b"",
-                                 headers={"Origin": BASE})
+                                 headers={"Origin": BASE, "User-Agent": PROBE_USER_AGENT})
     with urllib.request.urlopen(req, timeout=5) as response:
         return BASE + json.load(response)["path"]
 
@@ -146,8 +150,11 @@ def _test_wav_base64():
 
 
 CONTROLLED_TTS_SPY = r"""(() => {
-  window.__voice = {requests: [], starts: 0, playing: 0, ended: 0,
-                    paused: 0, errors: [], duration: 0, currentTime: 0};
+  window.__resetVoiceSpy = () => {
+    window.__voice = {requests: [], starts: 0, playing: 0, ended: 0,
+                      paused: 0, errors: [], duration: 0, currentTime: 0};
+  };
+  window.__resetVoiceSpy();
   window.__ttsFail = false;
   const wav = Uint8Array.from(atob('__TEST_WAV__'), c => c.charCodeAt(0));
   const realFetch = window.fetch.bind(window);
@@ -235,13 +242,27 @@ async def check_voice_modes(tab, other_tab, my_id, other_id, check):
     # Exercise the real Windows/Chrome speech engine before the controlled
     # server-WAV checks. No speech API or lifecycle event is stubbed here.
     native_before = await tab.js("window.__worklet.length")
-    await tab.js("$('voiceBtn').click();speak('Device voice check', myLocale, myVoiceProfileId)")
+    selected_device = await tab.js("""(() => {
+      const option = [...$('publishVoiceSel').options]
+        .find(item => item.value.startsWith('device:'));
+      if (!option) return null;
+      const realSend = send;
+      send = () => {};
+      $('publishVoiceSel').value = option.value;
+      $('publishVoiceSel').dispatchEvent(new Event('change'));
+      send = realSend;
+      $('voiceBtn').click();
+      speak('Device voice check', myLocale, myVoiceProfileId);
+      return myVoiceChoice;
+    })()""")
     native_done = await _wait_js(
         tab, "!speaking && !asrPaused && voiceOn && !$('remoteVideo').muted", timeout=10)
     native_posts = await tab.js("window.__worklet.slice(" + str(native_before) + ")")
-    check(native_done and False in native_posts and native_posts[-1] is True,
-          f"voice: real device speech completed with the ASR safety lifecycle (got {native_posts})")
-    await tab.js("$('voiceBtn').click()")
+    check(selected_device and selected_device.startswith("device:") and native_done
+          and False in native_posts and native_posts[-1] is True,
+          "voice: real device speech completed with the ASR safety lifecycle "
+          f"(choice={selected_device}, posts={native_posts})")
+    await tab.js("$('voiceBtn').click();window.__resetVoiceSpy()")
 
     # This is an explicit test-only capability override, never an app fallback.
     await tab.js("runtimeVoiceProfileIds=null;applyLocale('en-US','en-us-af-heart');updateVoiceButton()")
@@ -561,6 +582,35 @@ async def check_dashboard_ui(check):
         with open(mobile_path, "wb") as output:
             output.write(base64.b64decode(mobile["data"]))
         print("dashboard 360px screenshot:", mobile_path)
+
+        await tab.call("Emulation.setDeviceMetricsOverride", width=360, height=800,
+                       deviceScaleFactor=1, mobile=True)
+        store = await tab.call("Page.captureScreenshot", format="png")
+        store_path = os.path.join(tempfile.gettempdir(), "room_dashboard_store.png")
+        with open(store_path, "wb") as output:
+            output.write(base64.b64decode(store["data"]))
+        print("dashboard store screenshot:", store_path)
+
+        await tab.js("createRoom()")
+        active = await _wait_js(
+            tab,
+            "currentRoom && !busy && !$('roomPanel').hidden && $('shareLink').value.startsWith(location.origin + '/room/')",
+            timeout=8,
+        )
+        check(active, "dashboard: a saved private room exposes its participant controls")
+        active_shot = await tab.call("Page.captureScreenshot", format="png")
+        active_path = os.path.join(tempfile.gettempdir(), "room_dashboard_active_store.png")
+        with open(active_path, "wb") as output:
+            output.write(base64.b64decode(active_shot["data"]))
+        print("active dashboard store screenshot:", active_path)
+
+        await tab.js("closeRoom(false)")
+        closed = await _wait_js(
+            tab,
+            "!currentRoom && !busy && $('roomPanel').hidden && $('roomState').dataset.state === 'closed'",
+            timeout=8,
+        )
+        check(closed, "dashboard: the same control closes its disposable screenshot room")
         await tab.call("Emulation.clearDeviceMetricsOverride")
 
 

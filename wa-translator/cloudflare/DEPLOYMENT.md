@@ -133,11 +133,14 @@ They are reproducible instructions. The current authenticated deployment and
 its public receipts are recorded below and in
 [`../../MULTILINGUAL-PRODUCT-HANDOFF.md`](../../MULTILINGUAL-PRODUCT-HANDOFF.md).
 
-## Current deployed receipt — 2026-08-14 08:06 +07
+## Current deployed receipt — 2026-08-14 11:04 +07
 
 - Worker: `https://spoken-translation-room.spoken-translation-cloudflare.workers.dev`,
-  version `6d146fda-aa50-4c98-966b-67aa75a24c05`, from runtime source
-  `4cb8c25f6c9d104ca3117876a8f32a0ad27ebbb1`.
+  version `f2c94502-82f3-4281-809f-3aed424bb25b`, from runtime source
+  `b7b0fffdd41816b45cf0e1ee53893b6802d75853`, deployed at 10:55 +07. The
+  deployed mobile bootstrap, legal pages, well-known association surfaces,
+  category-only report path, private bounded report inbox, and moderator room
+  close path are part of this version.
 - Modal: app `ap-BGN0rYSJePL3mDbezdmZOe`, version `v22`, deployed at 08:00 +07 to
   `https://m2747076--spoken-translation-compute-web-ap-south.ap-south.modal.run`.
   It exposes one AP-routed Function with `gpu="L4"`, `max_containers=1`,
@@ -156,6 +159,14 @@ its public receipts are recorded below and in
   additionally returned valid non-silent 24 kHz WAVs for Hindi, Italian and
   Brazilian Portuguese. These are model/runtime receipts, not
   a native-speaker quality certification or A11 human-audibility proof.
+- The no-secret public mobile probe returned health 200, bootstrap 200, room
+  creation 201, WebSocket welcome, report 201, private list 200, moderator close
+  200, and closed-room preflight 410. `MOBILE_REPORT_ADMIN_TOKEN` is installed;
+  its DPAPI-encrypted operator backup is outside the repository at
+  `C:\Users\MSI\AppData\Local\LiveTranslator\report-admin-token.dpapi`.
+- The live public two-tab browser gate passed native-name-first Khmer and Arabic
+  selection, 360px/RTL layouts, WebRTC audio/video, permission revoke/regrant,
+  device and included voice lifecycles, feedback protection, and room release.
 
 ## Live receipts required after deployment
 

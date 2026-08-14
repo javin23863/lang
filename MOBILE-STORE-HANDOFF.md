@@ -24,6 +24,31 @@ Status date: 2026-08-14. Branch: `feat/mobile-store-shell`.
 - Android AAB and unsigned iOS compilation run without credentials. Signed
   uploads are manual jobs and stop at Play Internal Testing or TestFlight.
 
+## Current beta receipt — 2026-08-14 11:04 +07
+
+- Public origin: `https://spoken-translation-room.spoken-translation-cloudflare.workers.dev`.
+  Worker version `f2c94502-82f3-4281-809f-3aed424bb25b` was deployed from
+  `b7b0fffdd41816b45cf0e1ee53893b6802d75853` at 10:55 +07.
+- The deployed no-secret acceptance probe returned health 200, mobile bootstrap
+  200, room creation 201, WebSocket welcome, category-only report 201, private
+  report list 200, moderator close 200, and closed-room preflight 410.
+- A generated 32-byte report-admin credential is installed in the Worker and
+  backed up with Windows DPAPI at
+  `C:\Users\MSI\AppData\Local\LiveTranslator\report-admin-token.dpapi`.
+  The plaintext value was never written to the repository or receipts.
+- The live public two-tab browser acceptance passed the compact 106-profile
+  picker, Khmer and Arabic RTL layouts, native sharing, audio/video WebRTC,
+  independent camera/microphone acquisition, permission revoke/regrant,
+  device speech, translated WAV playback, feedback protection, and Leave.
+- GitHub Actions run `31768096990` completed Android, iOS, and product-regression
+  jobs successfully. Its downloaded Android AAB is 3,095,207 bytes with SHA-256
+  `C9D1196739A69B6CCC7738DFE292051EF568FCA83CE3C3A4F498E4C1FCA3296E`.
+  The unsigned iOS app executable is 441,048 bytes with SHA-256
+  `232F76EFE5B106FF977493924F5B5C6FA68E0BB4FD0400E90B7487B046C4B120`.
+- Store screenshots were regenerated from that live public surface. They do not
+  contain localhost URLs, unavailable-capability warnings, fabricated captions,
+  or development explanation text.
+
 ## Commands
 
 From `wa-translator/mobile`:
