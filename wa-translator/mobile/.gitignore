@@ -1,0 +1,5 @@
+www/
+build/
+*.ipa
+*.aab
+release.keystore
