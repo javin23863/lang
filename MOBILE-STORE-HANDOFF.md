@@ -1,6 +1,7 @@
 # Lingua Relay mobile-store handoff
 
-Status date: 2026-08-14. Branch: `feat/mobile-store-shell`.
+Status date: 2026-08-14. Merged to `main` by PR #5 at
+`4340d6d4d308081f21ba8d82526db5a278378748`.
 
 ## What is built
 
@@ -40,7 +41,8 @@ Status date: 2026-08-14. Branch: `feat/mobile-store-shell`.
   picker, Khmer and Arabic RTL layouts, native sharing, audio/video WebRTC,
   independent camera/microphone acquisition, permission revoke/regrant,
   device speech, translated WAV playback, feedback protection, and Leave.
-- GitHub Actions run `31768096990` completed Android, iOS, and product-regression
+- GitHub Actions run `31769087455` on the merged `main` commit completed Android,
+  iOS, and product-regression
   jobs successfully. Its downloaded Android AAB is 3,095,207 bytes with SHA-256
   `C9D1196739A69B6CCC7738DFE292051EF568FCA83CE3C3A4F498E4C1FCA3296E`.
   The unsigned iOS app executable is 441,048 bytes with SHA-256
