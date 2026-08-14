@@ -126,27 +126,28 @@ They are reproducible instructions. The current authenticated deployment and
 its public receipts are recorded below and in
 [`../../MULTILINGUAL-PRODUCT-HANDOFF.md`](../../MULTILINGUAL-PRODUCT-HANDOFF.md).
 
-## Current deployed receipt — 2026-08-14 +07
+## Current deployed receipt — 2026-08-14 08:06 +07
 
 - Worker: `https://spoken-translation-room.spoken-translation-cloudflare.workers.dev`,
-  version `f9976551-31df-47e7-9816-3d4e0e85fc75`, deployment transaction
-  `09b15764-0806-481a-9142-484b47653ac6`, from runtime source
-  `08392d818d23e486c50200b4f17cee498d5ccb25`.
-- Modal: app `ap-BGN0rYSJePL3mDbezdmZOe`, version `v20`, tag `08392d8`,
-  deployed at 05:54:25 +07 to
+  version `6d146fda-aa50-4c98-966b-67aa75a24c05`, from runtime source
+  `4cb8c25f6c9d104ca3117876a8f32a0ad27ebbb1`.
+- Modal: app `ap-BGN0rYSJePL3mDbezdmZOe`, version `v22`, deployed at 08:00 +07 to
   `https://m2747076--spoken-translation-compute-web-ap-south.ap-south.modal.run`.
   It exposes one AP-routed Function with `gpu="L4"`, `max_containers=1`,
   `min_containers=0`, and a 60-second scale-down window. A post-deploy
   container listing observed exactly one running container after the model
   probe; this is not a reservation to keep it warm.
 - Public `GET /health` returned `ok`; `/api/capabilities` returned no-store,
-  catalog revision `2026-08-14-m2m100-55c2e61-tts3`, 100 base Languages, 122
-  Locale profiles, six live-speech Languages, 100 text Languages, three enabled
-  TTS Languages and seven Voice Profiles. `ja-JP` explicitly reports Voice
-  unavailable rather than reaching a wrong-language or unpinned frontend.
-- Actual v20 logs show Whisper CUDA/float16 and M2M100 CUDA/int8_float16 at
+  catalog revision `2026-08-14-m2m100-55c2e61-free84-tts13`, 100 base/text
+  Languages, 122 Locale profiles, 84 model-pair microphone candidates, 6
+  Tested Languages, 106 joinable Locale profiles, 6 included-voice Languages
+  and 13 Voice Profiles. `km-KH` is a joinable `Preview` route with native-first
+  label `ខ្មែរ — Khmer (Cambodia)` and no substituted included voice.
+- Prior actual v20 logs show Whisper CUDA/float16 and M2M100 CUDA/int8_float16 at
   revision `55c2e61bbf05`. Public enabled-route probes returned valid 24 kHz
-  WAVs for Spanish, English and French. These are model/runtime receipts, not
+  WAVs for Spanish, English and French. The v22 public participant-bound route
+  additionally returned valid non-silent 24 kHz WAVs for Hindi, Italian and
+  Brazilian Portuguese. These are model/runtime receipts, not
   a native-speaker quality certification or A11 human-audibility proof.
 
 ## Live receipts required after deployment

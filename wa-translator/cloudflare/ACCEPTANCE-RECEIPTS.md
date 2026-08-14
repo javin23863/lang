@@ -19,9 +19,10 @@ implementation now in this branch. The current locally verified contract is:
 - the one-L4 four-stream limit is global across rooms; the affected speaker
   receives an explicit capacity status while natural WebRTC media remains live;
 - local contract checks are green; public Worker version
-  `f9976551-31df-47e7-9816-3d4e0e85fc75` and Modal v20/tag `08392d8` have a
-  matched catalog, actual Whisper/M2M100 CUDA model-load receipt, and valid
-  public English, Spanish and French 24 kHz TTS WAV receipts. The strict seven
+  `6d146fda-aa50-4c98-966b-67aa75a24c05` and Modal v22 have a matched
+  `free84-tts13` catalog, an actual Whisper/M2M100 CUDA model-load receipt, a
+  public Codex-browser Khmer join receipt, and valid public English, Spanish,
+  French, Hindi, Italian and Brazilian Portuguese 24 kHz TTS WAV receipts. The strict seven
   fixed semantic M2M fixtures remain mandatory but cannot be called without
   the intentionally server-held Modal secret; their absence is not a pass.
 

@@ -1,6 +1,6 @@
 # Multilingual product handoff
 
-Last live verification: **2026-08-14, 05:59 +07**. This is the authoritative
+Last live verification: **2026-08-14, 08:06 +07**. This is the authoritative
 handoff for the multilingual expansion; historical bilingual receipts remain
 historical evidence and do not silently become multilingual quality proof.
 
@@ -9,14 +9,14 @@ historical evidence and do not silently become multilingual quality proof.
 | Item | Verified state |
 |---|---|
 | Branch / PR | `spoken-translation`; [PR #3](https://github.com/javin23863/lang/pull/3), open and clean at the time of the deployed runtime source |
-| Deployed runtime source | `08392d818d23e486c50200b4f17cee498d5ccb25` — `fix: fail closed Japanese voice runtime` |
-| Public Worker | `https://spoken-translation-room.spoken-translation-cloudflare.workers.dev` — version `f9976551-31df-47e7-9816-3d4e0e85fc75`; deployment `09b15764-0806-481a-9142-484b47653ac6` |
-| Modal compute | App `ap-BGN0rYSJePL3mDbezdmZOe`, version **v20**, tag `08392d8`, deployed 2026-08-14 05:54:25 +07; [Modal app](https://modal.com/apps/m2747076/main/deployed/spoken-translation-compute) |
+| Deployed runtime source | `4cb8c25f6c9d104ca3117876a8f32a0ad27ebbb1` — free speech preview, device voices and compact native locale labels |
+| Public Worker | `https://spoken-translation-room.spoken-translation-cloudflare.workers.dev` — version `6d146fda-aa50-4c98-966b-67aa75a24c05` |
+| Modal compute | App `ap-BGN0rYSJePL3mDbezdmZOe`, version **v22**, deployed 2026-08-14 08:00 +07; [Modal app](https://modal.com/apps/m2747076/main/deployed/spoken-translation-compute) |
 | Modal ingress | `https://m2747076--spoken-translation-compute-web-ap-south.ap-south.modal.run` |
 | Desktop shortcut | `C:\Users\MSI\Desktop\Live Translator.lnk` → `C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe --app=https://spoken-translation-room.spoken-translation-cloudflare.workers.dev` |
 
 The Modal function is AP-routed (`routing_region="ap-south"`), but the actual
-v20 model-load log reported `MODAL_REGION=us-east-2`. Do not describe this as
+v20 model-load log reported `MODAL_REGION=us-east-2`. Do not describe v22 as
 AP-only compute. The deployment has one L4 function, `max_containers=1`,
 `min_containers=0`, a 60-second scale-down window and one persistent model
 Volume. A post-probe container listing saw exactly one live container; no second
@@ -49,8 +49,9 @@ function or warm reserve was enabled.
   connection state, a captions dock, settings/voice controls, dashboard and
   WhatsApp/native share flow. The Windows local adapter remains visibly
   captions-only by default and never downloads/converts models.
-- Kokoro is enabled only for the seven checksum-pinned English/Spanish/French
-  profiles. Japanese has documented upstream voice candidates but is **not
+- Kokoro is enabled only for 13 checksum-pinned English, Spanish, French,
+  Hindi, Italian and Brazilian Portuguese profiles. Japanese has documented
+  upstream voice candidates but is **not
   release-enabled**: the actual v19 Japanese initialization reached an
   undeclared MeCab/fugashi dictionary dependency. v20 removes the Japanese
   release profiles and `misaki[ja]` lock input, builds voice pipelines lazily,
@@ -60,9 +61,13 @@ function or warm reserve was enabled.
 ## Public deployment receipts
 
 Public `GET /health` returned `ok`. `GET /api/capabilities` returned
-`Cache-Control: no-store`, revision `2026-08-14-m2m100-55c2e61-tts3`, and the
-counts above. The `ja-JP` capability says Voice is unavailable because a
-documented provider voice is not enabled for the release-tested runtime.
+`Cache-Control: no-store`, revision
+`2026-08-14-m2m100-55c2e61-free84-tts13`, and these exact counts: 100 base/text
+Languages, 122 Locale profiles, 84 model-pair microphone candidates, 6 Tested
+Languages, 106 joinable Locale profiles, 6 included-voice Languages and 13
+included profiles. `km-KH` is joinable as `Preview`, maps ASR and MT to `km`,
+and advertises no included voice. The Codex in-app browser joined it publicly
+at 360x640 with the compact label `ខ្មែរ — Khmer (Cambodia)` and no overflow.
 
 On v20, Modal logs recorded:
 
@@ -80,6 +85,9 @@ valid mono 24 kHz WAV:
 | English (`en-us-af-heart`) | 115,244 bytes, 57,600 frames, 2.781 s after the cold request |
 | French (`fr-ff-siwis`) | 140,444 bytes, 70,200 frames, 1.625 s after the cold request |
 | Stream-preloaded Spanish retry | 96,044 bytes, 2.125 s |
+| Hindi (`hi-hf-alpha`) | 81,644 bytes, 40,800 frames, 37.469 s cold request |
+| Italian (`it-if-sara`) | 76,844 bytes, 38,400 frames, 1.171 s after warmup |
+| Brazilian Portuguese (`pt-br-pf-dora`) | 38,444 bytes, 19,200 frames, 1.734 s after warmup |
 
 Those are request-to-WAV timings, not speech-end-to-playing latency and not
 human-audibility evidence. Earlier end-to-end warm receipt truth remains
@@ -99,15 +107,16 @@ Local Windows gates at the deployed runtime source:
 
 | Command family | Result |
 |---|---|
-| `wa-translator/windows`: catalog + M2M + fixtures + TTS acceptance unit suite | 20/20 passed |
-| `wa-translator`: deployment, Modal and deployment-verifier suite | 29/29 passed after the verifier TDD repair |
-| `wa-translator/windows`: `python test_room.py` | 19/19 passed |
+| `wa-translator/windows`: catalog, M2M, fixtures, client and latency unit suites | 36/36 passed |
+| `wa-translator`: deployment, Modal and deployment-verifier suite | 30/30 passed |
+| `wa-translator/windows`: `python test_room.py` | 20/20 passed |
 | `wa-translator/cloudflare`: `npm run check` | TypeScript typecheck; 9 test files / 32 tests; Wrangler dry-run passed under local Node 24 |
+| `wa-translator/windows`: real two-tab `browser_check.py` | PASS at 360x640, including Khmer/RTL, WebRTC video/audio, real device speech and included WAV lifecycle |
 
 The fresh Linux exact-runtime checkout was
-`/tmp/lang-multilingual-tts3.PaLX76/repo`, detached at `08392d8`. It passed
-20/20, 28/28 (before the verifier-only final test), and room 19/19 with a
-minimal isolated Python 3.12 venv. Worker typecheck and 9/32 tests passed under
+`/tmp/lang-khmer-review-35eb941-0814/repo`, detached at `35eb941`. It passed
+20/20 portable catalog, M2M, fixture and latency checks with a minimal isolated
+Python 3.12 venv. Worker typecheck and 9/32 tests passed under
 Node 20.20.2; Wrangler dry-run correctly refused because that host has no Node
 22+. This is an environment ceiling, not a Node-22 source failure—the local
 Node 24 gate passed. CodeRabbit/Coderabbit CLIs were absent on `sinbox`, so no
