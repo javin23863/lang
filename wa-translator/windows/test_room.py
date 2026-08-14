@@ -410,15 +410,23 @@ def test_local_worker_uses_whisper_code_without_changing_m2m_source():
         srv.participants.clear()
 
 
-def test_local_launcher_accepts_the_captions_only_adapter_health():
-    """The development launcher must not wait for intentionally disabled models."""
+def test_desktop_installer_targets_only_the_permanent_cloud_app():
+    """Normal Windows startup must never depend on the development server."""
     launcher = Path(__file__).with_name("persistent_host.ps1").read_text(
         encoding="utf-8")
-    assert "$health.status -eq 'ok'" in launcher
-    assert "$health.models_ready" not in launcher
-    assert "$health.tts.en" not in launcher
     assert "$publicUrl = 'https://spoken-translation-room.spoken-translation-cloudflare.workers.dev/'" in launcher
+    assert "Live Translator.lnk" in launcher
     assert "--app=$publicUrl" in launcher
+    assert "Unregister-ScheduledTask" in launcher
+    assert "Live Translator - Open.lnk" in launcher
+    assert "Live Translator - Start.lnk" in launcher
+    assert "Live Translator - Stop.lnk" in launcher
+    assert "Get-CimInstance Win32_Process" in launcher
+    assert "Stop-Process" in launcher
+    assert "Register-ScheduledTask" not in launcher
+    assert "New-ScheduledTaskAction" not in launcher
+    assert "run_room.py" not in launcher
+    assert "http://127.0.0.1:8791" not in launcher
 
 
 def test_no_partial_below_min_speech():

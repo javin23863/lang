@@ -1,118 +1,115 @@
 param(
-    [ValidateSet('Install', 'Run', 'Start', 'Stop', 'Status', 'Open', 'Uninstall')]
+    [ValidateSet('Install', 'Open', 'Status', 'Uninstall')]
     [string]$Action = 'Status'
 )
 
 $ErrorActionPreference = 'Stop'
-$taskName = 'Live Translator Host'
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
-$runner = Join-Path $PSScriptRoot 'run_room.py'
-$stateDir = Join-Path $env:LOCALAPPDATA 'LiveTranslator'
-$log = Join-Path $stateDir 'host.log'
-$localUrl = 'http://127.0.0.1:8791/'
 $publicUrl = 'https://spoken-translation-room.spoken-translation-cloudflare.workers.dev/'
-$edgeApp = Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'
+$legacyTaskName = 'Live Translator Host'
+$desktop = [Environment]::GetFolderPath('Desktop')
+$shortcutPath = Join-Path $desktop 'Live Translator.lnk'
+$stateDir = Join-Path $env:LOCALAPPDATA 'LiveTranslator'
+$customIcon = Join-Path $stateDir 'LiveTranslator.ico'
+$legacyShortcutPaths = @(
+    (Join-Path $desktop 'Live Translator - Open.lnk'),
+    (Join-Path $desktop 'Live Translator - Start.lnk'),
+    (Join-Path $desktop 'Live Translator - Stop.lnk')
+)
 
-function Wait-ForHost {
-    $deadline = (Get-Date).AddMinutes(3)
-    do {
-        try {
-            $health = Invoke-RestMethod -Uri ($localUrl + 'health') -TimeoutSec 2
-            # The development adapter is deliberately useful before optional
-            # pre-provisioned ASR/M2M artifacts are loaded.  Its dashboard
-            # exposes that captions are unavailable; waiting for those models
-            # (or retired local TTS) would make Open time out forever.
-            if ($health.status -eq 'ok') {
-                return $health
-            }
-        } catch {
+function Find-Edge {
+    $candidates = @(
+        (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'),
+        (Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\Application\msedge.exe')
+    )
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path -LiteralPath $candidate)) {
+            return (Resolve-Path -LiteralPath $candidate).Path
         }
-        Start-Sleep -Seconds 2
-    } while ((Get-Date) -lt $deadline)
-    throw "Local translator adapter did not respond. Check $log"
+    }
+    throw 'Microsoft Edge was not found. Install Edge, then run this installer again.'
 }
 
-function New-DesktopShortcut([string]$name, [string]$arguments) {
-    $desktop = [Environment]::GetFolderPath('Desktop')
-    $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut(
-        (Join-Path $desktop ($name + '.lnk')))
-    $shortcut.TargetPath = 'powershell.exe'
-    $shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" $arguments"
-    $shortcut.WorkingDirectory = $repoRoot
-    $shortcut.IconLocation = "$env:SystemRoot\System32\imageres.dll,67"
+function Remove-LegacyLocalHost {
+    $task = Get-ScheduledTask -TaskName $legacyTaskName -ErrorAction SilentlyContinue
+    if ($task) {
+        $processes = @(Get-CimInstance Win32_Process)
+        $legacyProcessIds = @($processes | Where-Object {
+            $_.CommandLine -and
+            $_.CommandLine.IndexOf($PSCommandPath,
+                [StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+            $_.CommandLine -match '-Action\s+Run'
+        } | Select-Object -ExpandProperty ProcessId)
+        do {
+            $children = @($processes | Where-Object {
+                $_.ParentProcessId -in $legacyProcessIds -and
+                $_.ProcessId -notin $legacyProcessIds
+            } | Select-Object -ExpandProperty ProcessId)
+            $legacyProcessIds += $children
+        } while ($children.Count -gt 0)
+
+        Stop-ScheduledTask -TaskName $legacyTaskName -ErrorAction SilentlyContinue
+        Unregister-ScheduledTask -TaskName $legacyTaskName -Confirm:$false
+        foreach ($processId in ($legacyProcessIds | Sort-Object -Descending)) {
+            Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+        }
+    }
+    foreach ($path in $legacyShortcutPaths) {
+        Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Install-DesktopApp {
+    $edgeApp = Find-Edge
+    Remove-LegacyLocalHost
+    New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
+
+    $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcutPath)
+    $shortcut.TargetPath = $edgeApp
+    $shortcut.Arguments = "--app=$publicUrl"
+    $shortcut.WorkingDirectory = Split-Path -Parent $edgeApp
+    $shortcut.Description = 'Live Translator'
+    $shortcut.IconLocation = if (Test-Path -LiteralPath $customIcon) {
+        "$customIcon,0"
+    } else {
+        "$edgeApp,0"
+    }
     $shortcut.Save()
+    return $shortcutPath
 }
 
 switch ($Action) {
-    'Run' {
-        New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
-        while ($true) {
-            "`n[$(Get-Date -Format o)] starting" | Out-File -LiteralPath $log -Append -Encoding utf8
-            & $python -u $runner --local 2>&1 | Out-File -LiteralPath $log -Append -Encoding utf8
-            "[$(Get-Date -Format o)] stopped; restarting in 5 seconds" |
-                Out-File -LiteralPath $log -Append -Encoding utf8
-            Start-Sleep -Seconds 5
-        }
-    }
     'Install' {
-        if (-not (Test-Path -LiteralPath $python)) { throw "Missing project Python: $python" }
-        New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
-        $taskAction = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument (
-            "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Action Run")
-        $trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
-        $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 999 `
-            -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero) `
-            -MultipleInstances IgnoreNew -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-        $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" `
-            -LogonType Interactive -RunLevel Limited
-        Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $trigger `
-            -Settings $settings -Principal $principal -Description (
-            'Starts the local multilingual development room at Windows sign-in.') -Force | Out-Null
-        New-DesktopShortcut 'Live Translator - Open' '-Action Open'
-        New-DesktopShortcut 'Live Translator - Start' '-Action Start'
-        New-DesktopShortcut 'Live Translator - Stop' '-Action Stop'
-        Start-ScheduledTask -TaskName $taskName
-        $health = Wait-ForHost
-        Write-Host "Installed local adapter: $localUrl"
-        $health | ConvertTo-Json -Compress
-    }
-    'Start' {
-        Start-ScheduledTask -TaskName $taskName
-        $health = Wait-ForHost
-        Write-Host "Local adapter responding: $localUrl"
-        $health | ConvertTo-Json -Compress
-    }
-    'Stop' {
-        Stop-ScheduledTask -TaskName $taskName
-        Write-Host 'Live Translator stopped.'
-    }
-    'Status' {
-        $task = Get-ScheduledTask -TaskName $taskName
-        $info = Get-ScheduledTaskInfo -TaskName $taskName
-        $health = try { Invoke-RestMethod -Uri ($localUrl + 'health') -TimeoutSec 2 } catch { $null }
-        [pscustomobject]@{
-            TaskState = $task.State
-            LastRun = $info.LastRunTime
-            LastResult = $info.LastTaskResult
-            LocalUrl = $localUrl
-            Health = $health
-            Log = $log
-        } | Format-List
+        $installed = Install-DesktopApp
+        Write-Host "Installed: $installed"
+        Write-Host "Opens: $publicUrl"
     }
     'Open' {
-        # The installed user-facing shortcut opens the permanent cloud room.
-        # Start/Run remain explicit development-adapter actions only.
-        if (Test-Path -LiteralPath $edgeApp) {
-            Start-Process -FilePath $edgeApp -ArgumentList "--app=$publicUrl"
-        } else {
-            # Keep the link usable on a development machine without Edge.
-            Start-Process $publicUrl
+        $installed = Install-DesktopApp
+        Start-Process -FilePath $installed
+    }
+    'Status' {
+        $edgeApp = Find-Edge
+        $legacyTask = Get-ScheduledTask -TaskName $legacyTaskName -ErrorAction SilentlyContinue
+        $health = try {
+            Invoke-RestMethod -Uri ($publicUrl + 'health') -Headers @{
+                'User-Agent' = 'Mozilla/5.0 LiveTranslatorDesktop'
+            } -TimeoutSec 10
+        } catch {
+            $null
         }
+        [pscustomobject]@{
+            Installed = Test-Path -LiteralPath $shortcutPath
+            Shortcut = $shortcutPath
+            Target = $edgeApp
+            Arguments = "--app=$publicUrl"
+            PublicHealth = $health
+            LegacyLocalTask = if ($legacyTask) { [string]$legacyTask.State } else { 'Absent' }
+        } | Format-List
     }
     'Uninstall' {
-        Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
-        Write-Host "Removed $taskName. Logs remain at $log"
+        Remove-LegacyLocalHost
+        Remove-Item -LiteralPath $shortcutPath -Force -ErrorAction SilentlyContinue
+        Write-Host "Removed: $shortcutPath"
     }
 }
