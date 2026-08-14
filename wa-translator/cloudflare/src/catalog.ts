@@ -102,7 +102,7 @@ const locales: LocaleProfile[] = [
   ...document.languages.map(language => profile(
     language.default_locale, language,
     `${language.display_name} (${language.region})`,
-    `${language.native_name} (${language.region})`,
+    language.native_name,
     language.region, language.script, language.rtl,
   )),
   ...document.regional_locales.map(regional => {

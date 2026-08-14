@@ -28,7 +28,7 @@ describe("public capability catalog", () => {
       language: "jv", asr_code: "jw", mt_code: "jv",
     });
     expect(catalog.locales.find((entry: any) => entry.id === "km-KH")).toMatchObject({
-      language: "km", native_name: "ខ្មែរ (Cambodia)",
+      language: "km", native_name: "ខ្មែរ",
       capabilities: { asr: { available: true, tier: "preview" } },
     });
     expect(catalog.locales.find((entry: any) => entry.id === "ast-ES")).toMatchObject({

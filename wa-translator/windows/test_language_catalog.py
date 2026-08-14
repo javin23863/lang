@@ -46,7 +46,7 @@ class LanguageCatalogTests(unittest.TestCase):
 
         khmer = language_catalog.locale_profile("km-KH")
         self.assertEqual(khmer["language"], "km")
-        self.assertEqual(khmer["native_name"], "ខ្មែរ (Cambodia)")
+        self.assertEqual(khmer["native_name"], "ខ្មែរ")
         self.assertEqual(khmer["capabilities"]["asr"]["tier"], "preview")
         self.assertTrue(language_catalog.is_joinable_locale("km-KH"))
 

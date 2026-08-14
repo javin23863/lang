@@ -381,9 +381,9 @@ async def check_role_picker(tab, check):
           f"role picker: 360x640 has no horizontal or dialog scroll trap (got {picker})")
     check(picker["labels"] == {
         "esMX": "Español (México) — Spanish (Mexico)",
-        "jaJP": "日本語 (Japan) — Japanese (Japan)",
-        "arSA": "العربية (Saudi Arabia) — Arabic (Saudi Arabia)",
-        "kmKH": "ខ្មែរ (Cambodia) — Khmer (Cambodia)",
+        "jaJP": "日本語 — Japanese (Japan)",
+        "arSA": "العربية — Arabic (Saudi Arabia)",
+        "kmKH": "ខ្មែរ — Khmer (Cambodia)",
     }, f"role picker: catalog labels are native-name first (got {picker['labels']})")
     check(picker["optionCount"] == 106 and picker["groups"] == ["Tested", "Preview"]
           and not picker["prose"],

@@ -100,7 +100,7 @@ def _build_locales() -> tuple[dict[str, Any], ...]:
             locale_id=language["default_locale"],
             language=language,
             display_name=f"{language['display_name']} ({language['region']})",
-            native_name=f"{language['native_name']} ({language['region']})",
+            native_name=language["native_name"],
             region=language["region"],
             script=language["script"],
             rtl=language["rtl"],
