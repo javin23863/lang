@@ -18,6 +18,7 @@ import json
 import os
 import sys
 import time
+import urllib.request
 import wave
 
 import numpy as np
@@ -29,9 +30,18 @@ from translation_server import DEFAULT_PORT
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIXTURES = os.path.join(HERE, "..", "test-audio")
-URL = os.environ.get("ROOM_WS", f"ws://localhost:{DEFAULT_PORT}/ws")
+URL = os.environ.get("ROOM_WS")
 SAMPLE_RATE = 16000
 FRAME = 1600  # 100ms
+
+
+def create_room_ws_url():
+    req = urllib.request.Request(
+        f"http://localhost:{DEFAULT_PORT}/api/rooms", method="POST", data=b"",
+        headers={"Origin": f"http://localhost:{DEFAULT_PORT}"})
+    with urllib.request.urlopen(req, timeout=5) as response:
+        path = json.load(response)["path"]
+    return f"ws://localhost:{DEFAULT_PORT}/ws/{path.split('/')[-1]}"
 
 
 def load_wav(path):
@@ -299,6 +309,8 @@ async def check_oversized_frames_are_refused():
 
 
 async def main():
+    global URL
+    URL = URL or create_room_ws_url()
     print("=== abuse checks ===")
     if not await check_oversized_frames_are_refused():
         print("guard checks failed — not reporting latency for this run")

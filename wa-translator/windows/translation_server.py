@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-translation_server.py — bilingual video room with live captions.
+translation_server.py — multilingual video room with live captions.
 
 Both people open the same link in a browser. Camera and call audio go
 peer-to-peer over WebRTC (this server only relays the signalling); a second,
 16kHz mono copy of each microphone comes here over the WebSocket, where it is
-transcribed (faster-whisper large-v3-turbo) and translated (CTranslate2
-OPUS-MT), then pushed back to the room as captions.
+transcribed (faster-whisper large-v3-turbo) and translated by the revision-
+pinned M2M100 CTranslate2 adapter, then pushed back to the room as captions.
 
 Captions are emitted repeatedly per utterance: a partial every PARTIAL_EVERY_S
 while you are still speaking, and a final once you stop. Every caption carries
@@ -14,26 +14,32 @@ the speaker's id — each client decides for itself which bubbles are its own.
 Handing out a server-side "me" label, as this file used to, showed both people
 their own name on every line.
 
-All ASR and MT run on this machine. No paid APIs.
+When an audited local cache is explicitly enabled, ASR and MT run on this
+machine. Normal Windows startup is UI/protocol-only; the supported live model
+lane is the deployed Modal L4.
 """
 
 import os
 import sys
 import json
+import secrets
 import time
 import asyncio
 import threading
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mt_ct2
+import tts_local
+import language_catalog
 from endpointer import Endpointer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -70,8 +76,45 @@ WS_MAX_SIZE = 65536
 # would starve the conversation the room exists for.
 MAX_PARTICIPANTS = 4
 PRE_JOIN_TIMEOUT_S = 10    # a socket that opens and says nothing is not a guest
+MAX_TTS_CHARS = 300        # a final caption, not an arbitrary audiobook request
+MAX_TTS_BODY_BYTES = 2048  # reject before buffering a public request body
+ROOM_TTL_S = 24 * 60 * 60  # an invite survives a restart-free day, then expires
+MAX_ROOMS = 64             # ponytail: one-host ceiling; add persistent storage when needed
+
+# The desktop adapter shares the production catalog, but it intentionally does
+# not substitute its older local voices for an explicitly selected Kokoro voice
+# profile.  Until this adapter has the exact pinned Kokoro runtime, spoken
+# translation is captions-only here rather than silently using a different
+# synthetic voice.
+CATALOG = language_catalog.public_catalog()
+CATALOG_REVISION = CATALOG["revision"]
+LOCAL_TTS_PROFILE_IDS: frozenset[str] = frozenset()
+# Normal Windows startup is deliberately lightweight. The local server can read
+# an audited pre-provisioned cache only when this explicit development switch is
+# set; it never downloads or converts the production model lane.
+LOCAL_MODEL_LOADING_ENABLED = os.environ.get("LANG_ROOM_LOCAL_MODEL_LOAD") == "1"
+LOCAL_WHISPER_MODEL_PATH = os.environ.get("LANG_ROOM_WHISPER_MODEL_PATH", "")
+
+
+def local_model_load_preflight(
+    model_loading_enabled: bool | None = None, *, whisper_model_path: str | None = None,
+) -> tuple[bool, str]:
+    """Refuse any local path that would make faster-whisper download a model."""
+    enabled = (LOCAL_MODEL_LOADING_ENABLED if model_loading_enabled is None
+               else model_loading_enabled)
+    if not enabled:
+        return False, (
+            "This local adapter does not load production ASR or M2M100 models by default. "
+            "Use the deployed cloud room for live captions.")
+    candidate = whisper_model_path if whisper_model_path is not None else LOCAL_WHISPER_MODEL_PATH
+    if not candidate or not Path(candidate).is_dir():
+        return False, (
+            "Local model mode requires LANG_ROOM_WHISPER_MODEL_PATH to name an "
+            "already provisioned faster-whisper directory; downloads are disabled.")
+    return True, ""
 
 app = FastAPI(title="Live Translator Room")
+_tts_job: asyncio.Task | None = None  # one CPU job; callers fail fast, never pile up
 
 
 # ── Participants ──────────────────────────────────────────────────────
@@ -80,18 +123,34 @@ app = FastAPI(title="Live Translator Room")
 class Participant:
     id: int
     ws: WebSocket
+    room: str = ""
+    locale: str = "en-US"
     lang: str = "en"
     name: str = ""
+    voice_profile_id: str | None = None  # explicit profile; never inferred
     ep: Endpointer = field(default_factory=Endpointer)
     seq: int = 0                  # utterance counter
     onset: float = 0.0            # wall clock when the current utterance began
     last_partial: float = 0.0
+    tts_pending: bool = False
+    tts_token: str = field(default_factory=lambda: secrets.token_urlsafe(24))
 
     def public(self):
-        return {"id": self.id, "lang": self.lang, "name": self.name}
+        selected = language_catalog.voice_profile(self.voice_profile_id, self.locale)
+        return {
+            "id": self.id, "locale": self.locale, "lang": self.lang,
+            "name": self.name, "voice_profile": self.voice_profile_id,
+            "voice_style": selected["style"] if selected else None,
+        }
 
 
 participants: dict[int, Participant] = {}
+rooms: dict[str, float] = {}  # room id -> expiry; deliberately memory-only
+# Host controls are intentionally separate from participant invitations. They
+# stay only in this local process; the permanent Worker signs an equivalent
+# room-bound bearer with its existing HMAC key.
+host_controls: dict[str, str] = {}  # control bearer -> room id
+closed_rooms: dict[str, float] = {}  # room id -> original expiry tombstone
 _next_id = 1
 _id_lock = threading.Lock()
 
@@ -103,10 +162,133 @@ def _new_id() -> int:
         return pid
 
 
+def _prune_rooms(now: float | None = None):
+    now = now or time.time()
+    active = {p.room for p in participants.values()}
+    for room_id, expiry in list(rooms.items()):
+        if expiry <= now and room_id not in active:
+            rooms.pop(room_id, None)
+            closed_rooms.pop(room_id, None)
+            for control, controlled_room in list(host_controls.items()):
+                if controlled_room == room_id:
+                    host_controls.pop(control, None)
+
+
+def create_room() -> str:
+    """Create a 144-bit invitation id. Possession of the URL is room access."""
+    _prune_rooms()
+    if len(rooms) >= MAX_ROOMS:
+        raise RuntimeError("room capacity reached")
+    while True:
+        room_id = secrets.token_urlsafe(18)
+        if room_id not in rooms:
+            rooms[room_id] = time.time() + ROOM_TTL_S
+            return room_id
+
+
+def room_is_live(room_id: str) -> bool:
+    expiry = rooms.get(room_id)
+    if room_id in closed_rooms or expiry is None or expiry <= time.time():
+        _prune_rooms()
+        return False
+    return True
+
+
+def room_is_closed(room_id: str) -> bool:
+    expiry = closed_rooms.get(room_id)
+    if expiry is None:
+        return False
+    if expiry <= time.time():
+        _prune_rooms()
+        return False
+    return True
+
+
+def create_host_control(room_id: str) -> str:
+    """Mint a local-only host bearer that never appears in the room URL."""
+    while True:
+        control = secrets.token_urlsafe(32)
+        if control not in host_controls:
+            host_controls[control] = room_id
+            return control
+
+
+def controlled_room(token: str) -> str | None:
+    """Return an unexpired live or tombstoned room for its exact host bearer."""
+    if not token or " " in token:
+        return None
+    for control, room_id in host_controls.items():
+        if secrets.compare_digest(control, token):
+            expiry = rooms.get(room_id)
+            return room_id if expiry is not None and expiry > time.time() else None
+    return None
+
+
+def request_is_same_origin(request: Request) -> bool:
+    origin = request.headers.get("origin")
+    host = request.headers.get("host")
+    forwarded = request.headers.get("x-forwarded-proto", request.url.scheme)
+    scheme = forwarded.split(",", 1)[0].strip().lower()
+    if not origin or not host or scheme not in ("http", "https"):
+        return False
+    return origin == f"{scheme}://{host}"
+
+
+def control_request_is_same_origin(request: Request) -> bool:
+    if request_is_same_origin(request):
+        return True
+    # Same-origin fetch GETs do not consistently carry Origin. Fetch Metadata
+    # is browser-set and lets the installed dashboard refresh safely without
+    # accepting a cross-site control request.
+    return (request.method == "GET"
+            and request.headers.get("sec-fetch-site") == "same-origin"
+            and request.headers.get("sec-fetch-mode") in ("cors", "same-origin"))
+
+
+def control_room_from_request(request: Request) -> str | None:
+    if not control_request_is_same_origin(request):
+        return None
+    authorization = request.headers.get("authorization", "")
+    token = authorization.removeprefix("Bearer ") if authorization.startswith("Bearer ") else ""
+    return controlled_room(token)
+
+
+def room_participants(room_id: str) -> list[Participant]:
+    return [p for p in participants.values() if p.room == room_id]
+
+
 def target_langs(speaker: Participant) -> list[str]:
     """Languages the *other* people in the room read."""
     return sorted({p.lang for p in participants.values()
-                   if p.id != speaker.id and p.lang != speaker.lang})
+                   if p.room == speaker.room and p.id != speaker.id
+                   and p.lang != speaker.lang})
+
+
+def declared_locale(data: dict) -> tuple[dict, str | None] | None:
+    """Validate the browser's locale/profile pair without a base-code fallback."""
+    profile = language_catalog.locale_profile(data.get("locale"))
+    requested_voice = data.get("voice_profile")
+    if not profile or not profile["capabilities"]["asr"]["available"]:
+        return None
+    if requested_voice is not None:
+        selected = language_catalog.voice_profile(requested_voice, profile["id"])
+        if not selected or requested_voice not in LOCAL_TTS_PROFILE_IDS:
+            return None
+    # A null profile is valid only because this local adapter exposes an
+    # explicit captions-only runtime overlay.  Production Worker requires a
+    # matching profile whenever its catalog lists one.
+    return profile, requested_voice
+
+
+def apply_declared_locale(participant: Participant, data: dict) -> bool:
+    declared = declared_locale(data)
+    if declared is None:
+        return False
+    profile, requested_voice = declared
+    participant.locale = profile["id"]
+    participant.lang = profile["language"]
+    participant.voice_profile_id = requested_voice
+    return True
 
 
 # ── Job queue: finals always run, partials are latest-wins ────────────
@@ -178,6 +360,10 @@ jobs = JobQueue()
 
 def ingest(p: Participant, pcm: np.ndarray):
     """Feed one ~100ms frame; enqueue partial/final work when it is due."""
+    # Do not accumulate audio into an unserved local queue when the lightweight
+    # adapter intentionally has no pre-provisioned caption runtime.
+    if not _asr_ready.is_set():
+        return
     speech, silent_ms = p.ep.feed(pcm)
     now = time.time()
 
@@ -215,13 +401,20 @@ def ingest(p: Participant, pcm: np.ndarray):
 
 _asr = None
 _asr_ready = threading.Event()
+_model_load_error: str | None = None
 
 
 def _load_models():
-    global _asr
-    from asr_whisper import WhisperASR
-    _asr = WhisperASR()
-    mt_ct2.preload()
+    global _asr, _model_load_error
+    try:
+        from asr_whisper import WhisperASR
+        whisper_model = LOCAL_WHISPER_MODEL_PATH or None
+        _asr = WhisperASR(model=whisper_model or "large-v3-turbo")
+        mt_ct2.preload()
+    except Exception as error:  # local development remains usable without models
+        _model_load_error = type(error).__name__
+        print(f"[server] local model runtime unavailable: {_model_load_error}")
+        return
     _asr_ready.set()
     print("[server] models ready")
 
@@ -249,21 +442,23 @@ def _handle(job: Job):
         # would repaint a bubble the final has already replaced.
         return
 
-    text = _asr.transcribe(job.audio, job.lang, partial=not job.final)
+    if _asr is None:
+        return
+    asr_lang = language_catalog.asr_language(job.lang)
+    if not asr_lang:
+        return
+    text = _asr.transcribe(job.audio, asr_lang, partial=not job.final)
 
     translations = {}
-    if text:
-        for tgt in job.targets:
-            out, reason = mt_ct2.translate(
-                text, f"{job.lang}-{tgt}", stream_id=str(job.pid), final=job.final)
-            if out:
-                translations[tgt] = out
-            elif job.final:
-                # A suppressed final (loop, duplicate) must not leave the
-                # original standing next to a stale translation.
-                print(f"[mt] suppressed {job.lang}-{tgt}: {reason}")
+    if text and job.targets:
+        translations, reason = mt_ct2.translate_many(
+            text, job.lang, job.targets, stream_id=str(job.pid), final=job.final)
+        if job.final and not translations:
+            # A suppressed final (loop, duplicate) must not leave the original
+            # standing next to a stale translation.
+            print(f"[mt] suppressed {job.lang}->{','.join(job.targets)}: {reason}")
 
-    broadcast_from_thread(caption_message(job, text, translations))
+    broadcast_from_thread(caption_message(job, text, translations), speaker.room)
 
 
 def caption_message(job: Job, text: str, translations: dict) -> dict:
@@ -287,10 +482,10 @@ def caption_message(job: Job, text: str, translations: dict) -> dict:
 _server_loop: asyncio.AbstractEventLoop | None = None
 
 
-async def broadcast(message: dict, exclude: int | None = None):
+async def broadcast(message: dict, room_id: str, exclude: int | None = None):
     msg = json.dumps(message)
     for p in list(participants.values()):
-        if p.id == exclude:
+        if p.room != room_id or p.id == exclude:
             continue
         try:
             await p.ws.send_text(msg)
@@ -298,16 +493,16 @@ async def broadcast(message: dict, exclude: int | None = None):
             participants.pop(p.id, None)
 
 
-def broadcast_from_thread(message: dict):
+def broadcast_from_thread(message: dict, room_id: str):
     if _server_loop is not None:
-        asyncio.run_coroutine_threadsafe(broadcast(message), _server_loop)
+        asyncio.run_coroutine_threadsafe(broadcast(message, room_id), _server_loop)
     else:
         print("[server] WARNING: no event loop for broadcast")
 
 
-async def send_to(pid: int, message: dict):
+async def send_to(pid: int, message: dict, room_id: str):
     p = participants.get(pid)
-    if p is None:
+    if p is None or p.room != room_id:
         return
     try:
         await p.ws.send_text(json.dumps(message))
@@ -322,8 +517,175 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 @app.get("/")
 async def index():
+    with open(os.path.join(STATIC, "index.html"), encoding="utf-8") as f:
+        return HTMLResponse(f.read(), headers={
+            "Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
+        })
+
+
+@app.get("/manifest.webmanifest")
+async def manifest():
+    return FileResponse(os.path.join(STATIC, "manifest.webmanifest"),
+                        media_type="application/manifest+json")
+
+
+@app.get("/icon.svg")
+async def app_icon():
+    return FileResponse(os.path.join(STATIC, "icon.svg"), media_type="image/svg+xml")
+
+
+@app.get("/sw.js")
+async def service_worker():
+    return FileResponse(os.path.join(STATIC, "sw.js"),
+                        media_type="text/javascript", headers={
+                            "Cache-Control": "no-store",
+                            "Service-Worker-Allowed": "/",
+                        })
+
+
+@app.post("/rooms")
+async def open_room(request: Request):
+    if not request_is_same_origin(request):
+        return HTMLResponse("Forbidden", status_code=403)
+    try:
+        room_id = create_room()
+    except RuntimeError:
+        return HTMLResponse("No room is available right now.", status_code=503)
+    return RedirectResponse(f"/room/{room_id}", status_code=303)
+
+
+@app.post("/api/rooms")
+async def new_room(request: Request):
+    if not request_is_same_origin(request):
+        return JSONResponse({"error": "forbidden"}, status_code=403)
+    try:
+        room_id = create_room()
+    except RuntimeError:
+        return JSONResponse({"error": "room capacity reached"}, status_code=503)
+    return JSONResponse({
+        "path": f"/room/{room_id}",
+        "host_control": create_host_control(room_id),
+        "expires_at": int(rooms[room_id]),
+    }, status_code=201, headers={
+        "Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
+    })
+
+
+@app.get("/room/{room_id}")
+async def room_page(room_id: str):
+    if not room_is_live(room_id):
+        return HTMLResponse("This private room does not exist or has expired.",
+                            status_code=404)
     with open(os.path.join(STATIC, "room.html"), encoding="utf-8") as f:
-        return HTMLResponse(f.read())
+        return HTMLResponse(f.read(), headers={
+            "Cache-Control": "no-store",
+            "Referrer-Policy": "no-referrer",
+        })
+
+
+@app.get("/api/room")
+async def room_preflight(request: Request):
+    authorization = request.headers.get("authorization", "")
+    room_id = authorization.removeprefix("Bearer ") if authorization.startswith("Bearer ") else ""
+    if room_is_closed(room_id):
+        return Response(status_code=410, headers={"Cache-Control": "no-store",
+                                                   "Referrer-Policy": "no-referrer"})
+    if not room_id or " " in room_id or not room_is_live(room_id):
+        return Response(status_code=401, headers={"Cache-Control": "no-store",
+                                                   "Referrer-Policy": "no-referrer"})
+    return Response(status_code=204, headers={"Cache-Control": "no-store",
+                                               "Referrer-Policy": "no-referrer"})
+
+
+@app.get("/api/capabilities")
+async def capabilities():
+    """Stable same-origin catalog with an honest local-runtime overlay."""
+    payload = language_catalog.public_catalog()
+    payload["runtime"] = local_runtime_capabilities()
+    return JSONResponse(payload, headers={
+        "Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
+    })
+
+
+def local_runtime_capabilities(model_loading_enabled: bool | None = None) -> dict:
+    """Describe this adapter separately from the shared production catalog."""
+    enabled = (LOCAL_MODEL_LOADING_ENABLED if model_loading_enabled is None
+               else model_loading_enabled)
+    captions_available = bool(enabled and _asr_ready.is_set())
+    can_load, preflight_reason = local_model_load_preflight(enabled)
+    if captions_available:
+        caption_reason = ""
+    elif not can_load:
+        caption_reason = preflight_reason
+    elif enabled:
+        caption_reason = "The local caption runtime has not become ready; check its local log."
+    else:
+        caption_reason = (
+            "This local adapter does not load production ASR or M2M100 models by default. "
+            "Use the deployed cloud room for live captions.")
+    return {
+        "captions_available": captions_available,
+        "captions_unavailable_reason": caption_reason,
+        "model_loading_enabled": enabled,
+        "voice_profile_ids": sorted(LOCAL_TTS_PROFILE_IDS),
+        "tts_unavailable_reason": (
+            "This local adapter has no exact pinned Kokoro voice runtime; it is captions-only."
+        ),
+    }
+
+
+def host_room_state(room_id: str) -> dict:
+    count = 0 if room_is_closed(room_id) else len(room_participants(room_id))
+    return {
+        "state": "closed" if room_is_closed(room_id) else ("open" if count else "ready"),
+        "participant_count": count,
+        "participant_limit": MAX_PARTICIPANTS,
+    }
+
+
+async def revoke_room(room_id: str) -> None:
+    """Terminally disconnect a room without deleting its expiry tombstone."""
+    if room_is_closed(room_id):
+        return
+    expiry = rooms.get(room_id)
+    if expiry is None or expiry <= time.time():
+        return
+    closed_rooms[room_id] = expiry
+    closing = room_participants(room_id)
+    # Remove first: close callbacks cannot fan stale presence to a peer after
+    # the terminal message, and queued compute is cancelled before the socket.
+    for participant in closing:
+        participants.pop(participant.id, None)
+        jobs.drop_speaker(participant.id)
+    for participant in closing:
+        try:
+            await participant.ws.send_text(json.dumps({"type": "room_closed"}))
+            await participant.ws.close(code=4001, reason="room closed")
+        except Exception:
+            pass
+
+
+@app.get("/api/room-control")
+async def room_control_status(request: Request):
+    room_id = control_room_from_request(request)
+    if room_id is None:
+        return JSONResponse({"error": "forbidden"}, status_code=403,
+                            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+    return JSONResponse(host_room_state(room_id), headers={
+        "Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
+    })
+
+
+@app.post("/api/room-control/close")
+async def close_room(request: Request):
+    room_id = control_room_from_request(request)
+    if room_id is None:
+        return JSONResponse({"error": "forbidden"}, status_code=403,
+                            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+    await revoke_room(room_id)
+    return JSONResponse(host_room_state(room_id), headers={
+        "Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
+    })
 
 
 @app.get("/test")
@@ -337,18 +699,87 @@ async def test_page():
 async def health():
     return {
         "status": "ok",
-        "participants": [p.public() for p in participants.values()],
+        # Health is public for the launcher; never enumerate private callers.
+        "participants": len(participants),
         "models_ready": _asr_ready.is_set(),
         "asr_device": getattr(_asr, "device", None),
         "queue": len(jobs),
         "dropped_partials": jobs.dropped_partials,
+        "tts": tts_local.status(),
     }
 
 
-@app.websocket("/ws")
-async def ws_endpoint(ws: WebSocket):
+@app.post("/tts")
+async def tts_audio(request: Request):
+    global _tts_job
+    token = request.headers.get("x-tts-token")
+    p = next((guest for guest in participants.values()
+              if secrets.compare_digest(guest.tts_token, token or "")), None)
+    if p is None:
+        return JSONResponse({"error": "not a joined room participant"}, status_code=403)
+
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > MAX_TTS_BODY_BYTES:
+                return JSONResponse({"error": "request body is too large"}, status_code=413)
+        except ValueError:
+            return JSONResponse({"error": "invalid content length"}, status_code=400)
+
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > MAX_TTS_BODY_BYTES:
+            return JSONResponse({"error": "request body is too large"}, status_code=413)
+        body.extend(chunk)
+    try:
+        data = json.loads(body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JSONResponse({"error": "invalid JSON"}, status_code=400)
+    if not isinstance(data, dict):
+        return JSONResponse({"error": "invalid spoken translation request"}, status_code=422)
+    text, locale, voice_profile_id = data.get("text"), data.get("locale"), data.get("voice_profile")
+    selected_voice = language_catalog.voice_profile(voice_profile_id, locale)
+    if not (isinstance(text, str) and 0 < len(text) <= MAX_TTS_CHARS
+            and locale == p.locale and selected_voice is not None
+            and voice_profile_id == p.voice_profile_id
+            and voice_profile_id in LOCAL_TTS_PROFILE_IDS):
+        return JSONResponse({"error": "invalid spoken translation request"}, status_code=422)
+    if p.tts_pending:
+        return JSONResponse({"error": "spoken translation is already pending"}, status_code=429)
+    if _tts_job is not None and not _tts_job.done():
+        return JSONResponse({"error": "spoken translation is busy"}, status_code=429)
+
+    p.tts_pending = True
+    async def generate():
+        try:
+            return await asyncio.to_thread(tts_local.synthesize, text, p.lang)
+        finally:
+            p.tts_pending = False
+
+    _tts_job = asyncio.create_task(generate())
+    try:
+        # A running thread cannot be cancelled safely. The HTTP request gets a
+        # bounded answer, but shield keeps ownership of the one global job until
+        # it actually finishes; later callers get 429 instead of piling up.
+        audio = await asyncio.wait_for(asyncio.shield(_tts_job), timeout=60)
+    except asyncio.TimeoutError:
+        print(f"[tts] {p.lang} timed out; the bounded worker is still finishing")
+        return JSONResponse({"error": "spoken translation timed out"}, status_code=503)
+    except Exception as exc:
+        print(f"[tts] {p.lang} failed: {type(exc).__name__}: {exc}")
+        return JSONResponse({"error": "spoken translation is unavailable"}, status_code=503)
+    return Response(audio, media_type="audio/wav",
+                    headers={"Cache-Control": "no-store"})
+
+
+@app.websocket("/ws/{room_id}")
+async def ws_endpoint(ws: WebSocket, room_id: str):
     await ws.accept()
-    p = Participant(id=_new_id(), ws=ws)
+    if not room_is_live(room_id):
+        await ws.close(code=4001 if room_is_closed(room_id) else 1008,
+                       reason="room closed" if room_is_closed(room_id) else "room unavailable")
+        return
+    p = Participant(id=_new_id(), ws=ws, room=room_id)
     # A socket occupies a slot only once it has joined. Counting connections
     # instead let four sockets that never send `join` — trivial to open against
     # a public link — hold the room shut against everyone real. Nothing before
@@ -380,11 +811,17 @@ async def ws_endpoint(ws: WebSocket):
                 data = json.loads(msg["text"])
                 if data.get("type") != "join":
                     continue
+                if not apply_declared_locale(p, data):
+                    await ws.close(code=1008, reason="unknown locale or voice profile")
+                    return
                 # Check and insert with no await between them: the event loop is
                 # single-threaded, so this pair is atomic and the limit cannot be
                 # raced past by simultaneous joiners.
-                if len(participants) >= MAX_PARTICIPANTS:
-                    print(f"[server] refusing join: room has {len(participants)}")
+                in_room = room_participants(room_id)
+                if (len(participants) >= MAX_PARTICIPANTS
+                        or len(in_room) >= MAX_PARTICIPANTS):
+                    print(f"[server] refusing join: room has {len(in_room)}; "
+                          f"host has {len(participants)}")
                     await ws.send_text(json.dumps(
                         {"type": "room_full", "limit": MAX_PARTICIPANTS}))
                     await ws.close(code=1013)  # try again later
@@ -425,7 +862,7 @@ async def ws_endpoint(ws: WebSocket):
         if joined:
             participants.pop(p.id, None)
             jobs.drop_speaker(p.id)
-            await broadcast({"type": "peer_leave", "id": p.id})
+            await broadcast({"type": "peer_leave", "id": p.id}, p.room)
             print(f"[server] participant {p.id} disconnected")
 
 
@@ -433,19 +870,36 @@ async def _on_control(p: Participant, data: dict):
     kind = data.get("type")
 
     if kind == "join":
-        p.lang = data.get("lang", "en")
-        p.name = data.get("name", f"Speaker {p.id}")
+        if not apply_declared_locale(p, data):
+            await p.ws.close(code=1008, reason="unknown locale or voice profile")
+            return
+        name = data.get("name")
+        p.name = name[:40] if isinstance(name, str) and name.strip() else f"Speaker {p.id}"
         await send_to(p.id, {
             "type": "welcome",
             "id": p.id,
-            "langs": list(mt_ct2.ROOM_LANGS),
-            "peers": [q.public() for q in participants.values() if q.id != p.id],
-        })
-        await broadcast({"type": "peer_join", **p.public()}, exclude=p.id)
+            "tts_token": p.tts_token,
+            "tts_provider": "local",
+            "catalog_revision": CATALOG_REVISION,
+            "peers": [q.public() for q in room_participants(p.room) if q.id != p.id],
+        }, p.room)
+        await broadcast({"type": "peer_join", **p.public()}, p.room, exclude=p.id)
 
-    elif kind == "set_lang":
-        p.lang = data.get("lang", p.lang)
-        await broadcast({"type": "peer_update", **p.public()})
+    elif kind == "set_locale":
+        if not apply_declared_locale(p, data):
+            await p.ws.close(code=1008, reason="unknown locale or voice profile")
+            return
+        await broadcast({"type": "peer_update", **p.public()}, p.room)
+
+    elif kind == "set_voice_profile":
+        requested = data.get("voice_profile")
+        # A captions-only local adapter accepts only its already selected null
+        # profile.  Any attempt to activate an unavailable synthetic voice is a
+        # policy violation, not a fallback to a different voice.
+        if requested is not None or p.voice_profile_id is not None:
+            await p.ws.close(code=1008, reason="voice profile unavailable")
+            return
+        await broadcast({"type": "peer_update", **p.public()}, p.room)
 
     elif kind == "signal":
         # WebRTC offer/answer/ICE, relayed verbatim. The server neither parses
@@ -458,9 +912,12 @@ async def _on_control(p: Participant, data: dict):
         kindname = ((payload.get("description") or {}).get("type")
                     if payload.get("description") else
                     "ice" if payload.get("candidate") else "?")
+        target = participants.get(to)
+        same_room = target is not None and target.room == p.room
         print(f"[signal] {p.id} -> {to}: {kindname}"
-              + ("" if to in participants else "  (NO SUCH PARTICIPANT)"))
-        await send_to(to, {"type": "signal", "from": p.id, "data": payload})
+              + ("" if same_room else "  (NO SUCH ROOM PARTICIPANT)"))
+        if same_room:
+            await send_to(to, {"type": "signal", "from": p.id, "data": payload}, p.room)
 
     elif kind == "speech_end":
         # Explicit flush (used by the offline probe); normal calls rely on VAD.
@@ -468,6 +925,7 @@ async def _on_control(p: Participant, data: dict):
             audio = p.ep.take()
             jobs.put(Job(p.id, audio, p.lang, target_langs(p), p.seq, True, p.onset))
             p.onset = 0.0
+            p.last_partial = 0.0
 
 
 # ── Startup ───────────────────────────────────────────────────────────
@@ -476,12 +934,26 @@ async def _on_control(p: Participant, data: dict):
 async def startup():
     global _server_loop
     _server_loop = asyncio.get_running_loop()
+    can_load, reason = local_model_load_preflight()
+    if not can_load:
+        # Browser/protocol smoke tests and ordinary Windows starts share this
+        # safe default. The permanent desktop shortcut opens the cloud room.
+        print(f"[server] local caption models disabled: {reason}")
+        return
     threading.Thread(target=_load_models, daemon=True).start()
     threading.Thread(target=_worker, daemon=True).start()
-    print(f"[server] listening on http://0.0.0.0:{DEFAULT_PORT} (models loading in background)")
+    host = getattr(app.state, "listen_host", "0.0.0.0")
+    port = getattr(app.state, "listen_port", DEFAULT_PORT)
+    print(startup_message(host, port))
+
+
+def startup_message(host: str, port: int) -> str:
+    return f"[server] listening on http://{host}:{port} (models loading in background)"
 
 
 def run_server(host="0.0.0.0", port=DEFAULT_PORT):
+    app.state.listen_host = host
+    app.state.listen_port = port
     uvicorn.run(app, host=host, port=port, log_level="warning",
                 ws_max_size=WS_MAX_SIZE)
 

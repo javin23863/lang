@@ -6,17 +6,21 @@ always passed explicitly (never auto-detected): detection on a 300ms partial is
 a coin flip, and a wrong guess mid-utterance produces gibberish that the caption
 filter cannot recover from.
 
-    asr = WhisperASR()
+    # `LANG_ROOM_WHISPER_MODEL_PATH` must name an already provisioned model
+    # directory; this adapter never downloads a model by identifier.
+    asr = WhisperASR(model=os.environ["LANG_ROOM_WHISPER_MODEL_PATH"])
     text = asr.transcribe(pcm_float32_16k, lang="es", partial=True)
 
-Replaces moonshine_asr.py: Moonshine only ships a non-streaming BASE model for
-Spanish, and this room is bilingual by definition.
+Replaces moonshine_asr.py: Moonshine's historical local profile was too narrow
+for this multilingual room. Production ASR runs on Modal with an explicit
+release-tested base Language.
 """
 
 import os
 import sys
 import threading
 import time
+from pathlib import Path
 
 import numpy as np
 
@@ -35,6 +39,19 @@ SAMPLE_RATE = 16000
 # What does work: the Silero gate below, plus never asking for a decode under
 # MIN_PARTIAL_S seconds of speech (see translation_server).
 MIN_DECODE_S = 0.1
+
+
+def resolve_model_reference(
+    model: str, *, model_path: str | None = None,
+) -> str:
+    """Require a provisioned ASR directory; never let Whisper download by name."""
+    candidate = model_path if model_path is not None else (
+        model if Path(model).is_dir() else os.environ.get("LANG_ROOM_WHISPER_MODEL_PATH", ""))
+    if not candidate or not Path(candidate).is_dir():
+        raise RuntimeError(
+            "ASR requires a pre-provisioned LANG_ROOM_WHISPER_MODEL_PATH; "
+            "model downloads are disabled")
+    return str(Path(candidate))
 
 
 def _pick_device():
@@ -57,7 +74,8 @@ class WhisperASR:
         self.device = device
         self.compute_type = compute_type
         t0 = time.perf_counter()
-        self.model = WhisperModel(model, device=device, compute_type=compute_type)
+        self.model = WhisperModel(resolve_model_reference(model), device=device,
+                                  compute_type=compute_type)
         self._lock = threading.Lock()
         print(f"[asr] {model} loaded on {device}/{compute_type} "
               f"in {time.perf_counter() - t0:.1f}s")
@@ -98,7 +116,12 @@ class WhisperASR:
 
 def _demo():
     """Self-check: silence must transcribe to nothing, speech must not."""
-    asr = WhisperASR()
+    model_path = os.environ.get("LANG_ROOM_WHISPER_MODEL_PATH")
+    if not model_path:
+        raise SystemExit(
+            "Set LANG_ROOM_WHISPER_MODEL_PATH to a pre-provisioned faster-whisper "
+            "model directory before running this demo.")
+    asr = WhisperASR(model=model_path)
 
     silence = np.zeros(SAMPLE_RATE * 2, dtype=np.float32)
     assert asr.transcribe(silence, "en") == "", "silence produced a hallucination"

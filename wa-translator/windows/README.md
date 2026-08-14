@@ -1,141 +1,97 @@
-# Live bilingual video room (Windows host)
+# Local multilingual room adapter (Windows)
 
-Two people, one link, a browser each. Camera and call audio go peer-to-peer over
-WebRTC; a 16 kHz copy of each microphone comes to this machine, where whisper
-transcribes it and OPUS-MT translates it into the other person's language.
-Captions appear while you are still talking.
+This is the local development adapter for the same browser room used in the
+cloud beta. It shares [`../capabilities.json`](../capabilities.json): **100
+M2M100 text Languages**, **84 free microphone-language candidates**, and **106
+selectable regional Locale profiles**. Arabic, German, English, Spanish,
+French and Japanese are the exercised `Tested` tier; the remaining routes are
+marked `Preview`. A Locale maps to one base Language; every Spanish regional
+Locale maps to `es` and makes no dialect-specific ASR/MT claim.
 
-Everything runs locally. No paid APIs.
+The local adapter validates the same Locale and multi-target room protocol, but
+deliberately advertises no server TTS profiles. The shared client can still use
+an exact-language voice installed on the browser/device; it never substitutes
+a neighboring language. Production also offers thirteen pinned included
+profiles for English, Spanish, French, Hindi, Italian, and Brazilian Portuguese
+on the single Modal L4.
 
 ## Run it
 
 ```powershell
 cd wa-translator\windows
-..\..\.venv\Scripts\python.exe run_room.py          # prints a public https link
+..\..\.venv\Scripts\python.exe run_room.py          # private tunnel link
 ..\..\.venv\Scripts\python.exe run_room.py --local  # localhost only
 ```
 
-Both people open the link, tap **Start**, and pick the language they speak.
-`<link>/test` is a mic and camera diagnostic if something looks wrong.
+The server creates a private bearer room. Open the link, use Share/WhatsApp if
+desired, choose your speaking Locale, and join. A room accepts at most four
+people; one transcription fans out once to the unique listener base Languages
+(maximum three targets). The local URL and quick tunnel are development tools;
+the permanent public dashboard and desktop shortcut target the Cloudflare
+origin, not this process.
 
-First run downloads ~2 GB of models (whisper large-v3-turbo, two OPUS-MT
-directions) into `~/.cache`. After that it works offline.
-
-Setup, once:
-
-```powershell
-cd <repo>
-uv venv --python 3.11 .venv
-uv pip install --python .venv\Scripts\python.exe -r wa-translator\windows\requirements.txt
-uv pip install --python .venv\Scripts\python.exe torch --torch-backend cpu
-```
-
-### Port
-
-Default **8791**, from `translation_server.DEFAULT_PORT`. It is deliberately not
-8765: another application on this machine listens there, and Windows permits a
-second process to bind an already-bound port instead of refusing — so the room
-starts "successfully" and serves the other app's responses. `run_room.py`
-refuses to start if anything already answers on the port; pass `--port` to move.
+Do not start this adapter on any inherited room port/process. It is
+UI/protocol-only by default and explicitly reports that local caption compute
+is unavailable; it never downloads or converts Whisper/M2M100 on Windows. For
+an audited local read of an already provisioned cache only, set
+`LANG_ROOM_LOCAL_MODEL_LOAD=1`. That advanced path is not a production model
+receipt. Choose a unique test port for every isolated UI check.
 
 ## What runs where
 
 | File | Job |
 |---|---|
-| `run_room.py` | starts the server + a cloudflared quick tunnel, prints the link |
-| `translation_server.py` | the room: participants, WebRTC signalling relay, audio ingest, caption fan-out |
-| `endpointer.py` | Silero VAD — where an utterance starts, how much of it is speech, when it ends |
-| `asr_whisper.py` | faster-whisper `large-v3-turbo`, CUDA fp16, explicit per-speaker language |
-| `mt_ct2.py` | CTranslate2 OPUS-MT, one engine per direction, plus the caption filter |
-| `cuda_dlls.py` | puts the pip CUDA runtime on the DLL search path |
-| `static/room.html` | the room UI: video PiP, live caption bubbles, language picker |
-| `static/pcm-worklet.js` | mic → 16 kHz mono int16 on the audio thread |
-| `static/mictest.html` | the `/test` diagnostic page |
-| `probe_stream.py` | abuse guards + real-time caption latency, against a running server |
-| `browser_check.py` | two real Chrome tabs: WebRTC, and what the peer actually hears |
-| `test_room.py` | room plumbing: queue coalescing, caption shape, ingest gating |
+| `translation_server.py` | local room, WebRTC signalling, Locale validation, caption fan-out and captions-only capability response |
+| `language_catalog.py` | shared catalog adapter and fail-closed lookup/search helpers |
+| `mt_ct2.py` | revision-pinned M2M100 418M CTranslate2 adapter; source tokenized once, target-prefixed batch fanout |
+| `asr_whisper.py` | faster-whisper `large-v3-turbo`, explicit source base Language |
+| `static/index.html` | professional local host dashboard |
+| `static/room.html` | responsive room UI, compact native Locale picker with native-first labels, RTL, caption dock and voice capability state |
+| `browser_check.py` | isolated browser WebRTC/UI lifecycle check, including host dashboard, 360 px, native Locale labels and RTL assertions |
+| `test_room.py` | private links, isolation, room cap, multi-target dedupe, protocol and capability endpoint checks |
+| `test_language_catalog.py` | catalog counts, Spanish mappings, RTL, capability truth and search |
+| `test_m2m_catalog.py` | public M2M token/fanout/passthrough/bounds contract with fakes |
 
-Requires a CUDA GPU for usable latency. Without one both models fall back to CPU
-and captions will lag badly — the code runs, the experience does not.
+## Local checks
 
-## Checks
-
-Offline, no server needed:
+No model download or GPU is needed for the contract checks:
 
 ```powershell
+cd wa-translator\windows
 $py = "..\..\.venv\Scripts\python.exe"
-& $py endpointer.py            # VAD gate and endpointing
-& $py asr_whisper.py           # ASR, incl. the hallucination regression
-& $py mt_ct2.py                # both directions, loop detection
-& $py test_room.py             # room plumbing, 10 tests
-& $py ..\caption_filter_test.py   # portable caption filter, 14 tests
+& $py -m unittest -v test_language_catalog.py test_m2m_catalog.py test_multilingual_fixtures.py
+& $py test_room.py
 ```
 
-Against a running server (`run_room.py --local` in another window):
+`browser_check.py` needs a separately started isolated local server. It proves
+WebRTC, captions-only default, compact exact-profile picker behavior, native
+Locale labels, sharing, host dashboard, 360 px and RTL layout. Its simulated
+audio lifecycle is not a human-audible acceptance
+receipt and does not claim cloud TTS is locally available.
 
-```powershell
-& $py probe_stream.py          # abuse guards, then real-time latency
-& $py browser_check.py         # two real Chrome tabs: video, and what the peer hears
-```
+## Model and quality boundary
 
-Two of these earn their keep in ways the others cannot:
+The M2M100 artifacts are revision-pinned and hash-checked when a
+pre-provisioned local cache is actually used. The user-authorized production
+model download, conversion and performance work belongs on Modal's AP-routed
+L4; Windows never materializes that lane. Read
+[`../MULTILINGUAL-SOURCES.md`](../MULTILINGUAL-SOURCES.md) for the official
+coverage, license, artifact pins and quality limitations.
 
-- `probe_stream.py` is the only check that can fail on *"the captions are too
-  slow"*. It also **voids its own run** if it could not feed audio at real-time
-  speed — a drifting probe reports the app as slow when the app is fine, which
-  is exactly what it did the first time it ran.
-- `browser_check.py` is the only check that can fail on *"the other person can
-  still hear you"*. It drives two Chrome tabs with fake camera and mic (your real
-  devices are never opened) and asserts what the peer receives across Start and
-  mute, plus ICE actually reaching `connected`. The published audio track lives
-  on the peer connection and in no Python path, so every other check here passed
-  while the microphone stayed live through mute.
-
-### Measured (RTX 3080 Laptop, 8 GB)
-
-| | en → es | es → en |
-|---|---|---|
-| first live caption, after speech starts | 1.99 s | 1.66 s |
-| final caption, after the audio ends | +0.09 s | +0.12 s |
-| ASR decode, per call | ~250 ms | ~250 ms |
-| MT, per caption | ~30 ms | ~30 ms |
-
-The ~1.7–2.0 s to the first caption is mostly a deliberate wait: below ~0.8 s of
-speech whisper answers with confident filler (`"Gracias."`), so the server does
-not ask. Decode and translation are ~0.3 s of it.
-
-### Test audio
-
-`../test-audio/{en,es}.wav` are 16 kHz fixtures. They were generated once with
-Moonshine's TTS (`moonshine-voice`, `kokoro` voices) — that package is not a
-dependency of this app, so regenerate them from any 16 kHz mono recording if
-they go missing. The Spanish clip is what the hallucination regression is pinned
-to.
+The historical bilingual/OPUS-MT benchmarks and old CPU-TTS receipts remain in
+Git as past evidence only. They do not validate this multilingual M2M100
+release, its non-English pairs, or human-audible playback.
 
 ## Known limits
 
-Each of these will read as a bug if it is not stated:
-
-- **The share link changes on every restart.** Cloudflare quick tunnels are
-  random by design. A fixed address needs a Cloudflare account and a named
-  tunnel (`cloudflared tunnel login`, then `create`/`route dns` and run it
-  yourself against `http://localhost:8791`); `run_room.py --local` stays out of
-  the way if you do.
-- **No TURN server.** Video is peer-to-peer with STUN only, so a symmetric NAT
-  or CGNAT on either side kills it. The page says so and captions carry on —
-  they ride the WebSocket, not the peer connection.
-- **No password.** Anyone with the link can join, up to `MAX_PARTICIPANTS` (4);
-  joiner five is told the room is full rather than dropped. Same trust model as
-  a video-call link.
-- **Partials can be wrong before they are right.** A half-finished sentence is
-  translated from half a sentence; the final corrects it. That is the cost of
-  captions that keep up with speech.
-
-## Retired
-
-The earlier WhatsApp-call-overlay design — `translator_app.py` (tkinter host),
-`audio_capture.py` (WASAPI loopback), `overlay_window.py`, `moonshine_asr.py`,
-and the `capture/` and `overlay/` C++ skeletons — was **deleted** in this
-rewrite, not merely set aside. The host app drove server endpoints
-(`/api/host_audio`, `/api/init_mt`) that the room server no longer has, so it
-could not run. Recover from git history if that idea comes back.
+- Quick-tunnel URLs change on restart; the production Worker has the stable
+  `workers.dev` origin and its own room lifecycle.
+- The local adapter has no production TURN relay or cloud TTS; test those on
+  the deployed Worker/Modal path.
+- The default local runtime has no caption model either; its capability overlay
+  says so instead of presenting a non-running model as enabled.
+- A catalog entry is not a quality guarantee. Text coverage, live-speech
+  coverage and TTS coverage are separately declared and unsupported choices
+  fail closed.
+- Partials can change before the final; spoken output is final-only in the
+  production path to protect speech naturalness and the ASR feedback guard.

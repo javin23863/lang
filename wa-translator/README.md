@@ -1,14 +1,31 @@
 # wa-translator
 
-**The app lives in [`windows/`](windows/README.md).** Everything else in this
-directory is the Sprint-0 benchmark work that chose its models — kept because it
-is the evidence behind the design, not because it runs in production.
+The shared phone client lives in [`windows/static/`](windows/static/). The local
+development adapter is documented in [`windows/`](windows/README.md); the
+production beta uses [`cloudflare/`](cloudflare/DEPLOYMENT.md) for room state and
+`modal_app.py` for authenticated compute. The remaining top-level files are the
+Sprint-0 benchmark evidence that chose the models.
 
 ## The app
 
-`windows/` — bilingual video room: WebRTC video peer-to-peer, faster-whisper ASR
-and CTranslate2 OPUS-MT on the host, live captions both directions. See
+`capabilities.json` — the shared 100-text-Language / 122-Locale capability
+catalog. The free Whisper→M2M100 intersection exposes 84 microphone-language
+candidates through 106 regional Locale profiles; six exercised Languages are
+marked `Tested` and the rest `Preview`. Voice output combines exact-language
+device/browser voices with six included TTS Languages / thirteen pinned cloud
+profiles. A Locale does not imply a distinct MT or ASR model.
+
+`windows/` — local multilingual UI/protocol adapter. With explicitly
+pre-provisioned ASR/M2M artifacts it can exercise the same revision-pinned
+contract; by default it makes no model download or conversion and advertises
+caption compute as unavailable. It remains captions-only for TTS. See
 [`windows/README.md`](windows/README.md) to run it.
+
+`cloudflare/` + `modal_app.py` — signed 24-hour rooms, one deterministic Durable
+Object per room, hibernating browser sockets, dynamic TURN, unique-target
+caption fanout and independently reconnectable Modal streams. The one-L4
+production lane uses M2M100 and only catalog-declared Kokoro profiles. See
+[`../CLOUD-ARCHITECTURE.md`](../CLOUD-ARCHITECTURE.md).
 
 ## Benchmarks that chose the models
 
@@ -16,10 +33,9 @@ Runnable, no GPU needed, none of it imported by the app:
 
 - `two_stream_latency.cpp`, `single_stream.cpp` — whisper.cpp two-stream and
   single-stream ASR latency. Gate 1.
-- `mt_latency_ct2.py` — CTranslate2 int8 OPUS-MT. Gate 1b. **Its recorded
-  numbers are void:** the loops it attributed to the en-es model were a missing
-  `</s>` on the source tokens, found and fixed in the v7 rewrite. The
-  measurement stands; the conclusion drawn from it did not.
+- `mt_latency_ct2.py` — historical CTranslate2 int8 OPUS-MT experiment. It is
+  not the shipping MT path and its pairwise findings must not be used as M2M100
+  quality or latency evidence.
 - `mt_latency_benchmark.py` — raw torch MarianMT, ~10x slower, the comparison
   that justified CTranslate2.
 - `moonshine_bench.py`, `moonshine_two_stream.py` — Moonshine ASR. Gate 1c.
@@ -34,8 +50,10 @@ Runnable, no GPU needed, none of it imported by the app:
 - `caption_filter_test.cpp` / `caption_filter_test.py` — 14/14 in both
   languages, against real repetition-loop output captured during the gates.
 
-The Python port in `windows/mt_ct2.py` is the copy the app actually uses; the
-two are kept behaviourally identical by the shared test cases.
+The Python port in `windows/mt_ct2.py` is the shipping M2M100 adapter. It keeps
+the caption filter/dedup behavior while using official source-language tokens
+and target prefixes. See [`MULTILINGUAL-SOURCES.md`](MULTILINGUAL-SOURCES.md)
+for immutable anchors, licenses and quality limits.
 
 ## Test fixtures
 

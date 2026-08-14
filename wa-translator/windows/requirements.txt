@@ -10,6 +10,7 @@ fastapi==0.141.1
 uvicorn[standard]==0.52.1
 numpy==2.4.6
 huggingface-hub==1.26.0
+sherpa-onnx==1.13.1
 
 # uvicorn[standard] pulls this in, but probe_stream.py and browser_check.py
 # import it directly — pinned so the checks do not depend on a transitive.

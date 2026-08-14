@@ -1,0 +1,1372 @@
+{
+  "schema_version": "1",
+  "revision": "2026-08-14-m2m100-55c2e61-free84-tts13",
+  "models": {
+    "mt": {
+      "id": "facebook/m2m100_418M",
+      "revision": "55c2e61bbf05dfb8d7abccdc3fae6fc8512fd636",
+      "license": "MIT",
+      "base_language_count": 100,
+      "direction_count": 9900
+    },
+    "asr": {
+      "id": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+      "revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf"
+    },
+    "tts": {
+      "id": "hexgrad/Kokoro-82M",
+      "revision": "f3ff3571791e39611d31c381e3a41a3af07b4987",
+      "release_voice_artifact_sha256": {
+        "en-us-af-heart": "0ab5709b8ffab19bfd849cd11d98f75b60af7733253ad0d67b12382a102cb4ff",
+        "en-us-am-michael": "9a443b79a4b22489a5b0ab7c651a0bcd1a30bef675c28333f06971abbd47bd37",
+        "en-gb-bf-emma": "d0a423deabf4a52b4f49318c51742c54e21bb89bbbe9a12141e7758ddb5da701",
+        "en-gb-bm-fable": "d44935f3135257a9064df99f007fc1342ff1aa767552b4a4fa4c3b2e6e59079c",
+        "es-ef-dora": "d9d69b0f8a2b87a345f269d89639f89dfbd1a6c9da0c498ae36dd34afcf35530",
+        "es-em-alex": "5eac53f767c3f31a081918ba531969aea850bed18fe56419b804d642c6973431",
+        "fr-ff-siwis": "8073bf2d2c4b9543a90f2f0fd2144de4ed157e2d4b79ddeb0d5123066171fbc9",
+        "hi-hf-alpha": "06906fe05746d13a79c5c01e21fd7233b05027221a933c9ada650f5aafc8f044",
+        "hi-hm-omega": "b55f02a8e8483fffe0afa566e7d22ed8013acf47ad4f6bbee2795a840155703e",
+        "it-if-sara": "6c0b253b955fe32f1a1a86006aebe83d050ea95afd0e7be15182f087deedbf55",
+        "it-im-nicola": "234ed06648649f9bd874b37508ea17560b9c993ef85b4ddb3e3a71e062bd2c12",
+        "pt-br-pf-dora": "07e4ff987c5d5a8c3995efd15cc4f0db7c4c15e881b198d8ab7f67ecf51f5eb7",
+        "pt-br-pm-alex": "cf0ba8c573c2480fc54123683a35cf1e2ae130428e441eb91f9149bdb188a526"
+      }
+    }
+  },
+  "release_live_speech_languages": [
+    "ar",
+    "de",
+    "en",
+    "es",
+    "fr",
+    "ja"
+  ],
+  "model_live_speech_languages": [
+    "af", "am", "ar", "az", "ba", "be", "bg", "bn", "br", "bs", "ca", "cs",
+    "cy", "da", "de", "el", "en", "es", "et", "fa", "fi", "fr", "gl", "gu",
+    "ha", "he", "hi", "hr", "ht", "hu", "hy", "id", "is", "it", "ja", "jv",
+    "ka", "kk", "km", "kn", "ko", "lb", "ln", "lo", "lt", "lv", "mg", "mk",
+    "ml", "mn", "mr", "ms", "my", "ne", "nl", "no", "oc", "pa", "pl", "ps",
+    "pt", "ro", "ru", "sd", "si", "sk", "sl", "so", "sq", "sr", "su", "sv",
+    "sw", "ta", "th", "tl", "tr", "uk", "ur", "uz", "vi", "yi", "yo", "zh"
+  ],
+  "release_tts_profile_ids": [
+    "en-us-af-heart",
+    "en-us-am-michael",
+    "en-gb-bf-emma",
+    "en-gb-bm-fable",
+    "es-ef-dora",
+    "es-em-alex",
+    "fr-ff-siwis",
+    "hi-hf-alpha",
+    "hi-hm-omega",
+    "it-if-sara",
+    "it-im-nicola",
+    "pt-br-pf-dora",
+    "pt-br-pm-alex"
+  ],
+  "languages": [
+    {
+      "code": "af",
+      "display_name": "Afrikaans",
+      "native_name": "Afrikaans",
+      "default_locale": "af-ZA",
+      "region": "South Africa",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "am",
+      "display_name": "Amharic",
+      "native_name": "አማርኛ",
+      "default_locale": "am-ET",
+      "region": "Ethiopia",
+      "script": "Ethi",
+      "rtl": false
+    },
+    {
+      "code": "ar",
+      "display_name": "Arabic",
+      "native_name": "العربية",
+      "default_locale": "ar-SA",
+      "region": "Saudi Arabia",
+      "script": "Arab",
+      "rtl": true
+    },
+    {
+      "code": "ast",
+      "display_name": "Asturian",
+      "native_name": "Asturianu",
+      "default_locale": "ast-ES",
+      "region": "Spain",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "az",
+      "display_name": "Azerbaijani",
+      "native_name": "Azərbaycanca",
+      "default_locale": "az-AZ",
+      "region": "Azerbaijan",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "ba",
+      "display_name": "Bashkir",
+      "native_name": "Башҡортса",
+      "default_locale": "ba-RU",
+      "region": "Russia",
+      "script": "Cyrl",
+      "rtl": false
+    },
+    {
+      "code": "be",
+      "display_name": "Belarusian",
+      "native_name": "Беларуская",
+      "default_locale": "be-BY",
+      "region": "Belarus",
+      "script": "Cyrl",
+      "rtl": false
+    },
+    {
+      "code": "bg",
+      "display_name": "Bulgarian",
+      "native_name": "Български",
+      "default_locale": "bg-BG",
+      "region": "Bulgaria",
+      "script": "Cyrl",
+      "rtl": false
+    },
+    {
+      "code": "bn",
+      "display_name": "Bengali",
+      "native_name": "বাংলা",
+      "default_locale": "bn-BD",
+      "region": "Bangladesh",
+      "script": "Beng",
+      "rtl": false
+    },
+    {
+      "code": "br",
+      "display_name": "Breton",
+      "native_name": "Brezhoneg",
+      "default_locale": "br-FR",
+      "region": "France",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "bs",
+      "display_name": "Bosnian",
+      "native_name": "Bosanski",
+      "default_locale": "bs-BA",
+      "region": "Bosnia and Herzegovina",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "ca",
+      "display_name": "Catalan",
+      "native_name": "Català",
+      "default_locale": "ca-ES",
+      "region": "Spain",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "ceb",
+      "display_name": "Cebuano",
+      "native_name": "Cebuano",
+      "default_locale": "ceb-PH",
+      "region": "Philippines",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "cs",
+      "display_name": "Czech",
+      "native_name": "Čeština",
+      "default_locale": "cs-CZ",
+      "region": "Czechia",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "cy",
+      "display_name": "Welsh",
+      "native_name": "Cymraeg",
+      "default_locale": "cy-GB",
+      "region": "United Kingdom",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "da",
+      "display_name": "Danish",
+      "native_name": "Dansk",
+      "default_locale": "da-DK",
+      "region": "Denmark",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "de",
+      "display_name": "German",
+      "native_name": "Deutsch",
+      "default_locale": "de-DE",
+      "region": "Germany",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "el",
+      "display_name": "Greek",
+      "native_name": "Ελληνικά",
+      "default_locale": "el-GR",
+      "region": "Greece",
+      "script": "Grek",
+      "rtl": false
+    },
+    {
+      "code": "en",
+      "display_name": "English",
+      "native_name": "English",
+      "default_locale": "en-US",
+      "region": "United States",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "es",
+      "display_name": "Spanish",
+      "native_name": "Español",
+      "default_locale": "es-ES",
+      "region": "Spain",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "et",
+      "display_name": "Estonian",
+      "native_name": "Eesti",
+      "default_locale": "et-EE",
+      "region": "Estonia",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "fa",
+      "display_name": "Persian",
+      "native_name": "فارسی",
+      "default_locale": "fa-IR",
+      "region": "Iran",
+      "script": "Arab",
+      "rtl": true
+    },
+    {
+      "code": "ff",
+      "display_name": "Fula",
+      "native_name": "Fulfulde",
+      "default_locale": "ff-Latn-SN",
+      "region": "Senegal",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "fi",
+      "display_name": "Finnish",
+      "native_name": "Suomi",
+      "default_locale": "fi-FI",
+      "region": "Finland",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "fr",
+      "display_name": "French",
+      "native_name": "Français",
+      "default_locale": "fr-FR",
+      "region": "France",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "fy",
+      "display_name": "Western Frisian",
+      "native_name": "Frysk",
+      "default_locale": "fy-NL",
+      "region": "Netherlands",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "ga",
+      "display_name": "Irish",
+      "native_name": "Gaeilge",
+      "default_locale": "ga-IE",
+      "region": "Ireland",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "gd",
+      "display_name": "Scottish Gaelic",
+      "native_name": "Gàidhlig",
+      "default_locale": "gd-GB",
+      "region": "United Kingdom",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "gl",
+      "display_name": "Galician",
+      "native_name": "Galego",
+      "default_locale": "gl-ES",
+      "region": "Spain",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "gu",
+      "display_name": "Gujarati",
+      "native_name": "ગુજરાતી",
+      "default_locale": "gu-IN",
+      "region": "India",
+      "script": "Gujr",
+      "rtl": false
+    },
+    {
+      "code": "ha",
+      "display_name": "Hausa",
+      "native_name": "Hausa",
+      "default_locale": "ha-Latn-NG",
+      "region": "Nigeria",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "he",
+      "display_name": "Hebrew",
+      "native_name": "עברית",
+      "default_locale": "he-IL",
+      "region": "Israel",
+      "script": "Hebr",
+      "rtl": true
+    },
+    {
+      "code": "hi",
+      "display_name": "Hindi",
+      "native_name": "हिन्दी",
+      "default_locale": "hi-IN",
+      "region": "India",
+      "script": "Deva",
+      "rtl": false
+    },
+    {
+      "code": "hr",
+      "display_name": "Croatian",
+      "native_name": "Hrvatski",
+      "default_locale": "hr-HR",
+      "region": "Croatia",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "ht",
+      "display_name": "Haitian Creole",
+      "native_name": "Kreyòl ayisyen",
+      "default_locale": "ht-HT",
+      "region": "Haiti",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "hu",
+      "display_name": "Hungarian",
+      "native_name": "Magyar",
+      "default_locale": "hu-HU",
+      "region": "Hungary",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "hy",
+      "display_name": "Armenian",
+      "native_name": "Հայերեն",
+      "default_locale": "hy-AM",
+      "region": "Armenia",
+      "script": "Armn",
+      "rtl": false
+    },
+    {
+      "code": "id",
+      "display_name": "Indonesian",
+      "native_name": "Bahasa Indonesia",
+      "default_locale": "id-ID",
+      "region": "Indonesia",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "ig",
+      "display_name": "Igbo",
+      "native_name": "Igbo",
+      "default_locale": "ig-NG",
+      "region": "Nigeria",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "ilo",
+      "display_name": "Ilocano",
+      "native_name": "Ilokano",
+      "default_locale": "ilo-PH",
+      "region": "Philippines",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "is",
+      "display_name": "Icelandic",
+      "native_name": "Íslenska",
+      "default_locale": "is-IS",
+      "region": "Iceland",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "it",
+      "display_name": "Italian",
+      "native_name": "Italiano",
+      "default_locale": "it-IT",
+      "region": "Italy",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "ja",
+      "display_name": "Japanese",
+      "native_name": "日本語",
+      "default_locale": "ja-JP",
+      "region": "Japan",
+      "script": "Jpan",
+      "rtl": false
+    },
+    {
+      "code": "jv",
+      "asr_code": "jw",
+      "display_name": "Javanese",
+      "native_name": "Basa Jawa",
+      "default_locale": "jv-ID",
+      "region": "Indonesia",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "ka",
+      "display_name": "Georgian",
+      "native_name": "ქართული",
+      "default_locale": "ka-GE",
+      "region": "Georgia",
+      "script": "Geor",
+      "rtl": false
+    },
+    {
+      "code": "kk",
+      "display_name": "Kazakh",
+      "native_name": "Қазақша",
+      "default_locale": "kk-KZ",
+      "region": "Kazakhstan",
+      "script": "Cyrl",
+      "rtl": false
+    },
+    {
+      "code": "km",
+      "display_name": "Khmer",
+      "native_name": "ខ្មែរ",
+      "default_locale": "km-KH",
+      "region": "Cambodia",
+      "script": "Khmr",
+      "rtl": false
+    },
+    {
+      "code": "kn",
+      "display_name": "Kannada",
+      "native_name": "ಕನ್ನಡ",
+      "default_locale": "kn-IN",
+      "region": "India",
+      "script": "Knda",
+      "rtl": false
+    },
+    {
+      "code": "ko",
+      "display_name": "Korean",
+      "native_name": "한국어",
+      "default_locale": "ko-KR",
+      "region": "Korea",
+      "script": "Kore",
+      "rtl": false
+    },
+    {
+      "code": "lb",
+      "display_name": "Luxembourgish",
+      "native_name": "Lëtzebuergesch",
+      "default_locale": "lb-LU",
+      "region": "Luxembourg",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "lg",
+      "display_name": "Ganda",
+      "native_name": "Luganda",
+      "default_locale": "lg-UG",
+      "region": "Uganda",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "ln",
+      "display_name": "Lingala",
+      "native_name": "Lingála",
+      "default_locale": "ln-CD",
+      "region": "Democratic Republic of the Congo",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "lo",
+      "display_name": "Lao",
+      "native_name": "ລາວ",
+      "default_locale": "lo-LA",
+      "region": "Laos",
+      "script": "Laoo",
+      "rtl": false
+    },
+    {
+      "code": "lt",
+      "display_name": "Lithuanian",
+      "native_name": "Lietuvių",
+      "default_locale": "lt-LT",
+      "region": "Lithuania",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "lv",
+      "display_name": "Latvian",
+      "native_name": "Latviešu",
+      "default_locale": "lv-LV",
+      "region": "Latvia",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "mg",
+      "display_name": "Malagasy",
+      "native_name": "Malagasy",
+      "default_locale": "mg-MG",
+      "region": "Madagascar",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "mk",
+      "display_name": "Macedonian",
+      "native_name": "Македонски",
+      "default_locale": "mk-MK",
+      "region": "North Macedonia",
+      "script": "Cyrl",
+      "rtl": false
+    },
+    {
+      "code": "ml",
+      "display_name": "Malayalam",
+      "native_name": "മലയാളം",
+      "default_locale": "ml-IN",
+      "region": "India",
+      "script": "Mlym",
+      "rtl": false
+    },
+    {
+      "code": "mn",
+      "display_name": "Mongolian",
+      "native_name": "Монгол",
+      "default_locale": "mn-MN",
+      "region": "Mongolia",
+      "script": "Cyrl",
+      "rtl": false
+    },
+    {
+      "code": "mr",
+      "display_name": "Marathi",
+      "native_name": "मराठी",
+      "default_locale": "mr-IN",
+      "region": "India",
+      "script": "Deva",
+      "rtl": false
+    },
+    {
+      "code": "ms",
+      "display_name": "Malay",
+      "native_name": "Bahasa Melayu",
+      "default_locale": "ms-MY",
+      "region": "Malaysia",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "my",
+      "display_name": "Burmese",
+      "native_name": "မြန်မာ",
+      "default_locale": "my-MM",
+      "region": "Myanmar",
+      "script": "Mymr",
+      "rtl": false
+    },
+    {
+      "code": "ne",
+      "display_name": "Nepali",
+      "native_name": "नेपाली",
+      "default_locale": "ne-NP",
+      "region": "Nepal",
+      "script": "Deva",
+      "rtl": false
+    },
+    {
+      "code": "nl",
+      "display_name": "Dutch",
+      "native_name": "Nederlands",
+      "default_locale": "nl-NL",
+      "region": "Netherlands",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "no",
+      "display_name": "Norwegian",
+      "native_name": "Norsk",
+      "default_locale": "no-NO",
+      "region": "Norway",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "ns",
+      "display_name": "Northern Sotho",
+      "native_name": "Sepedi",
+      "default_locale": "ns-ZA",
+      "region": "South Africa",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "oc",
+      "display_name": "Occitan",
+      "native_name": "Occitan",
+      "default_locale": "oc-FR",
+      "region": "France",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "or",
+      "display_name": "Odia",
+      "native_name": "ଓଡ଼ିଆ",
+      "default_locale": "or-IN",
+      "region": "India",
+      "script": "Orya",
+      "rtl": false
+    },
+    {
+      "code": "pa",
+      "display_name": "Punjabi",
+      "native_name": "ਪੰਜਾਬੀ",
+      "default_locale": "pa-IN",
+      "region": "India",
+      "script": "Guru",
+      "rtl": false
+    },
+    {
+      "code": "pl",
+      "display_name": "Polish",
+      "native_name": "Polski",
+      "default_locale": "pl-PL",
+      "region": "Poland",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "ps",
+      "display_name": "Pashto",
+      "native_name": "پښتو",
+      "default_locale": "ps-AF",
+      "region": "Afghanistan",
+      "script": "Arab",
+      "rtl": true
+    },
+    {
+      "code": "pt",
+      "display_name": "Portuguese",
+      "native_name": "Português",
+      "default_locale": "pt-BR",
+      "region": "Brazil",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "ro",
+      "display_name": "Romanian",
+      "native_name": "Română",
+      "default_locale": "ro-RO",
+      "region": "Romania",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "ru",
+      "display_name": "Russian",
+      "native_name": "Русский",
+      "default_locale": "ru-RU",
+      "region": "Russia",
+      "script": "Cyrl",
+      "rtl": false
+    },
+    {
+      "code": "sd",
+      "display_name": "Sindhi",
+      "native_name": "سنڌي",
+      "default_locale": "sd-Arab-PK",
+      "region": "Pakistan",
+      "script": "Arab",
+      "rtl": true
+    },
+    {
+      "code": "si",
+      "display_name": "Sinhala",
+      "native_name": "සිංහල",
+      "default_locale": "si-LK",
+      "region": "Sri Lanka",
+      "script": "Sinh",
+      "rtl": false
+    },
+    {
+      "code": "sk",
+      "display_name": "Slovak",
+      "native_name": "Slovenčina",
+      "default_locale": "sk-SK",
+      "region": "Slovakia",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "sl",
+      "display_name": "Slovenian",
+      "native_name": "Slovenščina",
+      "default_locale": "sl-SI",
+      "region": "Slovenia",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "so",
+      "display_name": "Somali",
+      "native_name": "Soomaali",
+      "default_locale": "so-SO",
+      "region": "Somalia",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "sq",
+      "display_name": "Albanian",
+      "native_name": "Shqip",
+      "default_locale": "sq-AL",
+      "region": "Albania",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "sr",
+      "display_name": "Serbian",
+      "native_name": "Српски",
+      "default_locale": "sr-Cyrl-RS",
+      "region": "Serbia",
+      "script": "Cyrl",
+      "rtl": false
+    },
+    {
+      "code": "ss",
+      "display_name": "Swati",
+      "native_name": "SiSwati",
+      "default_locale": "ss-ZA",
+      "region": "South Africa",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "su",
+      "display_name": "Sundanese",
+      "native_name": "Basa Sunda",
+      "default_locale": "su-ID",
+      "region": "Indonesia",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "sv",
+      "display_name": "Swedish",
+      "native_name": "Svenska",
+      "default_locale": "sv-SE",
+      "region": "Sweden",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "sw",
+      "display_name": "Swahili",
+      "native_name": "Kiswahili",
+      "default_locale": "sw-KE",
+      "region": "Kenya",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "ta",
+      "display_name": "Tamil",
+      "native_name": "தமிழ்",
+      "default_locale": "ta-IN",
+      "region": "India",
+      "script": "Taml",
+      "rtl": false
+    },
+    {
+      "code": "th",
+      "display_name": "Thai",
+      "native_name": "ไทย",
+      "default_locale": "th-TH",
+      "region": "Thailand",
+      "script": "Thai",
+      "rtl": false
+    },
+    {
+      "code": "tl",
+      "display_name": "Tagalog",
+      "native_name": "Tagalog",
+      "default_locale": "tl-PH",
+      "region": "Philippines",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "tn",
+      "display_name": "Tswana",
+      "native_name": "Setswana",
+      "default_locale": "tn-BW",
+      "region": "Botswana",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "tr",
+      "display_name": "Turkish",
+      "native_name": "Türkçe",
+      "default_locale": "tr-TR",
+      "region": "Türkiye",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "uk",
+      "display_name": "Ukrainian",
+      "native_name": "Українська",
+      "default_locale": "uk-UA",
+      "region": "Ukraine",
+      "script": "Cyrl",
+      "rtl": false
+    },
+    {
+      "code": "ur",
+      "display_name": "Urdu",
+      "native_name": "اردو",
+      "default_locale": "ur-PK",
+      "region": "Pakistan",
+      "script": "Arab",
+      "rtl": true
+    },
+    {
+      "code": "uz",
+      "display_name": "Uzbek",
+      "native_name": "Oʻzbekcha",
+      "default_locale": "uz-Latn-UZ",
+      "region": "Uzbekistan",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "vi",
+      "display_name": "Vietnamese",
+      "native_name": "Tiếng Việt",
+      "default_locale": "vi-VN",
+      "region": "Vietnam",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "wo",
+      "display_name": "Wolof",
+      "native_name": "Wolof",
+      "default_locale": "wo-SN",
+      "region": "Senegal",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "xh",
+      "display_name": "Xhosa",
+      "native_name": "isiXhosa",
+      "default_locale": "xh-ZA",
+      "region": "South Africa",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "yi",
+      "display_name": "Yiddish",
+      "native_name": "ייִדיש",
+      "default_locale": "yi-Hebr-IL",
+      "region": "Israel",
+      "script": "Hebr",
+      "rtl": true
+    },
+    {
+      "code": "yo",
+      "display_name": "Yoruba",
+      "native_name": "Yorùbá",
+      "default_locale": "yo-NG",
+      "region": "Nigeria",
+      "script": "Latn",
+      "rtl": false
+    },
+    {
+      "code": "zh",
+      "display_name": "Chinese",
+      "native_name": "中文",
+      "default_locale": "zh-CN",
+      "region": "China",
+      "script": "Hans",
+      "rtl": false
+    },
+    {
+      "code": "zu",
+      "display_name": "Zulu",
+      "native_name": "isiZulu",
+      "default_locale": "zu-ZA",
+      "region": "South Africa",
+      "script": "Latn",
+      "rtl": false
+    }
+  ],
+  "regional_locales": [
+    {
+      "id": "es-MX",
+      "language": "es",
+      "display_name": "Spanish (Mexico)",
+      "native_name": "Español (México)",
+      "region": "Mexico",
+      "script": "Latn",
+      "rtl": false,
+      "voice_key": "es"
+    },
+    {
+      "id": "es-US",
+      "language": "es",
+      "display_name": "Spanish (United States)",
+      "native_name": "Español (Estados Unidos)",
+      "region": "United States",
+      "script": "Latn",
+      "rtl": false,
+      "voice_key": "es"
+    },
+    {
+      "id": "es-AR",
+      "language": "es",
+      "display_name": "Spanish (Argentina)",
+      "native_name": "Español (Argentina)",
+      "region": "Argentina",
+      "script": "Latn",
+      "rtl": false,
+      "voice_key": "es"
+    },
+    {
+      "id": "es-CO",
+      "language": "es",
+      "display_name": "Spanish (Colombia)",
+      "native_name": "Español (Colombia)",
+      "region": "Colombia",
+      "script": "Latn",
+      "rtl": false,
+      "voice_key": "es"
+    },
+    {
+      "id": "es-CL",
+      "language": "es",
+      "display_name": "Spanish (Chile)",
+      "native_name": "Español (Chile)",
+      "region": "Chile",
+      "script": "Latn",
+      "rtl": false,
+      "voice_key": "es"
+    },
+    {
+      "id": "es-PE",
+      "language": "es",
+      "display_name": "Spanish (Peru)",
+      "native_name": "Español (Perú)",
+      "region": "Peru",
+      "script": "Latn",
+      "rtl": false,
+      "voice_key": "es"
+    },
+    {
+      "id": "es-VE",
+      "language": "es",
+      "display_name": "Spanish (Venezuela)",
+      "native_name": "Español (Venezuela)",
+      "region": "Venezuela",
+      "script": "Latn",
+      "rtl": false,
+      "voice_key": "es"
+    },
+    {
+      "id": "es-DO",
+      "language": "es",
+      "display_name": "Spanish (Dominican Republic)",
+      "native_name": "Español (República Dominicana)",
+      "region": "Dominican Republic",
+      "script": "Latn",
+      "rtl": false,
+      "voice_key": "es"
+    },
+    {
+      "id": "es-PR",
+      "language": "es",
+      "display_name": "Spanish (Puerto Rico)",
+      "native_name": "Español (Puerto Rico)",
+      "region": "Puerto Rico",
+      "script": "Latn",
+      "rtl": false,
+      "voice_key": "es"
+    },
+    {
+      "id": "en-GB",
+      "language": "en",
+      "display_name": "English (United Kingdom)",
+      "native_name": "English (United Kingdom)",
+      "region": "United Kingdom",
+      "script": "Latn",
+      "rtl": false,
+      "voice_key": "en-GB"
+    },
+    {
+      "id": "en-AU",
+      "language": "en",
+      "display_name": "English (Australia)",
+      "native_name": "English (Australia)",
+      "region": "Australia",
+      "script": "Latn",
+      "rtl": false,
+      "voice_key": ""
+    },
+    {
+      "id": "en-CA",
+      "language": "en",
+      "display_name": "English (Canada)",
+      "native_name": "English (Canada)",
+      "region": "Canada",
+      "script": "Latn",
+      "rtl": false,
+      "voice_key": ""
+    },
+    {
+      "id": "ar-EG",
+      "language": "ar",
+      "display_name": "Arabic (Egypt)",
+      "native_name": "العربية (مصر)",
+      "region": "Egypt",
+      "script": "Arab",
+      "rtl": true,
+      "voice_key": ""
+    },
+    {
+      "id": "ar-AE",
+      "language": "ar",
+      "display_name": "Arabic (United Arab Emirates)",
+      "native_name": "العربية (الإمارات)",
+      "region": "United Arab Emirates",
+      "script": "Arab",
+      "rtl": true,
+      "voice_key": ""
+    },
+    {
+      "id": "fr-CA",
+      "language": "fr",
+      "display_name": "French (Canada)",
+      "native_name": "Français (Canada)",
+      "region": "Canada",
+      "script": "Latn",
+      "rtl": false,
+      "voice_key": "fr"
+    },
+    {
+      "id": "fr-BE",
+      "language": "fr",
+      "display_name": "French (Belgium)",
+      "native_name": "Français (Belgique)",
+      "region": "Belgium",
+      "script": "Latn",
+      "rtl": false,
+      "voice_key": "fr"
+    },
+    {
+      "id": "de-AT",
+      "language": "de",
+      "display_name": "German (Austria)",
+      "native_name": "Deutsch (Österreich)",
+      "region": "Austria",
+      "script": "Latn",
+      "rtl": false,
+      "voice_key": ""
+    },
+    {
+      "id": "de-CH",
+      "language": "de",
+      "display_name": "German (Switzerland)",
+      "native_name": "Deutsch (Schweiz)",
+      "region": "Switzerland",
+      "script": "Latn",
+      "rtl": false,
+      "voice_key": ""
+    },
+    {
+      "id": "zh-TW",
+      "language": "zh",
+      "display_name": "Chinese (Taiwan)",
+      "native_name": "中文（台灣）",
+      "region": "Taiwan",
+      "script": "Hant",
+      "rtl": false,
+      "voice_key": "zh"
+    },
+    {
+      "id": "pt-PT",
+      "language": "pt",
+      "display_name": "Portuguese (Portugal)",
+      "native_name": "Português (Portugal)",
+      "region": "Portugal",
+      "script": "Latn",
+      "rtl": false,
+      "voice_key": ""
+    },
+    {
+      "id": "it-CH",
+      "language": "it",
+      "display_name": "Italian (Switzerland)",
+      "native_name": "Italiano (Svizzera)",
+      "region": "Switzerland",
+      "script": "Latn",
+      "rtl": false,
+      "voice_key": ""
+    },
+    {
+      "id": "sr-Latn-RS",
+      "language": "sr",
+      "display_name": "Serbian (Latin, Serbia)",
+      "native_name": "Srpski (Latinica)",
+      "region": "Serbia",
+      "script": "Latn",
+      "rtl": false,
+      "voice_key": ""
+    }
+  ],
+  "voice_profiles": {
+    "en-US": [
+      {
+        "id": "en-us-af-heart",
+        "style": "female",
+        "name": "Heart",
+        "provider": "kokoro",
+        "pipeline": "a",
+        "model_voice": "af_heart",
+        "quality_note": "Official American English voice; synthetic and explicitly selected."
+      },
+      {
+        "id": "en-us-am-michael",
+        "style": "male",
+        "name": "Michael",
+        "provider": "kokoro",
+        "pipeline": "a",
+        "model_voice": "am_michael",
+        "quality_note": "Official American English voice; synthetic and explicitly selected."
+      }
+    ],
+    "en-GB": [
+      {
+        "id": "en-gb-bf-emma",
+        "style": "female",
+        "name": "Emma",
+        "provider": "kokoro",
+        "pipeline": "b",
+        "model_voice": "bf_emma",
+        "quality_note": "Official British English voice; synthetic and explicitly selected."
+      },
+      {
+        "id": "en-gb-bm-fable",
+        "style": "male",
+        "name": "Fable",
+        "provider": "kokoro",
+        "pipeline": "b",
+        "model_voice": "bm_fable",
+        "quality_note": "Official British English voice; synthetic and explicitly selected."
+      }
+    ],
+    "es": [
+      {
+        "id": "es-ef-dora",
+        "style": "female",
+        "name": "Dora",
+        "provider": "kokoro",
+        "pipeline": "e",
+        "model_voice": "ef_dora",
+        "quality_note": "Official Spanish voice; no locale-specific quality claim."
+      },
+      {
+        "id": "es-em-alex",
+        "style": "male",
+        "name": "Alex",
+        "provider": "kokoro",
+        "pipeline": "e",
+        "model_voice": "em_alex",
+        "quality_note": "Official Spanish voice; no locale-specific quality claim."
+      }
+    ],
+    "fr": [
+      {
+        "id": "fr-ff-siwis",
+        "style": "female",
+        "name": "Siwis",
+        "provider": "kokoro",
+        "pipeline": "f",
+        "model_voice": "ff_siwis",
+        "quality_note": "Official French voice; Kokoro documents one French female voice and thin-language limits."
+      }
+    ],
+    "ja": [
+      {
+        "id": "ja-jf-alpha",
+        "style": "female",
+        "name": "Alpha",
+        "provider": "kokoro",
+        "pipeline": "j",
+        "model_voice": "jf_alpha",
+        "quality_note": "Official Japanese voice; Kokoro documents limited training data."
+      },
+      {
+        "id": "ja-jm-kumo",
+        "style": "male",
+        "name": "Kumo",
+        "provider": "kokoro",
+        "pipeline": "j",
+        "model_voice": "jm_kumo",
+        "quality_note": "Official Japanese voice; Kokoro documents limited training data."
+      }
+    ],
+    "zh": [
+      {
+        "id": "zh-zf-xiaobei",
+        "style": "female",
+        "name": "Xiaobei",
+        "provider": "kokoro",
+        "pipeline": "z",
+        "model_voice": "zf_xiaobei",
+        "quality_note": "Official Mandarin Chinese voice; no regional quality claim."
+      },
+      {
+        "id": "zh-zm-yunjian",
+        "style": "male",
+        "name": "Yunjian",
+        "provider": "kokoro",
+        "pipeline": "z",
+        "model_voice": "zm_yunjian",
+        "quality_note": "Official Mandarin Chinese voice; no regional quality claim."
+      }
+    ],
+    "hi": [
+      {
+        "id": "hi-hf-alpha",
+        "style": "female",
+        "name": "Alpha",
+        "provider": "kokoro",
+        "pipeline": "h",
+        "model_voice": "hf_alpha",
+        "quality_note": "Official Hindi voice; Kokoro documents limited training data."
+      },
+      {
+        "id": "hi-hm-omega",
+        "style": "male",
+        "name": "Omega",
+        "provider": "kokoro",
+        "pipeline": "h",
+        "model_voice": "hm_omega",
+        "quality_note": "Official Hindi voice; Kokoro documents limited training data."
+      }
+    ],
+    "it": [
+      {
+        "id": "it-if-sara",
+        "style": "female",
+        "name": "Sara",
+        "provider": "kokoro",
+        "pipeline": "i",
+        "model_voice": "if_sara",
+        "quality_note": "Official Italian voice; Kokoro documents limited training data."
+      },
+      {
+        "id": "it-im-nicola",
+        "style": "male",
+        "name": "Nicola",
+        "provider": "kokoro",
+        "pipeline": "i",
+        "model_voice": "im_nicola",
+        "quality_note": "Official Italian voice; Kokoro documents limited training data."
+      }
+    ],
+    "pt": [
+      {
+        "id": "pt-br-pf-dora",
+        "style": "female",
+        "name": "Dora",
+        "provider": "kokoro",
+        "pipeline": "p",
+        "model_voice": "pf_dora",
+        "quality_note": "Official Brazilian Portuguese voice; no Portugal quality claim."
+      },
+      {
+        "id": "pt-br-pm-alex",
+        "style": "male",
+        "name": "Alex",
+        "provider": "kokoro",
+        "pipeline": "p",
+        "model_voice": "pm_alex",
+        "quality_note": "Official Brazilian Portuguese voice; no Portugal quality claim."
+      }
+    ]
+  },
+  "capability_notes": {
+    "locale_mapping": "A locale maps to one base language. It does not imply a distinct MT model, dialect-specific ASR, or dialect-specific MT quality.",
+    "live_speech": "Live speech includes the explicit Whisper ∩ M2M100 model intersection; release-tested languages remain a separate verified tier.",
+    "captions": "Caption translation uses the pinned M2M100 base-language model. Text coverage is not a locale-quality claim.",
+    "voice": "A voice profile is an explicitly selected synthetic voice; no biometric inference or voice cloning is used."
+  }
+}

@@ -1,29 +1,78 @@
-# lang — live bilingual video room
+# lang — live multilingual video room
 
-Two people, one link, a browser each. You speak English, they speak Spanish, and
-each of you reads the other in your own language while the sentence is still
-being said. Camera and voice go directly between the two browsers; the
-transcription and translation run on one Windows machine with a GPU.
+One private link, up to four browsers. Camera and natural voice go directly
+between peers while a single transcription fans out to the unique base
+languages of current listeners. Captions-only is the default; a listener can
+independently choose an exact declared synthetic Voice Profile where one is
+enabled.
 
-Free and local. No paid APIs, no accounts, no backend to deploy.
+The shared catalog currently declares **100 M2M100 text Languages**, **84 free
+Whisper→M2M100 microphone-language candidates**, and **106 selectable BCP-47
+Locale profiles** across those candidates. Six Languages (Arabic, German,
+English, Spanish, French, Japanese) remain the separately marked, exercised
+`Tested` tier; the rest are visibly `Preview`, not quality-certified. Locale
+variants such as `es-MX` map to base `es` and do not claim a distinct ASR/MT
+model or dialect quality. Voice output combines thirteen pinned included
+profiles for English, Spanish, French, Hindi, Italian, and Brazilian Portuguese
+with exact-language voices installed on each user's browser/device. No
+neighboring-language voice fallback is allowed.
+
+There are two adapters. The Windows adapter below is the local development path.
+The production beta uses a permanent Cloudflare `workers.dev` room plus a
+scale-to-zero Modal GPU and short-lived Cloudflare TURN credentials. It still
+has no accounts or database. See [`CLOUD-ARCHITECTURE.md`](CLOUD-ARCHITECTURE.md)
+and the [deployment runbook](wa-translator/cloudflare/DEPLOYMENT.md).
+The dated deployment IDs, public probes, tested language counts and remaining
+acceptance gaps are maintained in
+[`MULTILINGUAL-PRODUCT-HANDOFF.md`](MULTILINGUAL-PRODUCT-HANDOFF.md).
 
 ```powershell
 cd wa-translator\windows
 ..\..\.venv\Scripts\python.exe run_room.py
 ```
 
-It prints an `https://…trycloudflare.com` link. Send it to the other person,
-both open it, tap **Start**, pick the language you speak.
+It prints a private `https://…/room/<random-code>` invitation. Open it on your
+phone, use Share/WhatsApp, and choose the Locale you speak. The application
+never receives a telephone number; the share target chooses the recipient.
+
+The local adapter starts in UI/protocol-only mode by default: it does not
+download or convert Whisper/M2M100 on Windows, and its capability badge says
+that live captions are unavailable. Use the permanent cloud dashboard (and the
+Desktop shortcut below) for production captions. An advanced developer may set
+`LANG_ROOM_LOCAL_MODEL_LOAD=1` only with an already provisioned, hash-valid
+local cache; Windows still never materializes the production model lane.
 
 Full runbook, checks and measured latency: [`wa-translator/windows/README.md`](wa-translator/windows/README.md).
 Architecture and the rules the implementation is held to: [`SPEC-v7.md`](SPEC-v7.md).
+
+## Windows host dashboard
+
+The permanent cloud dashboard is
+`https://spoken-translation-room.spoken-translation-cloudflare.workers.dev/`.
+It creates a participant link, copies or natively shares it, opens the room, and
+can terminally close it. A host-control bearer is separate from the participant
+URL, stays only in the dashboard's same-device browser storage, and is never
+placed in the shared URL, cache, or room history. Closing a room immediately
+disconnects callers and keeps a tombstone through the link expiry, so the same
+participant URL cannot rejoin.
+
+On this Windows host, the Desktop shortcut is
+`C:\Users\MSI\Desktop\Live Translator.lnk`. It launches Edge app mode directly
+at the permanent origin; it does not depend on the Codex browser. The shortcut
+is device-local: clearing that app's browser storage loses the host control on
+this device, but never exposes it to a participant.
 
 ## What it does
 
 - **Live captions, not turn-taking.** Text appears ~1.7s after you start
   speaking and keeps growing and correcting itself until you stop.
-- **Both directions.** English→Spanish and Spanish→English, with each
-  participant declaring the language they speak.
+- **One ASR, multi-target captions.** A source Locale resolves to its base
+  Language, transcribes once, then M2M100 translates to up to three unique
+  listener base Languages. Same-base Locale listeners share one translation.
+- **Optional translated voice.** It starts off. A listener selects an exact
+  declared profile, never an inferred biometric or cloned voice. Female/male
+  choices are shown only when that Locale has a corresponding enabled profile;
+  French currently exposes only its documented female profile.
 - **Video.** Peer-to-peer, with the other person filling the top of the screen
   and your own camera as a small inset.
 
@@ -31,21 +80,40 @@ Architecture and the rules the implementation is held to: [`SPEC-v7.md`](SPEC-v7
 
 Stated plainly, because each of these will look like a bug otherwise:
 
-- **The link changes every restart.** Cloudflare quick tunnels are random by
-  design. A stable address needs a Cloudflare account and a named tunnel.
-- **Video needs a workable path between the two networks.** There is no TURN
-  relay, so a symmetric NAT or CGNAT on either side kills the video. The page
-  says so, and captions keep working — they travel over the WebSocket.
-- **Anyone with the link can join**, up to four people, exactly like a video
-  call link. There is no password. Do not post the link publicly.
-- **Speech is not translated back into speech.** Text only, for now.
-- **It needs a CUDA GPU.** Without one both models fall back to CPU, the code
-  runs, and the captions lag far behind the conversation.
+- **The local-development link changes every restart.** Quick tunnels are
+  ephemeral. The cloud adapter instead uses a stable `workers.dev` URL.
+- **The local adapter has no TURN relay.** The cloud adapter issues short-lived
+  TURN credentials without exposing its long-term key.
+- **The private link is the key.** It contains 144 random bits, expires after 24
+  hours, and is forgotten if the host restarts. Anyone holding that exact link
+  can enter, so do not post it publicly. The host supports four total callers.
+- **The spoken translation lags the caption.** It speaks whole sentences, only
+  once they are final, so you read it before you hear it.
+- **Your captions pause while your device is speaking.** Your speaker sits next
+  to your microphone; if it kept listening it would transcribe the translation
+  and translate it back forever. The other person still hears your real voice
+  throughout — only the caption feed is held.
+- **Voice quality varies.** The cloud uses revision-pinned Kokoro artifacts
+  only for the 13 profiles declared in the catalog. The browser may also offer
+  same-language voices installed on the listener's device. Other languages are
+  captions-only; the app never substitutes a voice from the wrong language.
+- **Model work belongs on the production L4.** The local adapter can use the
+  same catalog/contract and can read an already-provisioned CPU M2M100 cache
+  for development, but it never downloads, converts, or benchmarks the
+  production model lane on this Windows host.
+- **The one-L4 stream limit is global.** Each room can contain four people,
+  but the single scale-to-zero container has four active caption-stream slots
+  shared across all rooms. If other rooms occupy them, the affected speaker
+  sees an explicit capacity status; video and natural peer audio remain live.
 
 ## Repository layout
 
 | Path | What it is |
 |---|---|
 | `wa-translator/windows/` | the app — server, ASR, MT, browser UI, checks |
-| `wa-translator/` | Sprint-0 benchmarks that chose the models (whisper.cpp, Moonshine, OPUS-MT latency) and the portable caption filter |
+| `wa-translator/cloudflare/` | permanent Worker, one room Durable Object and deployment tests |
+| `wa-translator/modal_app.py` | independent authenticated ASR/MT/Kokoro compute |
+| `wa-translator/capabilities.json` | one shared Language/Locale/Capability/Voice Profile catalog |
+| `wa-translator/MULTILINGUAL-SOURCES.md` | primary-source model, license, revision, artifact-hash and quality-ceiling decision record |
+| `wa-translator/` | compute adapters, fixtures, tests, notices and the portable caption filter |
 | `SPEC-v7.md` | current architecture; `SPEC.md`–`SPEC-v6.md` are its history |
