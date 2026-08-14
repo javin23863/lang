@@ -1,0 +1,26 @@
+import assert from "node:assert/strict";
+import { access, readFile } from "node:fs/promises";
+import test from "node:test";
+
+const root = new URL("../www/", import.meta.url);
+
+test("prepared mobile web bundle contains the app, runtime, and local worklet", async () => {
+  for (const path of [
+    "index.html", "room.html", "app-runtime.js", "mobile-bridge.js",
+    "privacy.html", "terms.html", "support.html", "static/pcm-worklet.js"
+  ]) await access(new URL(path, root));
+
+  for (const name of ["index.html", "room.html"]) {
+    const html = await readFile(new URL(name, root), "utf8");
+    const bridge = html.indexOf('<script src="/mobile-bridge.js"></script>');
+    const runtime = html.indexOf('<script src="/app-runtime.js"></script>');
+    assert.ok(bridge >= 0 && runtime > bridge, `${name} loads native bridge before runtime`);
+    assert.doesNotMatch(html, /server\.url|window\.location\s*=\s*["']https:\/\//);
+  }
+});
+
+test("phone video status reserves the local preview area", async () => {
+  const room = await readFile(new URL("room.html", root), "utf8");
+  assert.match(room, /#videoNote\{[^}]*padding-inline-end:calc\(min\(27vw,130px\) \+ 30px\)/);
+  assert.match(room, /html\[dir=rtl\] #selfWrap\{left:10px;right:auto\}/);
+});

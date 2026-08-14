@@ -534,6 +534,14 @@ async def app_icon():
     return FileResponse(os.path.join(STATIC, "icon.svg"), media_type="image/svg+xml")
 
 
+@app.get("/app-runtime.js")
+async def app_runtime():
+    return FileResponse(os.path.join(STATIC, "app-runtime.js"),
+                        media_type="text/javascript", headers={
+                            "Cache-Control": "no-store",
+                        })
+
+
 @app.get("/sw.js")
 async def service_worker():
     return FileResponse(os.path.join(STATIC, "sw.js"),

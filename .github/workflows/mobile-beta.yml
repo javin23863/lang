@@ -1,0 +1,89 @@
+name: Mobile beta upload
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Store beta to upload
+        required: true
+        type: choice
+        options: [android, ios]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-beta-${{ inputs.platform }}
+  cancel-in-progress: false
+
+jobs:
+  android:
+    if: inputs.platform == 'android'
+    runs-on: ubuntu-latest
+    environment: mobile-beta
+    defaults:
+      run:
+        working-directory: wa-translator/mobile
+    env:
+      LINGUA_ANDROID_KEYSTORE: ${{ github.workspace }}/wa-translator/mobile/release.keystore
+      LINGUA_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.LINGUA_ANDROID_KEYSTORE_PASSWORD }}
+      LINGUA_ANDROID_KEY_ALIAS: ${{ secrets.LINGUA_ANDROID_KEY_ALIAS }}
+      LINGUA_ANDROID_KEY_PASSWORD: ${{ secrets.LINGUA_ANDROID_KEY_PASSWORD }}
+      LINGUA_ANDROID_VERSION_CODE: ${{ github.run_number }}
+      LINGUA_ANDROID_VERSION_NAME: 1.0.${{ github.run_number }}
+      GOOGLE_PLAY_JSON_KEY: ${{ runner.temp }}/google-play.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: wa-translator/mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+          working-directory: wa-translator/mobile
+      - name: Materialize signing credentials
+        shell: bash
+        env:
+          LINGUA_ANDROID_KEYSTORE_B64: ${{ secrets.LINGUA_ANDROID_KEYSTORE_B64 }}
+          GOOGLE_PLAY_JSON_KEY_B64: ${{ secrets.GOOGLE_PLAY_JSON_KEY_B64 }}
+        run: |
+          printf '%s' "$LINGUA_ANDROID_KEYSTORE_B64" | base64 --decode > release.keystore
+          printf '%s' "$GOOGLE_PLAY_JSON_KEY_B64" | base64 --decode > "$GOOGLE_PLAY_JSON_KEY"
+      - run: npm ci && npm run sync
+      - run: bundle exec fastlane android beta
+
+  ios:
+    if: inputs.platform == 'ios'
+    runs-on: macos-26
+    environment: mobile-beta
+    defaults:
+      run:
+        working-directory: wa-translator/mobile
+    env:
+      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      APP_STORE_CONNECT_KEY_B64: ${{ secrets.APP_STORE_CONNECT_KEY_B64 }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      LINGUA_IOS_BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: wa-translator/mobile/package-lock.json
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+          working-directory: wa-translator/mobile
+      - run: npm ci && npm run sync
+      - run: bundle exec fastlane ios beta

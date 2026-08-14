@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#111b21">
 <link rel="manifest" href="/manifest.webmanifest">
+<script src="/app-runtime.js"></script>
 <title>Lingua Relay · Private room</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}:root{color-scheme:dark;--ink:#eef3f5;--muted:#aab8c1;--canvas:#09141e;--panel:#10212e;--panel-2:#172d3b;--line:#294455;--accent:#67e0bc;--accent-ink:#06251e;--danger:#df6572;--focus:#a9ecff;--shadow:0 18px 48px #0008}html,body{height:100%}body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:radial-gradient(circle at top right,#17445b 0,#09141e 37rem);color:var(--ink);display:flex;flex-direction:column;overflow:hidden;letter-spacing:.005em}button,select,input{font:inherit}button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
@@ -17,7 +18,7 @@
           border:2px solid rgba(255,255,255,.25);background:#111b21;
           box-shadow:0 3px 12px rgba(0,0,0,.5)}
 #selfVideo{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
-#videoNote{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:16px;font-size:13px;color:var(--muted);background:linear-gradient(135deg,#09141e,#102b3a)}
+#videoNote{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:16px;padding-inline-end:calc(min(27vw,130px) + 30px);font-size:13px;color:var(--muted);background:linear-gradient(135deg,#09141e,#102b3a)}
 #videoNote.hidden{display:none}
 
 /* ── captions ────────────────────────────────────────────── */
@@ -87,7 +88,8 @@ html[dir=rtl] #selfWrap{left:10px;right:auto}html[dir=rtl] #participantCount{rig
 
 <script>
 const $ = (id) => document.getElementById(id);
-const roomId = location.pathname.split('/').filter(Boolean).pop();
+const runtime = window.LinguaRuntime;
+const roomId = runtime.roomToken();
 
 let ws, myId = null, ttsToken = null, myLang = null, myLocale = null;
 let myVoiceProfileId = null, myVoiceChoice = null, catalog = null, catalogRevision = null;
@@ -312,7 +314,7 @@ function chooseLocale(localeId) {
 }
 async function loadCapabilities() {
   try {
-    const response = await fetch('/api/capabilities', {cache: 'no-store', headers: {Accept: 'application/json'}});
+    const response = await fetch(runtime.apiUrl('/api/capabilities'), {cache: 'no-store', headers: {Accept: 'application/json'}});
     if (!response.ok) throw new Error('HTTP ' + response.status);
     const value = await response.json();
     if (!value || typeof value.revision !== 'string' || !Array.isArray(value.locales)
@@ -390,7 +392,7 @@ async function refreshIceServers(force = false) {
   if (iceRefreshPromise) return iceRefreshPromise;
   iceRefreshPromise = (async () => {
     try {
-      const response = await fetch('/api/turn', {
+      const response = await fetch(runtime.apiUrl('/api/turn'), {
         headers: {'Authorization': 'Bearer ' + roomId, 'Accept': 'application/json'}
       });
       if (response.status === 404) return; // Local adapter intentionally uses STUN.
@@ -418,7 +420,7 @@ async function refreshIceServers(force = false) {
 async function preflightRoom() {
   if (terminalRoom) return false;
   try {
-    const response = await fetch('/api/room', {
+    const response = await fetch(runtime.apiUrl('/api/room'), {
       headers: {'Authorization': 'Bearer ' + roomId, 'Accept': 'application/json'}
     });
     if (response.status === 401 || response.status === 410) {
@@ -441,8 +443,7 @@ async function connect() {
   if (leaving) return;
   if (!await preflightRoom()) return;
   await refreshIceServers();
-  ws = new WebSocket((location.protocol === 'https:' ? 'wss' : 'ws') + '://' +
-                     location.host + '/ws/' + encodeURIComponent(roomId));
+  ws = new WebSocket(runtime.websocketUrl(roomId));
   ws.binaryType = 'arraybuffer';
   ws.onopen = () => {
     reconnectFailures = 0;
@@ -739,7 +740,7 @@ async function requestFallbackSpeech(item) {
     const retryDeadline = Date.now() + 30000;
     let response, retryDelay = 250;
     while (true) {
-      response = await fetch('/tts', {
+      response = await fetch(runtime.apiUrl('/tts'), {
         method: 'POST',
         headers,
         body,
@@ -934,16 +935,11 @@ $('shareBtn').onclick = async () => {
   const invite = {
     title: 'Private translated video call',
     text: 'Join my private translated video call.',
-    url: location.href
+    url: runtime.inviteUrl('/room/' + roomId)
   };
-  if (navigator.share) {
-    try {
-      await navigator.share(invite);
-      setStatus('Invitation shared');
-      return;
-    } catch (error) {
-      if (error.name === 'AbortError') return;
-    }
+  if (await runtime.share(invite)) {
+    setStatus('Invitation shared');
+    return;
   }
   const message = invite.text + '\n' + invite.url;
   const opened = window.open('https://wa.me/?text=' + encodeURIComponent(message),
@@ -1158,16 +1154,36 @@ async function onSignal(from, data) {
 
 window.addEventListener('pagehide', suspendRoom);
 window.addEventListener('pageshow', restoreSuspendedRoom);
+window.addEventListener('lingua-app-state', event => {
+  if (!event.detail?.isActive) {
+    suspendRoom();
+    setStatus('Call paused while Lingua Relay is in the background', true);
+    return;
+  }
+  if (explicitLeave || terminalRoom || !roleChosen || !leaving) return;
+  leaving = false;
+  roomFull = false;
+  reconnectFailures = 0;
+  myId = null;
+  setStatus('Rejoining this room…', true);
+  connect();
+});
 $('roleLocaleSel').onchange = previewRoleLocale;
 $('joinBtn').onclick = () => chooseLocale($('roleLocaleSel').value);
 if ('speechSynthesis' in window) {
   refreshDeviceVoices();
   speechSynthesis.addEventListener('voiceschanged', refreshDeviceVoices);
 }
-if ('serviceWorker' in navigator && location.protocol === 'https:') {
+if (!runtime.isNative && 'serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('/sw.js', {scope: '/'}).catch(() => {});
 }
-loadCapabilities();
+runtime.ready().then(loadCapabilities).catch(() => {
+  $('roleLocaleSel').disabled = true;
+  $('joinBtn').disabled = true;
+  $('roleCapability').textContent = 'App update or connection required';
+  $('roleCapability').classList.add('warning');
+  setStatus('App update or connection required', true);
+});
 </script>
 </body>
 </html>

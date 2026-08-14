@@ -1,0 +1,73 @@
+name: Mobile build
+
+on:
+  pull_request:
+    paths:
+      - "wa-translator/mobile/**"
+      - "wa-translator/windows/static/**"
+      - "wa-translator/cloudflare/**"
+      - ".github/workflows/mobile-build.yml"
+  push:
+    branches: [main]
+    paths:
+      - "wa-translator/mobile/**"
+      - "wa-translator/windows/static/**"
+      - "wa-translator/cloudflare/**"
+      - ".github/workflows/mobile-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: wa-translator/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: wa-translator/mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - run: npm ci
+      - run: npm run check
+      - run: npm run sync
+      - run: chmod +x android/gradlew && cd android && ./gradlew :app:bundleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lingua-relay-android-aab
+          path: wa-translator/mobile/android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+
+  ios:
+    runs-on: macos-26
+    defaults:
+      run:
+        working-directory: wa-translator/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: wa-translator/mobile/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm run sync
+      - run: >-
+          xcodebuild -project ios/App/App.xcodeproj -scheme App
+          -configuration Release -destination 'generic/platform=iOS'
+          -derivedDataPath build/ios CODE_SIGNING_ALLOWED=NO build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lingua-relay-ios-unsigned
+          path: wa-translator/mobile/build/ios/Build/Products/Release-iphoneos/App.app
+          if-no-files-found: error

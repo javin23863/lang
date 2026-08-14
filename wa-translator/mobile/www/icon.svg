@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Translator speech bubbles">
+  <rect width="512" height="512" rx="112" fill="#075e54"/>
+  <path fill="#fff" d="M80 104h244a48 48 0 0 1 48 48v112a48 48 0 0 1-48 48H190l-74 68 18-68h-6a48 48 0 0 1-48-48V152a48 48 0 0 1 48-48Z"/>
+  <path fill="#53bdeb" d="M238 236h146a48 48 0 0 1 48 48v70a48 48 0 0 1-48 48h-38l16 54-62-54h-66a48 48 0 0 1-48-48v-42h138a48 48 0 0 0 48-48v-28Z"/>
+  <path fill="#075e54" d="M142 164h48v88h-48zm74 0h94v30h-94zm0 58h70v30h-70z"/>
+</svg>

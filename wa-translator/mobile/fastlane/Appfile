@@ -1,0 +1,4 @@
+app_identifier("com.javin23863.linguarelay")
+package_name("com.javin23863.linguarelay")
+
+team_id(ENV["APPLE_TEAM_ID"]) if ENV["APPLE_TEAM_ID"]

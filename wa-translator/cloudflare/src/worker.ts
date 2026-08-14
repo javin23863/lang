@@ -1,5 +1,8 @@
 import { DurableObject } from "cloudflare:workers";
+import privacyHtml from "../../windows/static/privacy.html";
 import roomHtml from "../../windows/static/room.html";
+import supportHtml from "../../windows/static/support.html";
+import termsHtml from "../../windows/static/terms.html";
 import {
   CATALOG_REVISION, M2M_MODEL, isJoinableLocale,
   localeProfile, publicCatalog, voiceProfile,
@@ -19,6 +22,8 @@ export interface Env {
   MODAL_WS_URL: string;
   MODAL_TTS_URL: string;
   MODAL_TEST?: Fetcher;
+  MOBILE_ANDROID_CERT_SHA256?: string;
+  MOBILE_APPLE_TEAM_ID?: string;
 }
 
 const ROOM_ID_BYTES = 18;
@@ -49,6 +54,24 @@ const PCM_RATE_BYTES_PER_SECOND = 40_000;
 const PCM_BURST_BYTES = 64_000;
 const TTS_WINDOW_MS = 60_000;
 const TTS_REQUESTS_PER_WINDOW = 12;
+const MOBILE_PROTOCOL = 1;
+const MOBILE_MINIMUM_BUILD = 1;
+const MOBILE_APP_ID = "com.javin23863.linguarelay";
+const MOBILE_ORIGINS = new Set(["https://localhost", "capacitor://localhost"]);
+const MOBILE_API_ALIASES = new Map([
+  ["/api/v1/capabilities", "/api/capabilities"],
+  ["/api/v1/rooms", "/api/rooms"],
+  ["/api/v1/room", "/api/room"],
+  ["/api/v1/room-control", "/api/room-control"],
+  ["/api/v1/room-control/close", "/api/room-control/close"],
+  ["/api/v1/turn", "/api/turn"],
+  ["/api/v1/tts", "/tts"],
+]);
+const PUBLIC_PAGES = new Map([
+  ["/privacy", privacyHtml],
+  ["/terms", termsHtml],
+  ["/support", supportHtml],
+]);
 type IceServer = {
   urls: string | string[];
   username?: string;
@@ -196,16 +219,103 @@ function expectedOrigin(request: Request, env: Env): string {
   return env.PUBLIC_ORIGIN || new URL(request.url).origin;
 }
 
+function nativeOrigin(request: Request): string | null {
+  const origin = request.headers.get("Origin");
+  return origin && MOBILE_ORIGINS.has(origin) ? origin : null;
+}
+
 function sameOrigin(request: Request, env: Env): boolean {
-  return request.headers.get("Origin") === expectedOrigin(request, env);
+  return request.headers.get("Origin") === expectedOrigin(request, env)
+    || nativeOrigin(request) !== null;
 }
 
 function sameOriginBrowserGet(request: Request, env: Env): boolean {
   const origin = request.headers.get("Origin");
-  if (origin !== null) return origin === expectedOrigin(request, env);
+  if (origin !== null) return origin === expectedOrigin(request, env)
+    || MOBILE_ORIGINS.has(origin);
   return request.method === "GET"
     && request.headers.get("Sec-Fetch-Site") === "same-origin"
     && ["cors", "same-origin"].includes(request.headers.get("Sec-Fetch-Mode") || "");
+}
+
+function mobileCors(request: Request, response: Response): Response {
+  const origin = nativeOrigin(request);
+  if (!origin || response.webSocket) return response;
+  const headers = new Headers(response.headers);
+  headers.set("Access-Control-Allow-Origin", origin);
+  headers.set("Vary", "Origin");
+  return new Response(response.body, { status: response.status, headers });
+}
+
+function mobilePreflight(request: Request): Response {
+  const origin = nativeOrigin(request);
+  if (!origin) return new Response("Forbidden", { status: 403 });
+  const requestedMethod = request.headers.get("Access-Control-Request-Method");
+  if (!requestedMethod || !["GET", "POST"].includes(requestedMethod.toUpperCase())) {
+    return new Response("Method Not Allowed", { status: 405 });
+  }
+  return new Response(null, { status: 204, headers: {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Participant-ID",
+    "Access-Control-Max-Age": "86400",
+    "Cache-Control": "no-store",
+    "Vary": "Origin",
+  }});
+}
+
+function mobileBootstrap(request: Request, env: Env): Response {
+  return Response.json({
+    protocol: MOBILE_PROTOCOL,
+    minimum_client_build: MOBILE_MINIMUM_BUILD,
+    public_origin: expectedOrigin(request, env),
+    account_mode: "none",
+    call_lifecycle: "foreground",
+    room_ttl_seconds: ROOM_TOKEN_TTL_SECONDS,
+    max_room_participants: MAX_PARTICIPANTS,
+    compute_capacity: { global_streams: 4, state: "beta-limited" },
+    endpoints: {
+      capabilities: "/api/v1/capabilities",
+      rooms: "/api/v1/rooms",
+      room: "/api/v1/room",
+      room_control: "/api/v1/room-control",
+      turn: "/api/v1/turn",
+      tts: "/api/v1/tts",
+      websocket: "/ws/v1/{token}",
+    }
+  }, { headers: { "Cache-Control": "no-store" } });
+}
+
+function androidAssociation(env: Env): Response {
+  const fingerprint = (env.MOBILE_ANDROID_CERT_SHA256 || "").toUpperCase();
+  if (!/^([0-9A-F]{2}:){31}[0-9A-F]{2}$/.test(fingerprint)) {
+    return new Response("Android association is not configured", {
+      status: 503, headers: { "Cache-Control": "no-store" }
+    });
+  }
+  return Response.json([{
+    relation: ["delegate_permission/common.handle_all_urls"],
+    target: {
+      namespace: "android_app",
+      package_name: MOBILE_APP_ID,
+      sha256_cert_fingerprints: [fingerprint],
+    }
+  }], { headers: { "Cache-Control": "public, max-age=3600" } });
+}
+
+function appleAssociation(env: Env): Response {
+  const teamId = env.MOBILE_APPLE_TEAM_ID || "";
+  if (!/^[A-Z0-9]{10}$/.test(teamId)) {
+    return new Response("Apple association is not configured", {
+      status: 503, headers: { "Cache-Control": "no-store" }
+    });
+  }
+  return Response.json({ applinks: {
+    apps: [], details: [{
+      appID: `${teamId}.${MOBILE_APP_ID}`,
+      components: [{ "/": "/room/*", comment: "Private Lingua Relay rooms" }],
+    }]
+  }}, { headers: { "Cache-Control": "public, max-age=3600" } });
 }
 
 function privateHeaders(source?: Headers): Headers {
@@ -1276,8 +1386,7 @@ export class Room extends DurableObject<Env> {
   }
 }
 
-export default {
-  async fetch(request, env): Promise<Response> {
+async function routeRequest(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/health") {
       return Response.json({ status: "ok" }, {
@@ -1286,6 +1395,13 @@ export default {
     }
     if (request.method === "GET" && url.pathname === "/api/capabilities") {
       return Response.json(publicCatalog(), { headers: { "Cache-Control": "no-store" } });
+    }
+    if (request.method === "GET" && url.pathname === "/.well-known/assetlinks.json") {
+      return androidAssociation(env);
+    }
+    if (request.method === "GET"
+        && url.pathname === "/.well-known/apple-app-site-association") {
+      return appleAssociation(env);
     }
     if (url.pathname === "/api/room") return roomPreflight(request, env);
     if (url.pathname === "/api/turn") return turnCredentials(request, env);
@@ -1320,6 +1436,13 @@ export default {
       return stub.fetch(new Request("https://room.internal/socket", { headers }));
     }
     if (request.method !== "GET") return new Response("Method Not Allowed", { status: 405 });
+    const publicPage = PUBLIC_PAGES.get(url.pathname);
+    if (publicPage) {
+      const headers = privateHeaders();
+      headers.set("Content-Type", "text/html; charset=utf-8");
+      headers.set("Cache-Control", "no-store");
+      return new Response(publicPage, { headers });
+    }
     if (url.pathname === "/" || url.pathname === "/index.html") {
       const asset = await env.ASSETS.fetch(request);
       return new Response(asset.body, { status: asset.status, headers: privateHeaders(asset.headers) });
@@ -1336,5 +1459,31 @@ export default {
     headers.set("Service-Worker-Allowed", "/");
     headers.set("Cache-Control", "no-store");
     return new Response(asset.body, { status: asset.status, headers });
+}
+
+export default {
+  async fetch(request, env): Promise<Response> {
+    const url = new URL(request.url);
+    if (request.method === "OPTIONS" && url.pathname.startsWith("/api/v1/")) {
+      return mobilePreflight(request);
+    }
+    if (url.pathname === "/api/v1/mobile/bootstrap") {
+      if (request.method !== "GET") return mobileCors(
+        request, new Response("Method Not Allowed", { status: 405 })
+      );
+      return mobileCors(request, mobileBootstrap(request, env));
+    }
+    const alias = MOBILE_API_ALIASES.get(url.pathname);
+    if (url.pathname.startsWith("/api/v1/")) {
+      if (!alias) return mobileCors(request, new Response("Not Found", { status: 404 }));
+      url.pathname = alias;
+      return mobileCors(request, await routeRequest(new Request(url, request), env));
+    }
+    const socket = url.pathname.match(/^\/ws\/v1\/(.+)$/);
+    if (socket) {
+      url.pathname = `/ws/${socket[1]}`;
+      return routeRequest(new Request(url, request), env);
+    }
+    return routeRequest(request, env);
   }
 } satisfies ExportedHandler<Env>;

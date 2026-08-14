@@ -1,0 +1,17 @@
+{
+  "name": "Live Translator",
+  "short_name": "Translator",
+  "description": "Private multilingual video calls with live translated captions.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b141a",
+  "theme_color": "#111b21",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

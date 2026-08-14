@@ -476,12 +476,13 @@ async def check_invitation_ui(tab, check):
     check(native["payload"] and native["payload"]["url"] == native["href"],
           f"invite UI: native phone share receives the exact private URL (got {native})")
 
-    shared = await tab.js("""(() => {
+    shared = await tab.js("""(async () => {
       Object.defineProperty(navigator, 'share', {value: undefined, configurable: true});
       const realOpen = window.open;
       let opened = '';
       window.open = url => { opened = String(url); return {}; };
       document.getElementById('shareBtn').click();
+      await new Promise(resolve => setTimeout(resolve, 0));
       window.open = realOpen;
       return {opened, href: location.href};
     })()""")

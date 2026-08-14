@@ -1,0 +1,1189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111b21">
+<link rel="manifest" href="/manifest.webmanifest">
+<script src="/mobile-bridge.js"></script><script src="/app-runtime.js"></script>
+<title>Lingua Relay · Private room</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}:root{color-scheme:dark;--ink:#eef3f5;--muted:#aab8c1;--canvas:#09141e;--panel:#10212e;--panel-2:#172d3b;--line:#294455;--accent:#67e0bc;--accent-ink:#06251e;--danger:#df6572;--focus:#a9ecff;--shadow:0 18px 48px #0008}html,body{height:100%}body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:radial-gradient(circle at top right,#17445b 0,#09141e 37rem);color:var(--ink);display:flex;flex-direction:column;overflow:hidden;letter-spacing:.005em}button,select,input{font:inherit}button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+
+/* ── video ───────────────────────────────────────────────── */
+#stage{position:relative;background:#000;flex:0 0 auto;height:34vh;min-height:180px;border-bottom:1px solid var(--line)}
+#remoteVideo{width:100%;height:100%;object-fit:cover;background:#000}
+#selfWrap{position:absolute;right:10px;bottom:10px;width:27%;max-width:130px;
+          aspect-ratio:3/4;border-radius:10px;overflow:hidden;
+          border:2px solid rgba(255,255,255,.25);background:#111b21;
+          box-shadow:0 3px 12px rgba(0,0,0,.5)}
+#selfVideo{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+#videoNote{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:16px;padding-inline-end:calc(min(27vw,130px) + 30px);font-size:13px;color:var(--muted);background:linear-gradient(135deg,#09141e,#102b3a)}
+#videoNote.hidden{display:none}
+
+/* ── captions ────────────────────────────────────────────── */
+#captions{flex:1;overflow-y:auto;padding:14px clamp(12px,3vw,28px) 10px;display:flex;flex-direction:column;gap:9px;background:linear-gradient(#09141e88,#09141e)}#captionEmpty{margin:auto;text-align:center;color:var(--muted);max-width:31rem;line-height:1.55;font-size:14px}.msg{padding:10px 13px;border-radius:13px;max-width:88%;word-wrap:break-word;border:1px solid var(--line);
+     animation:fade .12s ease-out}
+@keyframes fade{from{opacity:.4}to{opacity:1}}
+.msg.mine{background:#115646;align-self:flex-end;border-radius:13px 3px 13px 13px}.msg.theirs{background:var(--panel);align-self:flex-start;border-radius:3px 13px 13px 13px}.msg .who{font-size:10px;color:var(--muted);margin-bottom:4px;letter-spacing:.07em;text-transform:uppercase}.msg .lead{font-size:17px;line-height:1.4}.msg .sub{font-size:13px;line-height:1.4;color:var(--muted);margin-top:4px}
+.msg.live{opacity:.75}
+.msg.live .lead::after{content:'▌';animation:blink 1s steps(2) infinite;color:#53bdeb}
+@keyframes blink{50%{opacity:0}}
+
+/* ── controls ────────────────────────────────────────────── */
+#bar{flex:0 0 auto;background:#0b1924ee;backdrop-filter:blur(16px);padding:10px clamp(9px,2vw,20px) calc(10px + env(safe-area-inset-bottom));display:grid;grid-template-columns:minmax(110px,1fr) repeat(4,42px);gap:8px;align-items:center;border-top:1px solid var(--line)}button{border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;padding:10px 12px;min-height:42px;color:var(--ink)}#micBtn{background:var(--accent);color:var(--accent-ink);min-width:0;white-space:nowrap;overflow:hidden}#micBtn.on{background:var(--danger);color:#fff}
+#micBtn .dot{display:inline-block;width:9px;height:9px;border-radius:50%;
+             background:#fff;margin-right:7px;animation:blink 1s infinite}
+#settingsBtn{font-size:12px}.icon{background:var(--panel-2);color:var(--ink);padding:8px;width:42px}.icon.off{background:transparent;color:var(--muted);border-color:var(--line)}#settings{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:9px;border-top:1px solid var(--line);padding-top:10px}.setting{display:flex;flex-direction:column;gap:4px;min-width:0;color:var(--muted);font-size:11px;text-align:left}.setting select,.setting input{width:100%;min-width:0;background:var(--panel-2);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:9px 8px;font-size:13px}.setting input{padding:8px}.capability{font-size:11px;color:var(--muted);line-height:1.35;padding:8px 10px;border-radius:9px;background:#0a2930;border:1px solid #286457}.capability.warning{background:#352928;border-color:#795848;color:#f3d0bc}
+#status{position:absolute;top:9px;left:50%;transform:translateX(-50%);padding:5px 10px;text-align:center;font-size:11px;color:var(--ink);background:#061019b8;border:1px solid #ffffff22;border-radius:999px;z-index:5;max-width:calc(100% - 32px)}#participantCount{position:absolute;top:9px;left:9px;padding:5px 8px;border-radius:999px;font-size:11px;color:var(--ink);background:#061019b8;border:1px solid #ffffff22;z-index:5;direction:ltr;unicode-bidi:plaintext}
+#roleGate{position:fixed;inset:0;z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:18px;overflow-y:auto;background:rgba(4,13,20,.94);backdrop-filter:blur(14px)}
+#roleGate[hidden]{display:none}
+.roleCard{width:min(100%,520px);max-height:calc(100dvh - 36px);margin:auto;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:clamp(18px,5vw,28px);box-shadow:var(--shadow)}.brand{font-weight:800;font-size:12px;letter-spacing:.13em;text-transform:uppercase;color:var(--accent);margin-bottom:10px}.roleCard h1{font-size:clamp(23px,6vw,31px);line-height:1.13;margin-bottom:16px}.roleLocale{display:grid;gap:6px;color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.03em}.roleLocale select{width:100%;min-width:0;min-height:44px;background:var(--panel-2);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:9px 8px;font-size:14px}.roleCard .capability{margin:10px 0}.roleJoin{width:100%;background:var(--accent);color:var(--accent-ink)}
+html[dir=rtl] #selfWrap{left:10px;right:auto}html[dir=rtl] #participantCount{right:9px;left:auto}html[dir=rtl] .msg.mine{align-self:flex-start;border-radius:3px 13px 13px 13px}html[dir=rtl] .msg.theirs{align-self:flex-end;border-radius:13px 3px 13px 13px}
+@media(max-width:380px){
+  #stage{height:31vh;min-height:160px}
+  #captions{padding:8px 10px 6px}
+  #bar{padding-left:7px;padding-right:7px;gap:5px;grid-template-columns:repeat(5,minmax(0,1fr))}
+  #micBtn{grid-column:1/-1}
+  .icon{width:100%;min-width:0;padding:7px 2px;font-size:10px;white-space:nowrap}.setting select{font-size:11px;padding:7px 3px}
+  .roleCard{padding:16px}
+}
+</style>
+</head>
+<body>
+
+<div id="roleGate" role="dialog" aria-modal="true" aria-labelledby="roleTitle">
+  <div class="roleCard">
+    <p class="brand">Lingua Relay</p><h1 id="roleTitle">Choose language</h1>
+    <label class="roleLocale" for="roleLocaleSel">Language
+      <select id="roleLocaleSel" aria-describedby="roleCapability" disabled></select>
+    </label>
+    <p id="roleCapability" class="capability" role="status" aria-live="polite">Loading…</p>
+    <button id="joinBtn" class="roleJoin" type="button" disabled>Join room</button>
+  </div>
+</div>
+
+<div id="stage">
+  <video id="remoteVideo" autoplay playsinline></video>
+  <div id="videoNote">Waiting for the other person to join…</div>
+  <div id="selfWrap"><video id="selfVideo" autoplay playsinline muted></video></div>
+  <div id="status">Choose your language</div>
+  <div id="participantCount" aria-live="polite">0 / 4 people</div>
+</div>
+
+<div id="captions"><p id="captionEmpty">Captions</p></div>
+
+<div id="bar">
+  <button id="micBtn">Start microphone</button>
+  <button id="shareBtn" class="icon" title="Share this private room" aria-label="Share this private room">Share</button>
+  <button id="camBtn" class="icon" title="Turn camera on or off" aria-label="Camera">Camera</button>
+  <button id="voiceBtn" class="icon off" title="Turn translated voice on or off" aria-label="Translated voice">Voice</button>
+  <button id="leaveBtn" class="icon" title="Leave this room" aria-label="Leave room">Leave</button>
+  <div id="settings">
+    <label class="setting">Language<select id="localeSel" aria-describedby="capabilityNote"></select></label>
+    <label class="setting">Voice<select id="publishVoiceSel"></select></label>
+    <p id="capabilityNote" class="capability" role="status">Loading…</p>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const runtime = window.LinguaRuntime;
+const roomId = runtime.roomToken();
+
+let ws, myId = null, ttsToken = null, myLang = null, myLocale = null;
+let myVoiceProfileId = null, myVoiceChoice = null, catalog = null, catalogRevision = null;
+let runtimeVoiceProfileIds = null;
+let runtimeCaptionsAvailable = true, runtimeCaptionsUnavailableReason = '';
+const locales = new Map();
+const voices = new Map();
+const deviceVoicesById = new Map();
+
+let mediaStream = null, audioCtx = null, workletNode = null;
+let micOn = false, camOn = true, roomFull = false, reconnectFailures = 0;
+let terminalRoom = false, leaving = false, turnRefreshTimer = null, iceRefreshPromise = null;
+let explicitLeave = false;
+let presenceHeartbeatTimer = null;
+let iceServers = [{urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302']}];
+let iceExpiresAt = 0;
+const peers = new Map();   // id -> {pc, lang, polite, makingOffer, ignoreOffer}
+const bubbles = new Map(); // "speakerId:seq" -> element
+
+function setStatus(text, sticky) {
+  const el = $('status');
+  el.textContent = text;
+  el.style.display = text ? 'block' : 'none';
+  if (!sticky && text) setTimeout(() => { if (el.textContent === text) el.style.display = 'none'; }, 3000);
+}
+
+// ── WebSocket and short-lived ICE configuration ──────────
+function scheduleTurnRefresh(delay) {
+  clearTimeout(turnRefreshTimer);
+  if (terminalRoom) return;
+  turnRefreshTimer = setTimeout(() => refreshIceServers(true),
+                                Math.max(1000, Math.min(delay, 2147483647)));
+}
+
+function localeProfile(id) { return locales.get(id) || null; }
+function localeOptionLabel(profile) {
+  return profile.native_name === profile.display_name ? profile.native_name
+    : profile.native_name + ' — ' + profile.display_name;
+}
+function localeName(id) {
+  const profile = localeProfile(id);
+  return profile ? localeOptionLabel(profile) : String(id || 'Unknown locale');
+}
+function cloudVoices(profile) {
+  if (!profile || !Array.isArray(profile.voice_profiles)) return [];
+  return profile.voice_profiles.filter(voice =>
+    runtimeVoiceProfileIds === null || runtimeVoiceProfileIds.has(voice.id));
+}
+function deviceVoiceId(voice) { return 'device:' + voice.voiceURI; }
+function deviceVoices(profile) {
+  if (!profile) return [];
+  const locale = profile.id.toLowerCase();
+  const base = profile.language.toLowerCase();
+  return [...deviceVoicesById.values()].filter(voice => {
+    const normalized = voice.lang.replaceAll('_', '-').toLowerCase();
+    const exact = voice.lang.toLowerCase() === locale || normalized === locale;
+    const sameBase = voice.lang.split('-')[0].toLowerCase() === base
+      || normalized.split('-')[0] === base;
+    return exact || sameBase;
+  }).sort((left, right) => {
+    const leftExact = left.lang.replaceAll('_', '-').toLowerCase() === locale;
+    const rightExact = right.lang.replaceAll('_', '-').toLowerCase() === locale;
+    return Number(rightExact) - Number(leftExact) || left.name.localeCompare(right.name);
+  });
+}
+function availableVoiceCount(profile) {
+  return cloudVoices(profile).length + deviceVoices(profile).length;
+}
+function capabilityText(profile) {
+  if (!profile) return 'Choose language';
+  const badges = [profile.capabilities?.asr?.tier === 'verified' ? 'Tested' : 'Preview',
+    runtimeCaptionsAvailable ? 'Captions' : 'Captions unavailable'];
+  const voiceCount = availableVoiceCount(profile);
+  if (voiceCount) badges.push(voiceCount + (voiceCount === 1 ? ' voice' : ' voices'));
+  return badges.join(' · ');
+}
+function updateCapabilityNote() {
+  const profile = localeProfile(myLocale);
+  if (!profile) return;
+  $('capabilityNote').textContent = capabilityText(profile);
+  $('capabilityNote').classList.toggle('warning', !runtimeCaptionsAvailable);
+}
+function roleCapabilityText(profile) {
+  if (!profile) return 'Choose language';
+  return capabilityText(profile);
+}
+function updateRoleGate() {
+  const profile = localeProfile($('roleLocaleSel').value);
+  const joinable = Boolean(profile?.capabilities?.asr?.available);
+  $('joinBtn').disabled = !joinable;
+  $('roleCapability').textContent = roleCapabilityText(profile);
+  $('roleCapability').classList.toggle('warning', !joinable || !runtimeCaptionsAvailable);
+}
+function previewRoleLocale() {
+  const profile = localeProfile($('roleLocaleSel').value);
+  if (profile) {
+    document.documentElement.lang = profile.id;
+    document.documentElement.dir = profile.rtl ? 'rtl' : 'ltr';
+  }
+  updateRoleGate();
+}
+function fillLocaleSelect() {
+  const profiles = [...locales.values()].filter(item => item.capabilities?.asr?.available);
+  const defaultLocale = profiles.some(profile => profile.id === 'en-US') ? 'en-US' : profiles[0]?.id;
+  for (const id of ['roleLocaleSel', 'localeSel']) {
+    const select = $(id);
+    const selected = myLocale || select.value || defaultLocale;
+    select.replaceChildren();
+    for (const tier of ['verified', 'preview']) {
+      const matching = profiles.filter(profile => profile.capabilities?.asr?.tier === tier);
+      if (!matching.length) continue;
+      const group = document.createElement('optgroup');
+      group.label = tier === 'verified' ? 'Tested' : 'Preview';
+      for (const profile of matching) {
+        const option = document.createElement('option');
+        option.value = profile.id;
+        option.textContent = localeOptionLabel(profile);
+        option.selected = profile.id === selected;
+        group.appendChild(option);
+      }
+      select.appendChild(group);
+    }
+    select.disabled = profiles.length === 0;
+  }
+  updateRoleGate();
+}
+function fillVoiceSelect() {
+  const select = $('publishVoiceSel');
+  const profile = localeProfile(myLocale);
+  const cloudOptions = cloudVoices(profile);
+  const deviceOptions = deviceVoices(profile);
+  select.replaceChildren();
+  if (!cloudOptions.length && !deviceOptions.length) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'Captions only';
+    select.appendChild(option);
+    select.disabled = true;
+    myVoiceProfileId = null;
+    myVoiceChoice = null;
+    updateCapabilityNote();
+    return;
+  }
+  select.disabled = false;
+  if (deviceOptions.length) {
+    const group = document.createElement('optgroup');
+    group.label = 'On this device';
+    for (const voice of deviceOptions) {
+      const option = document.createElement('option');
+      option.value = deviceVoiceId(voice);
+      option.textContent = voice.name;
+      group.appendChild(option);
+    }
+    select.appendChild(group);
+  }
+  if (cloudOptions.length) {
+    const group = document.createElement('optgroup');
+    group.label = 'Included';
+    for (const voice of cloudOptions) {
+      const option = document.createElement('option');
+      option.value = 'cloud:' + voice.id;
+      option.textContent = `${voice.name} · ${voice.style}`;
+      group.appendChild(option);
+    }
+    select.appendChild(group);
+  }
+  const saved = localStorage.getItem('lingua-relay.voice-choice.' + profile.id);
+  const legacy = localStorage.getItem('lingua-relay.voice-profile');
+  const valid = new Set([
+    ...deviceOptions.map(deviceVoiceId),
+    ...cloudOptions.map(voice => 'cloud:' + voice.id),
+  ]);
+  const preferred = [myVoiceChoice, saved, legacy && 'cloud:' + legacy]
+    .find(value => value && valid.has(value));
+  myVoiceChoice = preferred || (cloudOptions.length
+    ? 'cloud:' + cloudOptions[0].id : deviceVoiceId(deviceOptions[0]));
+  const selectedCloudId = myVoiceChoice.startsWith('cloud:') ? myVoiceChoice.slice(6) : null;
+  myVoiceProfileId = selectedCloudId || cloudOptions[0]?.id || null;
+  select.value = myVoiceChoice;
+  updateCapabilityNote();
+}
+function refreshDeviceVoices() {
+  deviceVoicesById.clear();
+  if ('speechSynthesis' in window) {
+    for (const voice of speechSynthesis.getVoices()) {
+      if (voice && voice.voiceURI && voice.lang) deviceVoicesById.set(deviceVoiceId(voice), voice);
+    }
+  }
+  if (myLocale && catalog) {
+    fillVoiceSelect();
+    updateVoiceButton();
+  } else {
+    updateRoleGate();
+  }
+}
+function applyLocale(localeId, preferredVoiceId = null) {
+  const profile = localeProfile(localeId);
+  if (!profile || !profile.capabilities?.asr?.available) return false;
+  myLocale = profile.id;
+  myLang = profile.language;
+  myVoiceProfileId = preferredVoiceId || null;
+  myVoiceChoice = preferredVoiceId ? 'cloud:' + preferredVoiceId : null;
+  document.documentElement.lang = profile.id;
+  document.documentElement.dir = profile.rtl ? 'rtl' : 'ltr';
+  fillLocaleSelect();
+  fillVoiceSelect();
+  updateCapabilityNote();
+  localStorage.setItem('lingua-relay.locale', myLocale);
+  if (myVoiceProfileId) localStorage.setItem('lingua-relay.voice-profile', myVoiceProfileId);
+  else localStorage.removeItem('lingua-relay.voice-profile');
+  updateVoiceButton();
+  return true;
+}
+let roleChosen = false;
+function chooseLocale(localeId) {
+  if (roleChosen || !applyLocale(localeId,
+      localStorage.getItem('lingua-relay.voice-profile'))) return;
+  roleChosen = true;
+  $('roleGate').hidden = true;
+  setStatus('Joining as ' + localeName(myLocale) + '…', true);
+  connect();
+}
+async function loadCapabilities() {
+  try {
+    const response = await fetch(runtime.apiUrl('/api/capabilities'), {cache: 'no-store', headers: {Accept: 'application/json'}});
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    const value = await response.json();
+    if (!value || typeof value.revision !== 'string' || !Array.isArray(value.locales)
+        || value.counts?.base_languages !== 100 || value.locales.length < 117) {
+      throw new Error('invalid capability catalog');
+    }
+    catalog = value;
+    catalogRevision = value.revision;
+    for (const profile of value.locales) {
+      if (!profile || typeof profile.id !== 'string' || typeof profile.language !== 'string'
+          || !profile.capabilities || locales.has(profile.id)) throw new Error('invalid locale profile');
+      locales.set(profile.id, profile);
+      for (const voice of profile.voice_profiles || []) voices.set(voice.id, voice);
+    }
+    if (Array.isArray(value.runtime?.voice_profile_ids)) {
+      runtimeVoiceProfileIds = new Set(value.runtime.voice_profile_ids);
+    }
+    if (typeof value.runtime?.captions_available === 'boolean') {
+      runtimeCaptionsAvailable = value.runtime.captions_available;
+      runtimeCaptionsUnavailableReason = String(value.runtime.captions_unavailable_reason ||
+        'Caption compute is unavailable in this adapter.');
+    }
+    fillLocaleSelect();
+    const remembered = localStorage.getItem('lingua-relay.locale');
+    if (remembered && localeProfile(remembered)?.capabilities?.asr?.available) {
+      applyLocale(remembered, localStorage.getItem('lingua-relay.voice-profile'));
+    }
+  } catch (error) {
+    $('roleLocaleSel').disabled = true;
+    $('joinBtn').disabled = true;
+    $('roleCapability').textContent = 'Languages unavailable';
+    $('roleCapability').classList.add('warning');
+    setStatus('Languages unavailable', true);
+  }
+}
+
+function updateParticipantCount(serverCount) {
+  const derived = myId === null ? 0 : peers.size + 1;
+  const count = Number.isInteger(serverCount) && serverCount >= 0 && serverCount <= 4
+    ? serverCount : derived;
+  $('participantCount').textContent = count + ' / 4 ' + (count === 1 ? 'person' : 'people');
+}
+
+function stopPresenceHeartbeat() {
+  clearInterval(presenceHeartbeatTimer);
+  presenceHeartbeatTimer = null;
+}
+
+function startPresenceHeartbeat(interval) {
+  stopPresenceHeartbeat();
+  if (interval === undefined) return; // The local adapter needs no app lease.
+  if (!Number.isInteger(interval) || interval < 1000 || interval > 15000) {
+    throw new Error('invalid presence heartbeat interval');
+  }
+  presenceHeartbeatTimer = setInterval(() => send({type: 'heartbeat'}), interval);
+}
+
+function applyIceServersToPeers() {
+  for (const {pc} of peers.values()) {
+    if (pc.connectionState === 'closed') continue;
+    try {
+      pc.setConfiguration({iceServers});
+      pc.restartIce();
+    } catch (_) {
+      // A connection closing at the same moment will be rebuilt by signalling.
+    }
+  }
+}
+
+async function refreshIceServers(force = false) {
+  if (!force && Date.now() < iceExpiresAt - 60000) {
+    scheduleTurnRefresh(iceExpiresAt - Date.now() - 60000);
+    return;
+  }
+  if (iceRefreshPromise) return iceRefreshPromise;
+  iceRefreshPromise = (async () => {
+    try {
+      const response = await fetch(runtime.apiUrl('/api/turn'), {
+        headers: {'Authorization': 'Bearer ' + roomId, 'Accept': 'application/json'}
+      });
+      if (response.status === 404) return; // Local adapter intentionally uses STUN.
+      if (!response.ok) {
+        scheduleTurnRefresh(30000);
+        return;
+      }
+      const value = await response.json();
+      if (!Array.isArray(value.iceServers) || !value.iceServers.length) {
+        throw new Error('empty ICE config');
+      }
+      iceServers = value.iceServers;
+      iceExpiresAt = Number(value.expires_at) * 1000 || Date.now() + 300000;
+      applyIceServersToPeers();
+      scheduleTurnRefresh(iceExpiresAt - Date.now() - 60000);
+    } catch (_) {
+      scheduleTurnRefresh(30000);
+      // Direct connections still work on compatible networks. A relay failure
+      // remains visible in connection state; no long-term key is in this page.
+    }
+  })().finally(() => { iceRefreshPromise = null; });
+  return iceRefreshPromise;
+}
+
+async function preflightRoom() {
+  if (terminalRoom) return false;
+  try {
+    const response = await fetch(runtime.apiUrl('/api/room'), {
+      headers: {'Authorization': 'Bearer ' + roomId, 'Accept': 'application/json'}
+    });
+    if (response.status === 401 || response.status === 410) {
+      terminalRoom = true;
+      clearTimeout(turnRefreshTimer);
+      failVoice('Natural audio restored because this private room expired');
+      setStatus('This private room has expired or is unavailable', true);
+      showVideoNote('Ask the caller to create a new private room.');
+      return false;
+    }
+    // 404 keeps compatibility with an older local adapter that has no
+    // preflight route. Other transient failures still get the bounded retry.
+    return true;
+  } catch (_) {
+    return true;
+  }
+}
+
+async function connect() {
+  if (leaving) return;
+  if (!await preflightRoom()) return;
+  await refreshIceServers();
+  ws = new WebSocket(runtime.websocketUrl(roomId));
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = () => {
+    reconnectFailures = 0;
+    setStatus('Connected');
+    if (!myLocale || !catalogRevision) {
+      ws.close(1008, 'capability catalog unavailable');
+      return;
+    }
+    send({type: 'join', locale: myLocale, name: localeName(myLocale),
+          voice_profile: myVoiceProfileId});
+  };
+  ws.onclose = (event) => {
+    stopPresenceHeartbeat();
+    if (leaving) return;
+    if (event.code === 4001) {
+      closeByHost();
+      return;
+    }
+    failVoice('Natural audio restored while reconnecting');
+    ttsToken = null;
+    if (terminalRoom) return;
+    if (event.code === 1008) {
+      setStatus('This private room has expired or is unavailable', true);
+      showVideoNote('Ask the caller to create a new private room.');
+      return;
+    }
+    if (roomFull) return;   // retrying a full room just hammers the server
+    setStatus('Reconnecting…', true);
+    reconnectFailures++;
+    const delay = Math.min(8000, 250 * 2 ** Math.min(reconnectFailures, 5));
+    setTimeout(connect, delay);
+  };
+  ws.onmessage = async (ev) => {
+    try { await handle(JSON.parse(ev.data)); }
+    catch (_) { ws.close(1008, 'invalid server message'); }
+  };
+}
+
+function send(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+}
+
+function disconnectRoom(notifyServer, preserveServerClose = false) {
+  if (leaving) return;
+  leaving = true;
+  stopPresenceHeartbeat();
+  clearTimeout(turnRefreshTimer);
+  setMicEnabled(false);
+  if (notifyServer) send({type: 'leave'});
+  if (!preserveServerClose && ws && ws.readyState === WebSocket.OPEN) {
+    ws.close(1000, notifyServer ? 'left room' : 'page suspended');
+  }
+  failVoice();
+  peers.forEach(p => p.pc.close());
+  peers.clear();
+  if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
+  mediaStream = null;
+  mediaPromise = null;
+  workletNode = null;
+  if (audioCtx) audioCtx.close().catch(() => {});
+  audioCtx = null;
+  ws = null;
+  ttsToken = null;
+  updateParticipantCount(0);
+}
+
+function closeByHost() {
+  if (terminalRoom) return;
+  terminalRoom = true;
+  disconnectRoom(false, true);
+  setStatus('This private room has been closed', true);
+  showVideoNote('This private room has been closed by its host.');
+}
+
+function leaveRoom() {
+  explicitLeave = true;
+  disconnectRoom(true);
+  setStatus('You left this room', true);
+  showVideoNote('You left this private room.');
+}
+
+function suspendRoom() {
+  if (explicitLeave) return;
+  // A BFCache navigation is not a user Leave. Closing the socket still frees
+  // the server slot immediately, while pageshow.persisted can create a fresh
+  // connection when the cached page is restored.
+  disconnectRoom(false);
+}
+
+function restoreSuspendedRoom(event) {
+  if (!event.persisted || explicitLeave) return;
+  leaving = false;
+  roomFull = false;
+  reconnectFailures = 0;
+  myId = null;
+  updateParticipantCount(0);
+  if (!roleChosen || terminalRoom) return;
+  setStatus('Rejoining this room…', true);
+  showVideoNote('Reconnecting to the other person…');
+  connect();
+}
+
+$('leaveBtn').onclick = leaveRoom;
+
+async function handle(m) {
+  if (m.type === 'welcome') {
+    // A dropped WebSocket reconnects and rejoins, and the server issues a new
+    // id. Every existing peer connection was negotiated against the old one —
+    // including who is polite — and the peers themselves are now known by new
+    // ids too, so the old ones can never be signalled again. Start clean.
+    if (myId !== null && myId !== m.id) {
+      peers.forEach(p => p.pc.close());
+      peers.clear();
+      showVideoNote('Reconnecting to the other person…');
+    }
+    myId = m.id;
+    ttsToken = m.tts_token;
+    if (!catalog || m.catalog_revision !== catalogRevision) {
+      terminalRoom = true;
+      setStatus('Languages updated — reload to continue', true);
+      ws.close(1008, 'catalog revision mismatch');
+      return;
+    }
+    startPresenceHeartbeat(m.heartbeat_interval_ms);
+    // myId decides who is polite, so no peer may be built before it is known.
+    for (const peer of m.peers) startPeer(peer);
+    updateParticipantCount(m.participant_count);
+  } else if (m.type === 'peer_join') {
+    setStatus(localeName(m.locale) + ' speaker joined');
+    startPeer(m);
+    updateParticipantCount(m.participant_count);
+  } else if (m.type === 'peer_update') {
+    const p = peers.get(m.id);
+    if (p) { p.lang = m.lang; p.locale = m.locale; p.voiceProfileId = m.voice_profile || null; }
+  } else if (m.type === 'peer_leave') {
+    const p = peers.get(m.id);
+    if (p) { p.pc.close(); peers.delete(m.id); }
+    updateParticipantCount(m.participant_count);
+    failVoice('Natural audio restored because a participant left');
+    if (peers.size === 0) {
+      showVideoNote('The other person left.');
+    }
+  } else if (m.type === 'presence') {
+    updateParticipantCount(m.participant_count);
+  } else if (m.type === 'signal') {
+    await onSignal(m.from, m.data);
+  } else if (m.type === 'caption') {
+    renderCaption(m);
+  } else if (m.type === 'caption_status' && m.status === 'capacity' && m.scope === 'global') {
+    const retry = Number.isInteger(m.retry_after_ms) ? Math.ceil(m.retry_after_ms / 1000) : 1;
+    setStatus('Captions are busy. Try again in about ' + retry + 's.', true);
+  } else if (m.type === 'room_closed') {
+    closeByHost();
+  } else if (m.type === 'room_full') {
+    // Say which wall was hit. Otherwise the socket just closes and the page
+    // retries forever, looking like the server is down.
+    roomFull = true;
+    updateParticipantCount(m.participant_count);
+    setStatus('Room is full (' + m.limit + ' people)', true);
+    showVideoNote('Room is full. If someone just closed it, try again within 90 seconds.');
+  }
+}
+
+// ── Captions ──────────────────────────────────────────────
+function renderCaption(m) {
+  const key = m.speaker + ':' + m.seq;
+  let el = bubbles.get(key);
+
+  if (m.final && !m.original) {           // nothing intelligible — drop the bubble
+    if (el) el.remove();
+    bubbles.delete(key);
+    return;
+  }
+  if (!m.original) return;
+
+  const mine = m.speaker === myId;
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'msg ' + (mine ? 'mine' : 'theirs');
+    el.innerHTML = '<div class="who"></div><div class="lead"></div><div class="sub"></div>';
+    $('captions').appendChild(el);
+    bubbles.set(key, el);
+  }
+
+  // You read the translation; the speaker reads their own words. Whichever is
+  // in your language is the big line.
+  const translated = m.translations && typeof m.translations === 'object'
+    && typeof m.translations[myLang] === 'string' ? m.translations[myLang] : '';
+  const lead = (!mine && translated) ? translated : m.original;
+  const sub = (!mine && translated) ? m.original : (mine ? translated : '');
+
+  el.classList.toggle('live', !m.final);
+  el.querySelector('.who').textContent =
+    (mine ? 'You' : localeName(peers.get(m.speaker)?.locale) || m.speaker_lang) +
+    (m.final ? '' : ' · live');
+  el.querySelector('.lead').textContent = lead;
+  el.querySelector('.sub').textContent = sub;
+  $('captions').scrollTop = $('captions').scrollHeight;
+
+  // Finals only. Partials are rewritten as the sentence lands, so speaking them
+  // would stutter and repeat, and the server suppresses duplicate finals — so
+  // this is the one event per utterance worth saying out loud.
+  if (m.final && !mine && translated) speak(translated, myLocale, myVoiceProfileId);
+}
+
+// ── Spoken translation ────────────────────────────────────
+// Captions-only is the safe default. Device voices stay on this device; included
+// voices use the room's authenticated TTS route.
+let voiceOn = false, speaking = false, asrPaused = false;
+let speechGeneration = 0, ttsRequestId = 0, activeSpeech = null;
+const fallbackAudio = new Audio();
+let fallbackUrl = null;
+const speakQueue = [];
+
+function setNaturalAudioMuted(muted) {
+  $('remoteVideo').muted = muted;
+}
+
+function updateVoiceButton() {
+  const available = Boolean(myVoiceChoice && (
+    (myVoiceChoice.startsWith('device:') && deviceVoicesById.has(myVoiceChoice)) ||
+    (myVoiceChoice.startsWith('cloud:') && voices.has(myVoiceChoice.slice(6)))
+  ));
+  if (!available && voiceOn) failVoice();
+  $('voiceBtn').className = 'icon' + (voiceOn && available ? '' : ' off');
+  $('voiceBtn').textContent = voiceOn && available ? 'Voice on' : 'Voice off';
+  $('voiceBtn').disabled = !available;
+  $('voiceBtn').title = available ? 'Turn translated voice on or off' : 'Captions only';
+  $('voiceBtn').setAttribute('aria-pressed', String(voiceOn));
+}
+
+function speak(text, locale, voiceProfileId) {
+  if (!voiceOn || !text || !locale || !myVoiceChoice) return;
+  const device = myVoiceChoice.startsWith('device:') && deviceVoicesById.has(myVoiceChoice);
+  const cloud = myVoiceChoice.startsWith('cloud:') && voiceProfileId && voices.has(voiceProfileId);
+  if (!device && !cloud) return;
+  speakQueue.push({text, locale, voiceProfileId, voiceChoice: myVoiceChoice});
+  drainSpeech();
+}
+
+function drainSpeech() {
+  if (speaking || !speakQueue.length) return;
+  const {text, locale, voiceProfileId, voiceChoice} = speakQueue.shift();
+  const item = {
+    id: ++ttsRequestId, text, locale, voiceProfileId, voiceChoice, generation: speechGeneration,
+    settled: false, controller: null, fallbackStarted: false,
+    playTimer: null, fetchTimer: null, utterance: null
+  };
+  speaking = true;
+  activeSpeech = item;
+  if (voiceChoice.startsWith('device:')) requestDeviceSpeech(item);
+  else requestFallbackSpeech(item);
+}
+
+function requestDeviceSpeech(item) {
+  const voice = deviceVoicesById.get(item.voiceChoice);
+  if (!voice || !('speechSynthesis' in window) || typeof SpeechSynthesisUtterance !== 'function') {
+    finishSpeech(item, 'Voice unavailable');
+    return;
+  }
+  const utterance = new SpeechSynthesisUtterance(item.text);
+  item.utterance = utterance;
+  utterance.voice = voice;
+  utterance.lang = item.locale;
+  utterance.onstart = () => {
+    if (item.settled || item !== activeSpeech || item.generation !== speechGeneration || !voiceOn) return;
+    setNaturalAudioMuted(true);
+  };
+  utterance.onend = () => finishSpeech(item);
+  utterance.onerror = () => finishSpeech(item, 'Could not play spoken translation');
+  item.playTimer = setTimeout(
+    () => finishSpeech(item, 'Spoken translation playback timed out'), 60000);
+  setAsrPaused(true);
+  try {
+    speechSynthesis.speak(utterance);
+  } catch (_) {
+    finishSpeech(item, 'Could not play spoken translation');
+  }
+}
+
+async function requestFallbackSpeech(item) {
+  if (item.settled || item !== activeSpeech || item.generation !== speechGeneration || !voiceOn) return;
+  if (item.fallbackStarted) return;
+  item.fallbackStarted = true;
+  item.controller = new AbortController();
+  item.fetchTimer = setTimeout(() => item.controller.abort(), 65000);
+  try {
+    const body = JSON.stringify({text: item.text, locale: item.locale,
+                                 voice_profile: item.voiceProfileId});
+    const headers = {'Content-Type': 'application/json',
+                     'Authorization': 'Bearer ' + roomId,
+                     'X-Participant-ID': myId};
+    if (ttsToken) headers['X-TTS-Token'] = ttsToken;
+    const retryDeadline = Date.now() + 30000;
+    let response, retryDelay = 250;
+    while (true) {
+      response = await fetch(runtime.apiUrl('/tts'), {
+        method: 'POST',
+        headers,
+        body,
+        signal: item.controller.signal
+      });
+      if (response.status !== 429 || Date.now() + retryDelay > retryDeadline) break;
+      await response.text();
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
+      if (item.controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      retryDelay = Math.min(2000, retryDelay * 2);
+    }
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    const audio = await response.blob();
+    if (!audio.size) throw new Error('empty audio');
+    if (item.settled || item !== activeSpeech || item.generation !== speechGeneration) return;
+
+    stopFallbackAudio();
+    fallbackUrl = URL.createObjectURL(audio);
+    fallbackAudio.src = fallbackUrl;
+    fallbackAudio.volume = 1;
+    fallbackAudio.onplaying = () => {
+      if (item.settled || item !== activeSpeech
+          || item.generation !== speechGeneration || !voiceOn) return;
+      setNaturalAudioMuted(true);
+    };
+    fallbackAudio.onended = () => finishSpeech(item);
+    fallbackAudio.onerror = () => finishSpeech(item, 'Could not play spoken translation');
+    item.playTimer = setTimeout(
+      () => finishSpeech(item, 'Spoken translation playback timed out'), 60000);
+    // Pause only the local caption feed before translated audio can enter the
+    // room. Natural peer audio stays live until the playback event itself.
+    setAsrPaused(true);
+    await fallbackAudio.play();
+  } catch (error) {
+    if (error.name === 'AbortError' && item.settled) return;
+    finishSpeech(item, error.name === 'NotAllowedError'
+      ? 'Tap Start to allow spoken translation'
+      : 'Spoken translation is temporarily unavailable');
+  } finally {
+    clearTimeout(item.fetchTimer);
+  }
+}
+
+function stopFallbackAudio() {
+  fallbackAudio.onplaying = fallbackAudio.onended = fallbackAudio.onerror = null;
+  fallbackAudio.pause();
+  fallbackAudio.removeAttribute('src');
+  if (fallbackUrl) {
+    URL.revokeObjectURL(fallbackUrl);
+    fallbackUrl = null;
+  }
+}
+
+function finishSpeech(item, error) {
+  // Browser media can report a rejected play and a later error for the same
+  // element. Only the first completion may advance the shared queue.
+  if (!item || item.settled) return;
+  item.settled = true;
+  clearTimeout(item.playTimer);
+  clearTimeout(item.fetchTimer);
+  if (item !== activeSpeech || item.generation !== speechGeneration) return;
+  if (item.utterance) {
+    item.utterance.onstart = item.utterance.onend = item.utterance.onerror = null;
+  }
+  stopFallbackAudio();
+  setNaturalAudioMuted(false);
+  activeSpeech = null;
+  if (error) {
+    speaking = false;
+    setAsrPaused(false);
+    failVoice(error);
+    return;
+  }
+  // Let the room go quiet before listening again, or the tail of the
+  // utterance is still in the air when the mic reopens. Keep `speaking` true
+  // through this tail so a newly queued final cannot start early. Once the
+  // tail ends, reopen ASR before fetching the next fallback WAV: synthesis is
+  // silent and must not unnecessarily suppress captions.
+  setTimeout(() => {
+    if (item.generation !== speechGeneration) return;
+    speaking = false;
+    setAsrPaused(false);
+    drainSpeech();
+  }, 250);
+}
+
+function cancelSpeech() {
+  const needsTail = asrPaused;
+  speechGeneration++;
+  const generation = speechGeneration;
+  speakQueue.length = 0;
+  if (activeSpeech) {
+    activeSpeech.settled = true;
+    clearTimeout(activeSpeech.playTimer);
+    clearTimeout(activeSpeech.fetchTimer);
+    if (activeSpeech.controller) activeSpeech.controller.abort();
+    activeSpeech = null;
+  }
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+  stopFallbackAudio();
+  setNaturalAudioMuted(false);
+  if (needsTail) {
+    // Block a rapid off/on or language-change final until the cancelled sound
+    // has left the room. Otherwise this old timer could reopen ASR in the
+    // middle of the new utterance.
+    speaking = true;
+    setTimeout(() => {
+      if (generation !== speechGeneration) return;
+      speaking = false;
+      setAsrPaused(false);
+      drainSpeech();
+    }, 250);
+  } else {
+    speaking = false;
+    setAsrPaused(false);
+  }
+}
+
+function failVoice(message) {
+  const wasOn = voiceOn;
+  voiceOn = false;
+  cancelSpeech();
+  setNaturalAudioMuted(false);
+  updateVoiceButton();
+  if (message && wasOn) setStatus(message);
+}
+
+let audioUnlocked = false;
+const SILENT_WAV = 'data:audio/wav;base64,UklGRsQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+
+function unlockFallbackAudio() {
+  if (audioUnlocked) return;
+  // Reuse this exact element for later translations. On iOS, unlocking a
+  // disposable element does not reliably authorize a different one.
+  fallbackAudio.src = SILENT_WAV;
+  fallbackAudio.volume = 0;
+  fallbackAudio.play().then(() => {
+    audioUnlocked = true;
+    fallbackAudio.pause();
+    fallbackAudio.removeAttribute('src');
+    fallbackAudio.volume = 1;
+  }).catch(() => {});
+  if ('speechSynthesis' in window) speechSynthesis.resume();
+}
+
+function setAsrPaused(p) {
+  // Flush on the transition that stops capture. Playback has not started yet,
+  // and reopening after its tail deliberately sends no second flush.
+  if (p && !asrPaused) sendSpeechEnd();
+  asrPaused = p;
+  if (workletNode) workletNode.port.postMessage({on: micOn && !asrPaused});
+}
+
+function sendSpeechEnd() {
+  if (micOn && !asrPaused) send({type: 'speech_end'});
+}
+
+$('voiceBtn').onclick = () => {
+  unlockFallbackAudio();
+  if (!myVoiceChoice) {
+    setStatus('Captions only', true);
+    return;
+  }
+  if (voiceOn) {
+    failVoice();
+  } else {
+    voiceOn = true;
+    updateVoiceButton();
+  }
+  setStatus(voiceOn ? 'Speaking translations aloud' : 'Translations muted — captions only');
+};
+
+$('publishVoiceSel').onchange = () => {
+  const choice = $('publishVoiceSel').value;
+  if (!choice) return;
+  const profile = localeProfile(myLocale);
+  const cloudOptions = cloudVoices(profile);
+  myVoiceChoice = choice;
+  myVoiceProfileId = choice.startsWith('cloud:') ? choice.slice(6) : cloudOptions[0]?.id || null;
+  localStorage.setItem('lingua-relay.voice-choice.' + myLocale, myVoiceChoice);
+  if (myVoiceProfileId) localStorage.setItem('lingua-relay.voice-profile', myVoiceProfileId);
+  else localStorage.removeItem('lingua-relay.voice-profile');
+  cancelSpeech();
+  send({type: 'set_voice_profile', voice_profile: myVoiceProfileId});
+  updateCapabilityNote();
+  updateVoiceButton();
+};
+
+updateVoiceButton();
+
+$('shareBtn').onclick = async () => {
+  const invite = {
+    title: 'Private translated video call',
+    text: 'Join my private translated video call.',
+    url: runtime.inviteUrl('/room/' + roomId)
+  };
+  if (await runtime.share(invite)) {
+    setStatus('Invitation shared');
+    return;
+  }
+  const message = invite.text + '\n' + invite.url;
+  const opened = window.open('https://wa.me/?text=' + encodeURIComponent(message),
+                             '_blank');
+  if (opened) opened.opener = null;
+  if (!opened) {
+    try {
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(invite.url);
+        setStatus('Private room link copied');
+        return;
+      }
+    } catch (_) {}
+    setStatus('Could not open WhatsApp — copy the address-bar link', true);
+  }
+};
+
+// ── Media ─────────────────────────────────────────────────
+// Cache the promise, not the resolved stream. startPeer, the mic button and the
+// camera button can all ask for media at once; guarding on `mediaStream` lets
+// each of them open its own capture, and then the tracks published to the peer
+// belong to a different stream than the one mute toggles.
+let mediaPromise = null;
+
+function getMedia() {
+  if (!mediaPromise) {
+    mediaPromise = navigator.mediaDevices.getUserMedia({
+      video: {facingMode: 'user', width: {ideal: 640}, height: {ideal: 480}},
+      audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true}
+    }).then(stream => {
+      mediaStream = stream;
+      $('selfVideo').srcObject = stream;
+      stream.getAudioTracks().forEach(track => {
+        track.onended = () => { if (micOn) setMicEnabled(false); };
+      });
+      // The camera may be wanted before the mic is. The audio track exists from
+      // here on and gets published to the peer as soon as one connects, so it
+      // starts disabled and only setMicEnabled turns it on.
+      setMicEnabled(micOn);
+      return stream;
+    }).catch(err => {
+      mediaPromise = null;   // let the user retry after granting permission
+      throw err;
+    });
+  }
+  return mediaPromise;
+}
+
+// Single owner of mic state. Every consumer of the microphone is toggled here:
+// the track published to the peer AND the worklet feeding captions. They were
+// separate before, so the button muted the captions while the other person
+// could still hear the room.
+function setMicEnabled(on) {
+  if (!on && micOn && !asrPaused) sendSpeechEnd();
+  micOn = on;
+  if (mediaStream) mediaStream.getAudioTracks().forEach(t => { t.enabled = on; });
+  // `asrPaused` outranks the button while a translation is being spoken —
+  // unmuting mid-utterance would feed our own speaker straight back into ASR.
+  // The peer still hears the live track; only the caption feed is held.
+  if (workletNode) workletNode.port.postMessage({on: on && !asrPaused});
+  $('micBtn').className = on ? 'on' : '';
+  $('micBtn').innerHTML = on
+    ? '<span class="dot"></span>Listening — tap to mute'
+    : 'Start microphone';
+}
+
+async function startCapture() {
+  const stream = await getMedia();
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    await audioCtx.audioWorklet.addModule('/static/pcm-worklet.js');
+    workletNode = new AudioWorkletNode(audioCtx, 'pcm-worklet');
+    workletNode.port.onmessage = (e) => {
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(e.data);
+    };
+    audioCtx.createMediaStreamSource(stream).connect(workletNode);
+    // Not connected to destination: this branch exists to be captured, not
+    // heard. The other person's voice arrives over WebRTC instead.
+  }
+  if (audioCtx.state === 'suspended') await audioCtx.resume();
+}
+
+$('micBtn').onclick = async () => {
+  unlockFallbackAudio();
+  try {
+    if (micOn) {
+      setMicEnabled(false);
+      setStatus('Muted — the other person cannot hear you');
+      return;
+    }
+    $('micBtn').textContent = 'Starting…';
+    await startCapture();
+    for (const p of peers.values()) addTracks(p.pc);
+    setMicEnabled(true);
+    setStatus('Mic on — speak ' + localeName(myLocale));
+  } catch (err) {
+    setMicEnabled(false);
+    setStatus('Microphone unavailable', true);
+  }
+};
+
+$('camBtn').onclick = async () => {
+  await getMedia();
+  camOn = !camOn;
+  mediaStream.getVideoTracks().forEach(t => t.enabled = camOn);
+  $('camBtn').className = 'icon' + (camOn ? '' : ' off');
+};
+
+$('localeSel').onchange = () => {
+  const nextLocale = $('localeSel').value;
+  if (nextLocale === myLocale || !applyLocale(nextLocale, null)) return;
+  cancelSpeech();
+  sendSpeechEnd();
+  send({type: 'set_locale', locale: myLocale, voice_profile: myVoiceProfileId});
+  setStatus('Language changed to ' + localeName(myLocale));
+};
+
+// ── WebRTC (perfect negotiation; lower id is polite) ──────
+function showVideoNote(text) {
+  $('videoNote').textContent = text;
+  $('videoNote').classList.remove('hidden');
+}
+
+function addTracks(pc) {
+  if (!mediaStream) return;
+  const existing = pc.getSenders().map(s => s.track);
+  mediaStream.getTracks().forEach(t => { if (!existing.includes(t)) pc.addTrack(t, mediaStream); });
+}
+
+// Synchronous and idempotent on purpose. This used to await getMedia() before
+// registering in `peers`, so a signal arriving during that await found no entry
+// and built a second RTCPeerConnection for the same peer: the SDP was applied to
+// one and the ICE candidates were emitted by the other, and one side of the call
+// never sent a single candidate. Nothing may await before peers.set().
+function startPeer(peer) {
+  const peerId = typeof peer === 'object' ? peer.id : peer;
+  const existing = peers.get(peerId);
+  if (existing) {
+    if (typeof peer === 'object') {
+      existing.lang = peer.lang;
+      existing.locale = peer.locale;
+      existing.voiceProfileId = peer.voice_profile || null;
+    }
+    return existing;
+  }
+
+  const pc = new RTCPeerConnection({iceServers});
+  const state = {pc, polite: myId > peerId, makingOffer: false, ignoreOffer: false,
+                 lang: peer?.lang || 'en', locale: peer?.locale || 'en-US',
+                 voiceProfileId: peer?.voice_profile || null};
+  peers.set(peerId, state);
+
+  // Media may not be granted yet. Adding tracks later fires negotiationneeded
+  // on its own, which is what drives the offer — on both sides, with the
+  // polite/impolite rule below resolving the collision.
+  getMedia().then(() => addTracks(pc)).catch(() => {});
+
+  pc.ontrack = (e) => {
+    $('remoteVideo').srcObject = e.streams[0];
+    setNaturalAudioMuted(asrPaused);
+    $('videoNote').classList.add('hidden');
+  };
+  pc.onicecandidate = (e) => {
+    if (e.candidate) send({type: 'signal', to: peerId, data: {candidate: e.candidate}});
+  };
+  pc.onnegotiationneeded = async () => {
+    try {
+      state.makingOffer = true;
+      await pc.setLocalDescription();
+      send({type: 'signal', to: peerId, data: {description: pc.localDescription}});
+    } finally { state.makingOffer = false; }
+  };
+  pc.oniceconnectionstatechange = () => {
+    if (pc.iceConnectionState === 'failed') {
+      failVoice('Natural audio restored after the media connection failed');
+      showVideoNote('Video could not connect through your networks. Captions are still live.');
+    }
+  };
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+      failVoice('Natural audio restored after the media connection ended');
+    }
+  };
+  setTimeout(() => {
+    if (pc.iceConnectionState !== 'connected' && pc.iceConnectionState !== 'completed') {
+      showVideoNote('Still trying to connect video… captions are already live.');
+    }
+  }, 10000);
+
+  return state;
+}
+
+async function onSignal(from, data) {
+  const state = startPeer(from);   // idempotent; returns the existing peer
+  const pc = state.pc;
+
+  if (data.description) {
+    const offerCollision = data.description.type === 'offer' &&
+      (state.makingOffer || pc.signalingState !== 'stable');
+    state.ignoreOffer = !state.polite && offerCollision;
+    if (state.ignoreOffer) return;
+    await pc.setRemoteDescription(data.description);
+    if (data.description.type === 'offer') {
+      await pc.setLocalDescription();
+      send({type: 'signal', to: from, data: {description: pc.localDescription}});
+    }
+  } else if (data.candidate) {
+    try { await pc.addIceCandidate(data.candidate); }
+    catch (e) { if (!state.ignoreOffer) throw e; }
+  }
+}
+
+window.addEventListener('pagehide', suspendRoom);
+window.addEventListener('pageshow', restoreSuspendedRoom);
+window.addEventListener('lingua-app-state', event => {
+  if (!event.detail?.isActive) {
+    suspendRoom();
+    setStatus('Call paused while Lingua Relay is in the background', true);
+    return;
+  }
+  if (explicitLeave || terminalRoom || !roleChosen || !leaving) return;
+  leaving = false;
+  roomFull = false;
+  reconnectFailures = 0;
+  myId = null;
+  setStatus('Rejoining this room…', true);
+  connect();
+});
+$('roleLocaleSel').onchange = previewRoleLocale;
+$('joinBtn').onclick = () => chooseLocale($('roleLocaleSel').value);
+if ('speechSynthesis' in window) {
+  refreshDeviceVoices();
+  speechSynthesis.addEventListener('voiceschanged', refreshDeviceVoices);
+}
+if (!runtime.isNative && 'serviceWorker' in navigator && location.protocol === 'https:') {
+  navigator.serviceWorker.register('/sw.js', {scope: '/'}).catch(() => {});
+}
+runtime.ready().then(loadCapabilities).catch(() => {
+  $('roleLocaleSel').disabled = true;
+  $('joinBtn').disabled = true;
+  $('roleCapability').textContent = 'App update or connection required';
+  $('roleCapability').classList.add('warning');
+  setStatus('App update or connection required', true);
+});
+</script>
+</body>
+</html>

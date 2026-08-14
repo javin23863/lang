@@ -26,7 +26,9 @@ export default defineConfig({
           MODAL_WS_URL: "https://modal.test/stream",
           MODAL_TTS_URL: "https://modal.test/tts",
           TURN_KEY_ID: "test-turn-key",
-          TURN_API_TOKEN: "test-only-turn-token"
+          TURN_API_TOKEN: "test-only-turn-token",
+          MOBILE_ANDROID_CERT_SHA256: "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99",
+          MOBILE_APPLE_TEAM_ID: "TESTTEAM01"
         }
       }
     })
