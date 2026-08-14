@@ -8,7 +8,7 @@ historical evidence and do not silently become multilingual quality proof.
 
 | Item | Verified state |
 |---|---|
-| Branch / PR | `spoken-translation`; [PR #3](https://github.com/javin23863/lang/pull/3), open and clean at the time of the deployed runtime source |
+| Branch / PR | [PR #3](https://github.com/javin23863/lang/pull/3) merged into `main` at `4a6af6395eaef897e4e1b2a85779d781d418ef27` on 2026-08-14 08:05 +07 |
 | Deployed runtime source | `4cb8c25f6c9d104ca3117876a8f32a0ad27ebbb1` — free speech preview, device voices and compact native locale labels |
 | Public Worker | `https://spoken-translation-room.spoken-translation-cloudflare.workers.dev` — version `6d146fda-aa50-4c98-966b-67aa75a24c05` |
 | Modal compute | App `ap-BGN0rYSJePL3mDbezdmZOe`, version **v22**, deployed 2026-08-14 08:00 +07; [Modal app](https://modal.com/apps/m2747076/main/deployed/spoken-translation-compute) |

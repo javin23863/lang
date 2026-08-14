@@ -2,6 +2,9 @@
 
 ## Current truth — multilingual wave, 2026-08-14 (deployed, bounded receipt)
 
+PR #3 merged these changes into `main` at
+`4a6af6395eaef897e4e1b2a85779d781d418ef27` on 2026-08-14 08:05 +07.
+
 The dated entries below are historical bilingual/previous-model receipts. They
 must not be read as a receipt for the revision-pinned M2M100 multilingual
 implementation now in this branch. The current locally verified contract is:
