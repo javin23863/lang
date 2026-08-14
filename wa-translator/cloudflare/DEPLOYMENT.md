@@ -2,8 +2,10 @@
 
 This is the production shape described in `CLOUD-ARCHITECTURE.md`: Cloudflare
 owns the room and Modal supplies independent authenticated compute. A
-`workers.dev` URL is the intended beta endpoint. There is no database, account
-system, native wrapper or custom domain.
+`workers.dev` URL is the intended beta endpoint. There is no account or
+conversation-history database and no custom domain. The Android and iPhone
+products are a thin Capacitor wrapper over the same bundled room client. A
+bounded Durable Object inbox retains category-only abuse reports for 30 days.
 
 ## Fixed beta ceilings
 
@@ -44,12 +46,14 @@ system, native wrapper or custom domain.
   it is never included in the participant URL. The host may inspect or revoke
   its room through `/api/room-control`; a missing, forged, cross-origin or
   expired host bearer fails closed.
-- The Durable Object stores expiry and, after revocation, a closed tombstone
-  through that expiry. It sends `room_closed` and close code 4001 to current
-  sockets, cancels compute, and refuses later participant page, preflight and
-  WebSocket access. Presence and explicitly selected voice profile and the small per-room
-  TTS quota counters otherwise live in hibernation
-  attachments; captions and media are never stored.
+- The room Durable Object stores expiry and, after revocation, a closed tombstone
+  through that expiry, plus small per-room TURN/report quota counters. It sends
+  `room_closed` and close code 4001 to current sockets, cancels compute, and
+  refuses later participant page, preflight and WebSocket access. Presence,
+  explicitly selected voice profile, and TTS quota counters otherwise live in
+  hibernation attachments. The abuse object deletes hashed per-IP counters at
+  window expiry. The report inbox automatically deletes category-only reports
+  after 30 days. Captions, transcripts, audio, and video are never stored.
   Ordinary memory is disposable. An active outbound Modal WebSocket prevents
   Durable Object hibernation while that compute stream is open.
 - The client renews its presence lease every 10 seconds. Leave and a delivered
@@ -107,9 +111,12 @@ No secret value belongs in git, a URL, browser code or logs. Before deployment:
 2. Create the Modal named secret `spoken-translation-modal` containing only
    `MODAL_SHARED_SECRET`. Generate at least 32 random bytes. Put the same value
    into Cloudflare with `npx wrangler secret put MODAL_SHARED_SECRET`.
-3. Put `ROOM_SIGNING_KEY` (at least 32 random bytes), `TURN_KEY_ID`, and
-   `TURN_API_TOKEN` into Cloudflare secrets. The TURN long-term API token must
-   never be returned to the browser.
+3. Put `ROOM_SIGNING_KEY` (at least 32 random bytes), `TURN_KEY_ID`,
+   `TURN_API_TOKEN`, and a separate random `MOBILE_REPORT_ADMIN_TOKEN` (at
+   least 32 bytes) into Cloudflare secrets. Keep the report token in the
+   operator's password manager; it is the only credential accepted by the
+   private report inbox. TURN and report credentials must never be returned to
+   a browser, URL, or log.
 4. Deploy Modal with `modal deploy wa-translator/modal_app.py`. On Windows,
    set `PYTHONUTF8=1` and `PYTHONIOENCODING=utf-8` for the CLI process. Record
    the ASGI HTTPS URL. Put its `https://.../stream` and `https://.../tts` endpoints into

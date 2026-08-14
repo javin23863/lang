@@ -1,5 +1,6 @@
 import UIKit
 import Capacitor
+import AVFAudio
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -7,7 +8,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        do {
+            try AVAudioSession.sharedInstance().setCategory(
+                .playAndRecord,
+                mode: .videoChat,
+                options: [.allowBluetoothHFP, .defaultToSpeaker]
+            )
+        } catch {
+            NSLog("Lingua Relay could not configure the call audio session: %@", String(describing: error))
+        }
         return true
     }
 

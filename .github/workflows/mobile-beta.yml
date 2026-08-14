@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   android:
-    if: inputs.platform == 'android'
+    if: inputs.platform == 'android' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: mobile-beta
     defaults:
@@ -26,29 +26,32 @@ jobs:
         working-directory: wa-translator/mobile
     env:
       LINGUA_ANDROID_KEYSTORE: ${{ github.workspace }}/wa-translator/mobile/release.keystore
-      LINGUA_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.LINGUA_ANDROID_KEYSTORE_PASSWORD }}
-      LINGUA_ANDROID_KEY_ALIAS: ${{ secrets.LINGUA_ANDROID_KEY_ALIAS }}
-      LINGUA_ANDROID_KEY_PASSWORD: ${{ secrets.LINGUA_ANDROID_KEY_PASSWORD }}
-      LINGUA_ANDROID_VERSION_CODE: ${{ github.run_number }}
-      LINGUA_ANDROID_VERSION_NAME: 1.0.${{ github.run_number }}
       GOOGLE_PLAY_JSON_KEY: ${{ runner.temp }}/google-play.json
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: wa-translator/mobile/package-lock.json
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: temurin
           java-version: "21"
           cache: gradle
-      - uses: ruby/setup-ruby@v1
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # master 2026-08-14
         with:
           ruby-version: "3.3"
           bundler-cache: true
           working-directory: wa-translator/mobile
+      - name: Set unique Android version
+        shell: bash
+        run: |
+          build_epoch="$(date -u +%s)"
+          echo "LINGUA_ANDROID_VERSION_CODE=${build_epoch}" >> "$GITHUB_ENV"
+          echo "LINGUA_ANDROID_VERSION_NAME=1.0.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
+      - run: npm ci && npm run check && npm run sync
+      - run: bundle exec fastlane --version
       - name: Materialize signing credentials
         shell: bash
         env:
@@ -57,33 +60,65 @@ jobs:
         run: |
           printf '%s' "$LINGUA_ANDROID_KEYSTORE_B64" | base64 --decode > release.keystore
           printf '%s' "$GOOGLE_PLAY_JSON_KEY_B64" | base64 --decode > "$GOOGLE_PLAY_JSON_KEY"
-      - run: npm ci && npm run sync
-      - run: bundle exec fastlane android beta
+      - name: Upload Android internal beta
+        env:
+          LINGUA_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.LINGUA_ANDROID_KEYSTORE_PASSWORD }}
+          LINGUA_ANDROID_KEY_ALIAS: ${{ secrets.LINGUA_ANDROID_KEY_ALIAS }}
+          LINGUA_ANDROID_KEY_PASSWORD: ${{ secrets.LINGUA_ANDROID_KEY_PASSWORD }}
+        run: bundle exec fastlane android beta
+      - name: Remove Android credentials
+        if: always()
+        shell: bash
+        run: rm -f release.keystore "$GOOGLE_PLAY_JSON_KEY"
 
   ios:
-    if: inputs.platform == 'ios'
+    if: inputs.platform == 'ios' && github.ref == 'refs/heads/main'
     runs-on: macos-26
     environment: mobile-beta
     defaults:
       run:
         working-directory: wa-translator/mobile
     env:
-      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-      APP_STORE_CONNECT_KEY_B64: ${{ secrets.APP_STORE_CONNECT_KEY_B64 }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      LINGUA_IOS_BUILD_NUMBER: ${{ github.run_number }}
+      APPLE_DISTRIBUTION_P12: ${{ runner.temp }}/distribution.p12
+      APPLE_PROVISIONING_PROFILE: ${{ runner.temp }}/lingua-relay.mobileprovision
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: wa-translator/mobile/package-lock.json
-      - uses: ruby/setup-ruby@v1
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # master 2026-08-14
         with:
           ruby-version: "3.3"
           bundler-cache: true
           working-directory: wa-translator/mobile
-      - run: npm ci && npm run sync
-      - run: bundle exec fastlane ios beta
+      - name: Set unique iOS build number
+        shell: bash
+        run: echo "LINGUA_IOS_BUILD_NUMBER=$(date -u +%s)" >> "$GITHUB_ENV"
+      - run: npm ci && npm run check && npm run sync
+      - run: bundle exec fastlane --version
+      - name: Materialize signing credentials
+        shell: bash
+        env:
+          APPLE_DISTRIBUTION_P12_B64: ${{ secrets.APPLE_DISTRIBUTION_P12_B64 }}
+          APPLE_PROVISIONING_PROFILE_B64: ${{ secrets.APPLE_PROVISIONING_PROFILE_B64 }}
+        run: |
+          printf '%s' "$APPLE_DISTRIBUTION_P12_B64" | base64 --decode > "$APPLE_DISTRIBUTION_P12"
+          printf '%s' "$APPLE_PROVISIONING_PROFILE_B64" | base64 --decode > "$APPLE_PROVISIONING_PROFILE"
+      - name: Upload TestFlight beta
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY_B64: ${{ secrets.APP_STORE_CONNECT_KEY_B64 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_DISTRIBUTION_CERT_PASSWORD: ${{ secrets.APPLE_DISTRIBUTION_CERT_PASSWORD }}
+          APPLE_PROVISIONING_PROFILE_NAME: ${{ secrets.APPLE_PROVISIONING_PROFILE_NAME }}
+          LINGUA_KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: bundle exec fastlane ios beta
+      - name: Remove Apple credentials
+        if: always()
+        shell: bash
+        run: |
+          security delete-keychain lingua-relay-ci 2>/dev/null || true
+          rm -f "$APPLE_DISTRIBUTION_P12" "$APPLE_PROVISIONING_PROFILE"

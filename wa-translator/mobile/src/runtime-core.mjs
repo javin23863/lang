@@ -13,6 +13,7 @@ const VERSIONED_PATHS = new Map([
   ["/api/room-control", "/api/v1/room-control"],
   ["/api/room-control/close", "/api/v1/room-control/close"],
   ["/api/turn", "/api/v1/turn"],
+  ["/api/reports", "/api/v1/reports"],
   ["/tts", "/api/v1/tts"]
 ]);
 
@@ -35,7 +36,10 @@ export function isRoomToken(value) {
 
 /** @param {string} path @param {boolean} native */
 export function apiPath(path, native) {
-  return native ? VERSIONED_PATHS.get(path) || path : path;
+  if (!native) return path;
+  const versioned = VERSIONED_PATHS.get(path);
+  if (!versioned) throw new Error(`Unsupported native API path: ${path}`);
+  return versioned;
 }
 
 /** @param {string} token @param {boolean} native */
@@ -50,14 +54,33 @@ export function roomPageUrl(token) {
   return `room.html?room=${encodeURIComponent(token)}`;
 }
 
+/**
+ * Keep the host-control bearer behind the native secure-storage plug-in while
+ * leaving the bridge small enough to test without a device runtime.
+ * @param {{get(key: string): Promise<unknown>, set(key: string, value: string): Promise<unknown>, remove(key: string): Promise<unknown>}} adapter
+ */
+export function createSecureHostStorage(adapter) {
+  return {
+    /** @param {string} key */
+    async getItem(key) {
+      const value = await adapter.get(key);
+      return typeof value === "string" ? value : null;
+    },
+    /** @param {string} key @param {string} value */
+    async setItem(key, value) { await adapter.set(key, value); },
+    /** @param {string} key */
+    async removeItem(key) { await adapter.remove(key); },
+  };
+}
+
 /** @param {unknown} value @param {number} build */
 export function validateBootstrap(value, build) {
   if (!value || typeof value !== "object") return false;
   const bootstrap = /** @type {Record<string, unknown>} */ (value);
   return bootstrap.protocol === MOBILE_PROTOCOL
-    && Number.isSafeInteger(bootstrap.minimum_build)
-    && Number(bootstrap.minimum_build) <= build
+    && Number.isSafeInteger(bootstrap.minimum_client_build)
+    && Number(bootstrap.minimum_client_build) <= build
     && bootstrap.public_origin === PUBLIC_ORIGIN
-    && bootstrap.account === "none"
-    && bootstrap.lifecycle === "foreground";
+    && bootstrap.account_mode === "none"
+    && bootstrap.call_lifecycle === "foreground";
 }

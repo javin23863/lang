@@ -8,7 +8,8 @@ export default defineConfig({
       miniflare: {
         serviceBindings: {
           MODAL_TEST: "modal-stub",
-          TURN_TEST: "turn-stub"
+          TURN_TEST: "turn-stub",
+          REPORTS_TEST: "report-stub"
         },
         workers: [{
           name: "modal-stub",
@@ -18,6 +19,10 @@ export default defineConfig({
           name: "turn-stub",
           modules: true,
           scriptPath: "./test/turn-stub.js"
+        }, {
+          name: "report-stub",
+          modules: true,
+          scriptPath: "./test/report-stub.js"
         }],
         bindings: {
           PUBLIC_ORIGIN: "https://room.test",
@@ -28,7 +33,8 @@ export default defineConfig({
           TURN_KEY_ID: "test-turn-key",
           TURN_API_TOKEN: "test-only-turn-token",
           MOBILE_ANDROID_CERT_SHA256: "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99",
-          MOBILE_APPLE_TEAM_ID: "TESTTEAM01"
+          MOBILE_APPLE_TEAM_ID: "TESTTEAM01",
+          MOBILE_REPORT_ADMIN_TOKEN: "test-only-report-admin-token-32-bytes"
         }
       }
     })

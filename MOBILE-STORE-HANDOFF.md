@@ -15,7 +15,11 @@ Status date: 2026-08-14. Branch: `feat/mobile-store-shell`.
   or additional paid link service is required.
 - Exact signed room links are accepted through Android App Links and iOS
   Universal Links; wrong hosts, query strings, and malformed tokens fail closed.
-- Camera and microphone are foreground-only and begin only after Start.
+- Camera and microphone are foreground-only and requested independently from
+  their own controls. Denying camera does not disable microphone captions.
+- A live participant can submit one private category-only abuse report and
+  block that room locally. The stored report has no free text, participant
+  bearer, transcript, or media; reports expire after 30 days.
 - Store privacy, terms, and support pages are served by the existing Worker.
 - Android AAB and unsigned iOS compilation run without credentials. Signed
   uploads are manual jobs and stop at Play Internal Testing or TestFlight.
@@ -38,8 +42,9 @@ The normal pull-request workflow builds both native projects. The separate
 ## One-time account setup
 
 These actions cannot be completed before the account owners are known. Paying
-the subscriptions is necessary but the stores also require identity checks and
-legal agreements.
+the subscriptions is necessary, but the stores also require identity checks,
+agreements, signing ownership, listing review, closed testing, and physical
+device acceptance.
 
 ### Google Play
 
@@ -52,8 +57,9 @@ legal agreements.
    `LINGUA_ANDROID_KEY_PASSWORD`, and `GOOGLE_PLAY_JSON_KEY_B64`.
 5. Copy the **Play App Signing** SHA-256 certificate fingerprint—not the upload
    key fingerprint—to Cloudflare Worker secret `MOBILE_ANDROID_CERT_SHA256`.
-6. Run `Mobile beta upload` with `android`. It uploads a draft release to the
-   Internal Testing track; production remains a manual Play Console decision.
+6. Run `Mobile beta upload` with `android`. After protected-environment
+   approval it makes the build available on the Internal Testing track;
+   production remains a manual Play Console decision.
 
 ### Apple
 
@@ -62,10 +68,28 @@ legal agreements.
 3. Create an App Store Connect API key with app-management access.
 4. Add protected GitHub environment secrets `APP_STORE_CONNECT_KEY_ID`,
    `APP_STORE_CONNECT_ISSUER_ID`, `APP_STORE_CONNECT_KEY_B64`, and
-   `APPLE_TEAM_ID`.
+   `APPLE_TEAM_ID`. Export one reusable Apple Distribution certificate and
+   profile, then add `APPLE_DISTRIBUTION_P12_B64`,
+   `APPLE_DISTRIBUTION_CERT_PASSWORD`, `APPLE_PROVISIONING_PROFILE_B64`, and
+   `APPLE_PROVISIONING_PROFILE_NAME`. CI imports these into an ephemeral
+   keychain; it never creates or consumes a new certificate.
 5. Put the public Team ID in Cloudflare Worker secret `MOBILE_APPLE_TEAM_ID`.
-6. Run `Mobile beta upload` with `ios`. It creates/reuses distribution signing,
-   installs the profile in the temporary CI keychain, and uploads to TestFlight.
+6. Run `Mobile beta upload` from `main` with `ios`. It imports the reusable
+   signing identity into a temporary CI keychain and uploads to TestFlight.
+
+### Abuse-report operations
+
+1. Generate a random 32-byte-or-longer value and install the same value as the
+   Worker secret `MOBILE_REPORT_ADMIN_TOKEN` and in the operator's private
+   password manager. Never add it to the repository or a room URL.
+2. Review `GET /api/internal/reports` with `Authorization: Bearer <token>` on a
+   documented schedule throughout beta testing. The response contains only
+   category, platform, timestamp, opaque room reference, and report ID.
+3. Close an active reported room with authenticated `POST
+   /api/internal/reports/<report-id>/close`, or pause the beta when a category
+   trend requires broader intervention. The service resolves the report to an
+   internal room routing ID without returning the participant link. Records
+   delete automatically after 30 days; the inbox is bounded to 500 records.
 
 Both association endpoints deliberately return 503 until their exact public
 certificate/team binding is configured. This prevents a false green deep-link
@@ -82,7 +106,10 @@ claim before store ownership exists.
 
 ## Launch boundary
 
-The first store submission should be a closed beta. A public production launch
+The code and unsigned store artifacts can be completed here. Paying the store
+fees alone does not complete identity, agreements, signing, review, moderation,
+or physical-device testing. The first store submission should be a closed beta.
+A public production launch
 remains blocked until all of these are observed on physical devices:
 
 - Android-to-iPhone room links open the installed app on both platforms.

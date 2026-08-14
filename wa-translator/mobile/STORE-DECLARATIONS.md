@@ -13,11 +13,16 @@ behavior change.
   translated captions and optional synthesized audio are returned in real time.
 - Cloud processing: Cloudflare carries room/signalling traffic; Modal performs
   speech recognition, translation, and optional voice synthesis.
-- Retention: the product does not intentionally persist media or captions.
+- Retention: the product does not intentionally persist media or captions. A
+  private abuse report contains only category, platform, time, and an opaque
+  public room reference. An internal non-invite room routing ID is retained only
+  so a moderator can close the active reported room. Both expire after 30 days.
   Infrastructure security and error logs may be retained by the providers.
 - Room control: the host can close a room; otherwise its bearer link expires
   after 24 hours.
-- Safety/reporting: `/support` explains how to close a room and report abuse.
+- Safety/reporting: a live participant can submit one private category-only
+  report and block the room on that device. No report accepts names, free text,
+  room links, transcripts, audio, video, captions, or screenshots.
 - App category: Social Networking (iOS) / Communication (Android).
 - Intended audience: general adult communication; not directed to children.
 - Encryption declaration: HTTPS/WebSocket TLS and platform cryptography only;

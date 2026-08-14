@@ -4,8 +4,8 @@ import { Share } from "@capacitor/share";
 import { SecureStorage } from "@aparajita/capacitor-secure-storage";
 
 import {
-  MOBILE_BUILD, PUBLIC_ORIGIN, apiPath, isRoomToken, parseRoomLink, roomPageUrl,
-  validateBootstrap, websocketPath,
+  MOBILE_BUILD, PUBLIC_ORIGIN, apiPath, createSecureHostStorage, isRoomToken,
+  parseRoomLink, roomPageUrl, validateBootstrap, websocketPath,
 } from "./runtime-core.mjs";
 
 declare global {
@@ -27,6 +27,7 @@ declare global {
 }
 
 const isNative = Capacitor.isNativePlatform();
+const hostStorage = createSecureHostStorage(SecureStorage);
 const compatibilityReady = isNative ? (async () => {
   const info = await App.getInfo();
   const build = Number.parseInt(info.build, 10);
@@ -60,16 +61,9 @@ window.LinguaNative = {
   websocketPath: token => websocketPath(token, true),
   isRoomToken,
   ready: () => compatibilityReady,
-  async getItem(key) {
-    const value = await SecureStorage.get(key);
-    return typeof value === "string" ? value : null;
-  },
-  async setItem(key, value) {
-    await SecureStorage.set(key, value);
-  },
-  async removeItem(key) {
-    await SecureStorage.remove(key);
-  },
+  getItem: key => hostStorage.getItem(key),
+  setItem: (key, value) => hostStorage.setItem(key, value),
+  removeItem: key => hostStorage.removeItem(key),
   async share(value) {
     try {
       await Share.share(value);

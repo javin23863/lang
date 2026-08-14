@@ -6,6 +6,7 @@ const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
 test("Android declares foreground media and verified room links", async () => {
   const manifest = await read("../android/app/src/main/AndroidManifest.xml");
+  const filePaths = await read("../android/app/src/main/res/xml/file_paths.xml");
   const gradle = await read("../android/app/build.gradle");
   const variables = await read("../android/variables.gradle");
 
@@ -26,6 +27,8 @@ test("Android declares foreground media and verified room links", async () => {
   assert.match(gradle, /LINGUA_ANDROID_VERSION_CODE/);
   assert.match(gradle, /LINGUA_ANDROID_VERSION_NAME/);
   assert.doesNotMatch(gradle, /storePassword\s+["'][^$]/);
+  assert.match(filePaths, /<cache-path/);
+  assert.doesNotMatch(filePaths, /<external-path/);
 });
 
 test("iOS declares foreground media, universal links, and privacy manifest", async () => {
@@ -33,6 +36,7 @@ test("iOS declares foreground media, universal links, and privacy manifest", asy
   const entitlements = await read("../ios/App/App/App.entitlements");
   const privacy = await read("../ios/App/App/PrivacyInfo.xcprivacy");
   const project = await read("../ios/App/App.xcodeproj/project.pbxproj");
+  const appDelegate = await read("../ios/App/App/AppDelegate.swift");
 
   assert.match(info, /<key>NSCameraUsageDescription<\/key>/);
   assert.match(info, /<key>NSMicrophoneUsageDescription<\/key>/);
@@ -40,10 +44,21 @@ test("iOS declares foreground media, universal links, and privacy manifest", asy
   assert.doesNotMatch(info, /NSAllowsArbitraryLoads/);
   assert.match(entitlements, /applinks:spoken-translation-room\.spoken-translation-cloudflare\.workers\.dev/);
   assert.match(privacy, /NSPrivacyTracking[\s\S]*<false\/>/);
-  assert.match(privacy, /NSPrivacyCollectedDataTypes[\s\S]*<array\/>/);
+  assert.match(privacy, /NSPrivacyCollectedDataTypeOtherUserContent/);
+  assert.match(privacy, /NSPrivacyCollectedDataTypePurposeAppFunctionality/);
+  assert.match(privacy, /NSPrivacyCollectedDataTypeLinked[\s\S]*<false\/>/);
+  assert.match(privacy, /NSPrivacyCollectedDataTypeTracking[\s\S]*<false\/>/);
   assert.match(project, /CODE_SIGN_ENTITLEMENTS = App\/App\.entitlements;/);
   assert.match(project, /PrivacyInfo\.xcprivacy in Resources/);
   assert.match(project, /PRODUCT_BUNDLE_IDENTIFIER = com\.javin23863\.linguarelay;/);
+  assert.match(project, /TARGETED_DEVICE_FAMILY = "1";/);
+  assert.doesNotMatch(project, /TARGETED_DEVICE_FAMILY = "1,2";/);
+  assert.match(project, /CODE_SIGN_IDENTITY = "Apple Distribution";/);
+  assert.match(appDelegate, /AVAudioSession/);
+  assert.match(appDelegate, /\.playAndRecord/);
+  assert.match(appDelegate, /mode:\s*\.videoChat/);
+  assert.match(appDelegate, /\.allowBluetoothHFP/);
+  assert.match(appDelegate, /\.defaultToSpeaker/);
 });
 
 test("store icon source and generated platform icons exist", async () => {

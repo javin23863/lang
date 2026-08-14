@@ -9,7 +9,7 @@ platform :android do
       package_name: "com.javin23863.linguarelay",
       aab: "android/app/build/outputs/bundle/release/app-release.aab",
       track: "internal",
-      release_status: "draft"
+      release_status: "completed"
     )
   end
 end
@@ -23,9 +23,21 @@ platform :ios do
       key_content: ENV.fetch("APP_STORE_CONNECT_KEY_B64"),
       is_key_content_base64: true
     )
-    setup_ci
-    cert(api_key: api_key, generate_apple_certs: true)
-    sigh(api_key: api_key, app_identifier: "com.javin23863.linguarelay")
+    create_keychain(
+      name: "lingua-relay-ci",
+      password: ENV.fetch("LINGUA_KEYCHAIN_PASSWORD"),
+      default_keychain: true,
+      unlock: true,
+      timeout: 3600,
+      lock_when_sleeps: true
+    )
+    import_certificate(
+      certificate_path: ENV.fetch("APPLE_DISTRIBUTION_P12"),
+      certificate_password: ENV.fetch("APPLE_DISTRIBUTION_CERT_PASSWORD"),
+      keychain_name: "lingua-relay-ci",
+      keychain_password: ENV.fetch("LINGUA_KEYCHAIN_PASSWORD")
+    )
+    install_provisioning_profile(path: ENV.fetch("APPLE_PROVISIONING_PROFILE"))
     increment_build_number(
       build_number: ENV.fetch("LINGUA_IOS_BUILD_NUMBER"),
       xcodeproj: "ios/App/App.xcodeproj"
@@ -34,7 +46,14 @@ platform :ios do
       project: "ios/App/App.xcodeproj",
       scheme: "App",
       export_method: "app-store",
-      xcargs: "DEVELOPMENT_TEAM=#{ENV.fetch('APPLE_TEAM_ID')}"
+      export_options: {
+        provisioningProfiles: {
+          "com.javin23863.linguarelay" => ENV.fetch("APPLE_PROVISIONING_PROFILE_NAME")
+        }
+      },
+      xcargs: "DEVELOPMENT_TEAM=#{ENV.fetch('APPLE_TEAM_ID')} CODE_SIGN_STYLE=Manual " \
+        "CODE_SIGN_IDENTITY='Apple Distribution' " \
+        "PROVISIONING_PROFILE_SPECIFIER='#{ENV.fetch('APPLE_PROVISIONING_PROFILE_NAME')}'"
     )
     upload_to_testflight(api_key: api_key, skip_waiting_for_build_processing: true)
   end

@@ -1,7 +1,7 @@
 # Mobile store launch plan
 
 > STATUS 2026-08-14: implementation wave active on `feat/mobile-store-shell`
-> from `origin/main@11ce23129c9caec63079448370393ed1cf27a4db`.
+> from `origin/main@11ce231b0a32e87939a44b010effb87cef7dc9c4`.
 
 ## Adversarial grade of the previous plan
 
@@ -32,13 +32,13 @@ deliberate privacy and cost ceilings, not incomplete scaffolding.
 |---|---|---|
 | M1 | Android and iOS projects boot bundled files, never a remote website shell. | Native project configuration plus offline boot contract |
 | M2 | A signed `/room/<token>` link enters the same room in the installed app; invalid hosts and malformed tokens fail closed. | Deep-link tests plus association endpoints |
-| M3 | Camera and microphone are requested only after Start; deny/revoke paths remain usable and calls stop or reconnect cleanly across lifecycle changes. | Platform manifests plus native/browser lifecycle tests |
+| M3 | Microphone and camera are requested independently from their respective controls; denying one does not disable the other. Calls stop or reconnect cleanly across lifecycle changes. | Platform manifests plus native/browser lifecycle tests |
 | M4 | Host-control bearer state uses Keychain/Android encrypted storage; locale/voice preferences may remain ordinary local preferences. | Secure-storage adapter test |
 | M5 | Create, status, close, TURN, TTS, capabilities, and WebSocket traffic use a versioned mobile compatibility contract without weakening signed-room validation. | Worker mobile contract and regression suites |
-| M6 | Privacy, terms, support, report/block guidance, retention, and provider disclosures are public and available inside the app. | Public endpoint tests and store declaration sources |
+| M6 | Privacy, terms, and support are available inside the app. A live participant can submit one private category-only report, block the room locally, and no call content or bearer is retained. | Public endpoint, report-inbox, and store declaration tests |
 | M7 | Android targets API 36 and produces a release AAB. iOS targets the iOS 26 SDK and has a reproducible macOS archive/export workflow. | Clean build artifacts or an explicit signing-only hold |
 | M8 | Store assets and metadata are source-controlled and match the product: free, accountless, no transcript history, foreground call only. | Metadata validation and screenshots |
-| M9 | Existing web rooms, host control, captions, voice safety, and translation gates remain green. | Existing full suites |
+| M9 | Existing web rooms, host control, captions, voice safety, translation, and free-tier abuse controls remain green. | Existing full suites plus room/TURN quota tests |
 | M10 | Public launch is blocked until relay-only TURN, capacity admission, and real Android-to-iPhone calls pass. | Physical-device launch checklist; no automated substitute |
 
 ## Implementation order

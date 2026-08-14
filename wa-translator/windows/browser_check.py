@@ -105,6 +105,7 @@ STATE = """(async () => {
     remoteSize: v.videoWidth + 'x' + v.videoHeight,
     micLabel: document.getElementById('micBtn').textContent.trim(),
     remoteMuted: v.muted,
+    hasMedia: !!mediaStream,
     voiceOn,
     selectedLocalType: null,
     selectedRemoteType: null,
@@ -346,6 +347,7 @@ async def check_voice_modes(tab, other_tab, my_id, other_id, check):
 async def check_role_picker(tab, check):
     await tab.call("Emulation.setDeviceMetricsOverride", width=360, height=640,
                    deviceScaleFactor=1, mobile=True)
+    await tab.js("$('termsAgree').checked=true;$('termsAgree').dispatchEvent(new Event('change',{bubbles:true}))")
     picker = await tab.js("""(() => {
       const gate = $('roleGate');
       const card = gate.querySelector('.roleCard');
@@ -626,6 +628,7 @@ async def run():
 
             print("pre-join locale picker:")
             await check_role_picker(a, check)
+            await b.js("$('termsAgree').checked=true;$('termsAgree').dispatchEvent(new Event('change',{bubbles:true}))")
             await a.js("chooseLocale('en-US')")
             await b.js("chooseLocale('es-ES')")
 
@@ -634,23 +637,22 @@ async def run():
             print("host dashboard UI:")
             await check_dashboard_ui(check)
 
-            # The peer connection is established by joining alone — nothing here
-            # calls into page internals, so this is the flow a user actually gets.
+            # Joining creates signalling peers but must not prompt for media.
             for _ in range(20):
                 states = [await t.js(STATE) for t in (a, b)]
-                if all(s.get("peerCount") and s.get("outgoingAudio") is not None
-                       for s in states):
+                if all(s.get("peerCount") for s in states):
                     break
                 await asyncio.sleep(1)
 
             print("before Start (peer connected, mic never pressed):")
             for name, st in zip("AB", states):
-                check(st["outgoingAudio"] is False,
-                      f"{name}: peer is not receiving audio before Start "
-                      f"(enabled={st['outgoingAudio']})")
+                check(st["outgoingAudio"] in (None, False) and not st["hasMedia"],
+                      f"{name}: joining did not request media "
+                      f"(sender={st['outgoingAudio']}, media={st['hasMedia']})")
 
             for t in (a, b):
                 await t.js("document.getElementById('micBtn').click()")
+                await t.js("document.getElementById('camBtn').click()")
             await asyncio.sleep(6)
 
             print("after Start:")
@@ -669,6 +671,40 @@ async def run():
                           f"protocol={st['selectedProtocol']})")
                 check(st["remoteVideo"] and st["remoteSize"] != "0x0",
                       f"{name}: remote video is playing ({st['remoteSize']})")
+
+            print("after microphone and camera permission revocation:")
+            await a.js("""(() => {
+              const audio = mediaStream.getAudioTracks()[0];
+              const video = mediaStream.getVideoTracks()[0];
+              audio.stop();
+              video.stop();
+              // MediaStreamTrack.stop() deliberately does not emit `ended`;
+              // browser/OS permission revocation does. Dispatch that browser
+              // event so this gate exercises the production recovery handler.
+              audio.dispatchEvent(new Event('ended'));
+              video.dispatchEvent(new Event('ended'));
+            })()""")
+            revoked = await _wait_js(
+                a,
+                "!micOn && !camOn && audioMediaPromise === null && "
+                "videoMediaPromise === null && mediaStream.getTracks().length === 0",
+                timeout=8,
+            )
+            check(revoked, "A: revoked mic and camera clear cached permission state")
+            await a.js("document.getElementById('micBtn').click()")
+            await a.js("document.getElementById('camBtn').click()")
+            recovered = await _wait_js(
+                a,
+                "micOn && camOn && audioInputNode && "
+                "mediaStream.getAudioTracks().some(t=>t.readyState==='live') && "
+                "mediaStream.getVideoTracks().some(t=>t.readyState==='live') && "
+                "[...peers.values()].every(p=>p.pc.getSenders().filter(s=>s.track).some(s=>"
+                "s.track.kind==='audio'&&s.track.readyState==='live') && "
+                "p.pc.getSenders().filter(s=>s.track).some(s=>"
+                "s.track.kind==='video'&&s.track.readyState==='live'))",
+                timeout=12,
+            )
+            check(recovered, "A: Start and Camera reacquire live tracks after revocation")
 
             # Runs while the mic is on: the ASR feed can only be observed
             # pausing and resuming if it was open to begin with.

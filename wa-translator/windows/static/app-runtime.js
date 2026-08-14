@@ -29,6 +29,22 @@
     return new URL(path, publicOrigin).toString();
   }
 
+  function contentUrl(page, hash = "") {
+    if (!["privacy", "terms", "support"].includes(page)) {
+      throw new Error("Unsupported content page");
+    }
+    const url = new URL(native ? `${page}.html` : `/${page}`,
+                        native ? location.href : publicOrigin);
+    const token = roomToken();
+    if (token) {
+      url.searchParams.set("return", native
+        ? `room.html?room=${encodeURIComponent(token)}`
+        : `/room/${token}`);
+    }
+    if (hash) url.hash = hash;
+    return url.toString();
+  }
+
   async function loadHostRoom() {
     try {
       return native
@@ -84,7 +100,7 @@
   }
 
   window.LinguaRuntime = Object.freeze({
-    isNative: native, publicOrigin, apiUrl, websocketUrl, roomToken, inviteUrl,
+    isNative: native, publicOrigin, apiUrl, websocketUrl, roomToken, inviteUrl, contentUrl,
     loadHostRoom, saveHostRoom, forgetHostRoom, share, openRoom, ready,
   });
 })();

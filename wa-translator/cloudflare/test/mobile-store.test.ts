@@ -5,6 +5,22 @@ const PUBLIC_ORIGIN = "https://room.test";
 const NATIVE_ORIGIN = "https://localhost";
 
 describe("mobile store interface", () => {
+  it("is accepted by the installed-client bootstrap validator", async () => {
+    // The installed client deliberately remains plain ESM so Android, iOS and
+    // this Worker contract test execute the same validator.
+    // @ts-ignore No separate declaration file may drift from this module.
+    const mobileContract = await import("../../mobile/src/runtime-core.mjs");
+    const response = await exports.default.fetch(
+      "https://spoken-translation-room.spoken-translation-cloudflare.workers.dev/api/v1/mobile/bootstrap",
+      { headers: { Origin: NATIVE_ORIGIN } }
+    );
+    expect(response.status).toBe(200);
+    const payload = await response.json<Record<string, unknown>>();
+    expect(mobileContract.validateBootstrap(
+      { ...payload, public_origin: mobileContract.PUBLIC_ORIGIN }, mobileContract.MOBILE_BUILD
+    )).toBe(true);
+  });
+
   it("publishes one versioned, no-store mobile bootstrap contract", async () => {
     const response = await exports.default.fetch(`${PUBLIC_ORIGIN}/api/v1/mobile/bootstrap`, {
       headers: { Origin: NATIVE_ORIGIN }
@@ -29,6 +45,7 @@ describe("mobile store interface", () => {
         room: "/api/v1/room",
         room_control: "/api/v1/room-control",
         turn: "/api/v1/turn",
+        reports: "/api/v1/reports",
         tts: "/api/v1/tts",
         websocket: "/ws/v1/{token}"
       }
