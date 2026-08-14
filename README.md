@@ -8,6 +8,65 @@ Windows server, or a remote-webview shortcut. Start with
 [`MOBILE-STORE-HANDOFF.md`](MOBILE-STORE-HANDOFF.md) for builds, store account
 setup, and the physical-device release gates.
 
+## Release status — 2026-08-14
+
+This is a working closed-beta build, merged to `main` by PR #5 at
+`4340d6d4d308081f21ba8d82526db5a278378748`; the handoff receipt was merged by
+PR #6 at `8eb138eb0b98537abaacd02e11d384648d168715`. The public service is
+live at [`spoken-translation-room.spoken-translation-cloudflare.workers.dev`](https://spoken-translation-room.spoken-translation-cloudflare.workers.dev/).
+The current Worker version is `f2c94502-82f3-4281-809f-3aed424bb25b`, built
+from runtime source `b7b0fffdd41816b45cf0e1ee53893b6802d75853`.
+
+Verified receipts:
+
+- Public `/health`, `/api/v1/mobile/bootstrap`, `/privacy`, `/terms`, and
+  `/support` returned 200. The browser acceptance run passed the 106-profile
+  picker (including Khmer `km-KH`), Arabic RTL, 360px layout, WebRTC camera and
+  microphone, permission recovery, device voice, translated WAV playback,
+  report/share, dashboard room create/close, and participant Leave.
+- `wa-translator/mobile`: `npm run check` passed 14/14; post-merge GitHub
+  Actions run `31769087455` passed Android, iOS, and product regression.
+- Windows checks passed 46/46 with the project dependency environment. The
+  Android AAB is 3,095,207 bytes,
+  `C9D1196739A69B6CCC7738DFE292051EF568FCA83CE3C3A4F498E4C1FCA3296E`;
+  the unsigned iOS executable is 441,048 bytes,
+  `232F76EFE5B106FF977493924F5B5C6FA68E0BB4FD0400E90B7487B046C4B120`.
+- The Windows desktop shortcut is
+  `C:\Users\MSI\Desktop\Live Translator.lnk`. It launches Edge app mode
+  directly at the public origin and does not depend on Codex, a tunnel, or a
+  localhost server. Development ports 8791 and 9914 are clear.
+- Store screenshots were regenerated from the public surface. They contain no
+  localhost URLs, development explanation text, unavailable-capability
+  warnings, or fabricated captions.
+
+### Still required before store publication
+
+The code and unsigned build artifacts are complete; paying store fees alone is
+not the final release step. The following are intentionally not claimed as
+done:
+
+1. **Google Play:** verify the developer account, create package
+   `com.javin23863.linguarelay`, enable Play App Signing, create the release
+   service account, install the protected CI secrets, and upload to Internal
+   Testing before production review.
+2. **Apple:** verify Apple Developer/App Store Connect, register the same bundle
+   ID and Associated Domains, install the Team ID/API key/distribution
+   certificate/profile secrets, and upload to TestFlight.
+3. **Deep links:** install the exact Play App Signing SHA-256 and Apple Team ID
+   bindings in the Worker. Until then, Android `assetlinks.json` and the iOS
+   Universal Links file deliberately return 503 rather than making a false
+   green claim.
+4. **Physical release acceptance:** test an Android-to-iPhone call with real
+   camera, microphone, captions, natural peer audio, and the selected voice
+   profiles; then complete each store's review forms and staged rollout.
+5. **Known beta ceilings:** links expire after 24 hours; capacity is one
+   scale-to-zero L4 with a global four-stream beta limit; TURN relay and a
+   human-audible Codex-browser acceptance are not claimed in this receipt.
+
+The complete command list, secret names, artifact receipts, and launch runbook
+are in [`MOBILE-STORE-HANDOFF.md`](MOBILE-STORE-HANDOFF.md). Do not put signing
+keys, store JSON keys, report-admin values, or room bearer links in this README.
+
 One private link, up to four browsers. Camera and natural voice go directly
 between peers while a single transcription fans out to the unique base
 languages of current listeners. Captions-only is the default; a listener can
