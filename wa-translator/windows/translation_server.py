@@ -696,10 +696,18 @@ async def close_room(request: Request):
     })
 
 
+DEVTOOLS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "devtools")
+
+
 @app.get("/test")
 async def test_page():
-    """Mic diagnostic — earned its keep debugging getUserMedia on the phone."""
-    with open(os.path.join(STATIC, "mictest.html"), encoding="utf-8") as f:
+    """Mic diagnostic — earned its keep debugging getUserMedia on the phone.
+
+    It lives outside ``static`` on purpose: everything in that directory is
+    published by the Worker and bundled into the store builds, and a diagnostic
+    page is not part of the product people install.
+    """
+    with open(os.path.join(DEVTOOLS, "mictest.html"), encoding="utf-8") as f:
         return HTMLResponse(f.read())
 
 

@@ -11,6 +11,7 @@
     "screenshots": "python scripts/prepare-store-screenshots.py",
     "sync": "npm run build:web && cap sync",
     "check": "npm run typecheck && npm run build:web && node --test test/*.test.mjs",
+    "browser": "node ../tools/browser/run.mjs",
     "typecheck": "tsc --noEmit",
     "android:bundle": "npm run sync && cd android && gradlew.bat bundleRelease"
   },

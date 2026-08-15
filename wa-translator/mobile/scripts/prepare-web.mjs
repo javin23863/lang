@@ -14,6 +14,9 @@ await rm(WWW, { recursive: true, force: true });
 await cp(SOURCE, WWW, { recursive: true });
 await mkdir(path.join(WWW, "static"), { recursive: true });
 await cp(path.join(SOURCE, "pcm-worklet.js"), path.join(WWW, "static", "pcm-worklet.js"));
+// The runtime asks for interface dictionaries at /static/i18n, the one path
+// that resolves the same way under FastAPI, the Worker, and the native shell.
+await cp(path.join(SOURCE, "i18n"), path.join(WWW, "static", "i18n"), { recursive: true });
 
 for (const name of ["index.html", "room.html"]) {
   const target = path.join(WWW, name);
