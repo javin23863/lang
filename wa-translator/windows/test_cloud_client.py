@@ -10,6 +10,11 @@ import unittest
 
 HTML = pathlib.Path(__file__).with_name("static").joinpath("room.html").read_text(
     encoding="utf-8")
+# The room reads every sentence out of a dictionary now, so the words a person
+# actually sees live in the runtime's English base rather than in the markup.
+# Assertions about wording follow them there instead of being dropped.
+RUNTIME = pathlib.Path(__file__).with_name("static").joinpath("app-runtime.js").read_text(
+    encoding="utf-8")
 LIVE_CHECK_PATH = pathlib.Path(__file__).with_name("live_bilingual_check.py")
 
 
@@ -18,7 +23,8 @@ class CloudClientContractTests(unittest.TestCase):
         self.assertIn("let voiceOn = false", HTML)
         self.assertIn('id="publishVoiceSel"', HTML)
         self.assertIn("voice_profile: myVoiceProfileId", HTML)
-        self.assertIn("Captions only", HTML)
+        self.assertIn("option.textContent = t('voice.captionsOnly')", HTML)
+        self.assertIn('"voice.captionsOnly": "Captions only"', RUNTIME)
 
     def test_free_device_voices_are_locale_matched_and_never_sent_to_the_server(self):
         self.assertIn("speechSynthesis.getVoices()", HTML)
@@ -148,7 +154,8 @@ class CloudClientContractTests(unittest.TestCase):
         self.assertIn("send({type: 'leave'})", HTML)
         self.assertIn("if (notifyServer) send({type: 'leave'})", HTML)
         self.assertIn("window.addEventListener('pagehide', suspendRoom)", HTML)
-        self.assertIn("Room is full (' + m.limit + ' people)", HTML)
+        self.assertIn("setStatus('status.roomFull', {limit: m.limit}, true)", HTML)
+        self.assertIn('"status.roomFull": "Room is full ({limit} people)"', RUNTIME)
         self.assertNotIn("closed devices clear within", HTML)
         self.assertNotIn("global GPU capacity", HTML)
 
@@ -167,7 +174,9 @@ class CloudClientContractTests(unittest.TestCase):
         self.assertNotIn("navigator.language", HTML)
         self.assertIn("function chooseLocale(localeId)", HTML)
         self.assertIn("function previewRoleLocale()", HTML)
-        self.assertIn("document.documentElement.dir = profile.rtl ? 'rtl' : 'ltr'", HTML)
+        self.assertIn("runtime.i18n.use(profile.id)", HTML)
+        self.assertIn('document.documentElement.dir = RTL_LANGUAGES.has(baseLanguage(uiLocale))',
+                      RUNTIME)
         self.assertIn("$('joinBtn').onclick = () => chooseLocale($('roleLocaleSel').value)", HTML)
         start = HTML.index("function chooseLocale(localeId)")
         end = HTML.index("\n}", start)
@@ -181,7 +190,10 @@ class CloudClientContractTests(unittest.TestCase):
         self.assertNotIn("mapping_note", HTML)
         self.assertNotIn("verified language options", HTML)
         self.assertIn("document.createElement('optgroup')", HTML)
-        self.assertIn("group.label = tier === 'verified' ? 'Tested' : 'Preview'", HTML)
+        self.assertIn("group.label = t(tier === 'verified' ? 'tier.verified' : 'tier.preview')",
+                      HTML)
+        self.assertIn('"tier.verified": "Tested"', RUNTIME)
+        self.assertIn('"tier.preview": "Preview"', RUNTIME)
 
     def test_bfcache_restore_rejoins_but_explicit_leave_stays_terminal(self):
         self.assertIn("let explicitLeave = false", HTML)

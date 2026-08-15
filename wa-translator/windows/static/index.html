@@ -9,7 +9,7 @@
 <script src="/app-runtime.js"></script>
 <title>Lingua Relay · Private rooms</title>
 <style>
-*{box-sizing:border-box}:root{color-scheme:dark;--canvas:#09141e;--panel:#10212e;--panel-2:#172d3b;--line:#294455;--ink:#eef3f5;--muted:#aab8c1;--accent:#67e0bc;--accent-ink:#06251e;--danger:#df6572;--focus:#a9ecff}body{margin:0;min-height:100vh;background:radial-gradient(circle at 86% 0,#17445b 0,#09141e 36rem);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:clamp(12px,4vw,42px);display:grid;place-items:center}.card{width:min(760px,100%);background:linear-gradient(145deg,#10212ef2,#0b1924f2);border:1px solid var(--line);border-radius:22px;padding:clamp(20px,5vw,42px);box-shadow:0 22px 62px #0009}.brand{font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin:0 0 16px}.state{border-radius:12px;padding:12px 14px;background:var(--panel-2);border:1px solid var(--line);margin:0 0 18px;font-weight:700}.state[data-state="open"]{background:#115646;border-color:#2c8a70}.state[data-state="closed"],.state[data-state="expired"],.state[data-state="error"]{background:#3d272c;border-color:#87515a}.room{display:grid;gap:14px;border-top:1px solid var(--line);padding-top:22px}.room[hidden]{display:none}.field{display:grid;gap:7px;color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.03em}input{width:100%;min-width:0;border:1px solid var(--line);border-radius:10px;background:#09141e;color:var(--ink);font:14px ui-monospace,SFMono-Regular,Consolas,monospace;padding:12px}.actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}button{border:1px solid transparent;border-radius:12px;min-height:44px;padding:10px 12px;font:700 14px inherit;cursor:pointer;background:var(--panel-2);color:var(--ink)}button.primary{background:var(--accent);color:var(--accent-ink)}button.danger{background:#572a32;border-color:#87515a;color:#fff}button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-offset:2px}button:disabled{cursor:wait;opacity:.65}.notice{min-height:20px;margin:2px 0 0;color:var(--muted);font-size:13px}.create{width:100%;margin-top:22px;font-size:16px}.roomLabel{font-size:13px;font-weight:800;margin:0;color:var(--ink)}.legal{display:flex;justify-content:center;gap:16px;margin:22px 0 0;font-size:12px}.legal a{color:var(--muted);text-underline-offset:3px}.legal a:focus-visible{outline:3px solid var(--focus);outline-offset:3px}@media(max-width:500px){body{padding:12px}.card{border-radius:16px}.actions{grid-template-columns:1fr 1fr}}@media(max-width:380px){body{padding:8px}.card{padding:17px}.actions{gap:7px}button{font-size:13px;padding:9px 7px}input{font-size:12px}}
+*{box-sizing:border-box}:root{color-scheme:dark;--canvas:#09141e;--panel:#10212e;--panel-2:#172d3b;--line:#294455;--ink:#eef3f5;--muted:#aab8c1;--accent:#67e0bc;--accent-ink:#06251e;--danger:#df6572;--focus:#a9ecff}body{margin:0;min-height:100vh;background:radial-gradient(circle at 86% 0,#17445b 0,#09141e 36rem);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:clamp(12px,4vw,42px);display:grid;place-items:center}.card{width:min(760px,100%);background:linear-gradient(145deg,#10212ef2,#0b1924f2);border:1px solid var(--line);border-radius:22px;padding:clamp(20px,5vw,42px);box-shadow:0 22px 62px #0009}.brand{font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin:0 0 16px}.state{border-radius:12px;padding:12px 14px;background:var(--panel-2);border:1px solid var(--line);margin:0 0 18px;font-weight:700}.state[data-state="open"]{background:#115646;border-color:#2c8a70}.state[data-state="closed"],.state[data-state="expired"],.state[data-state="error"]{background:#3d272c;border-color:#87515a}.room{display:grid;gap:14px;border-top:1px solid var(--line);padding-top:22px}.room[hidden]{display:none}.field{display:grid;gap:7px;color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.03em}input{width:100%;min-width:0;border:1px solid var(--line);border-radius:10px;background:#09141e;color:var(--ink);font:14px ui-monospace,SFMono-Regular,Consolas,monospace;padding:12px;direction:ltr;text-align:left}.actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}.actions button{overflow-wrap:anywhere;line-height:1.2}button{border:1px solid transparent;border-radius:12px;min-height:44px;padding:10px 12px;font:700 14px inherit;cursor:pointer;background:var(--panel-2);color:var(--ink)}button.primary{background:var(--accent);color:var(--accent-ink)}button.danger{background:#572a32;border-color:#87515a;color:#fff}button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-offset:2px}button:disabled{cursor:wait;opacity:.65}.notice{min-height:20px;margin:2px 0 0;color:var(--muted);font-size:13px}.create{width:100%;margin-top:22px;font-size:16px}.roomLabel{font-size:13px;font-weight:800;margin:0;color:var(--ink)}.appLocale{margin-top:22px}.appLocale select{width:100%;min-width:0;min-height:44px;border:1px solid var(--line);border-radius:10px;background:#09141e;color:var(--ink);font:14px inherit;padding:11px 10px}.appLocale select:focus-visible{outline:3px solid var(--focus);outline-offset:2px}.legal{display:flex;justify-content:center;gap:16px;margin:18px 0 0;font-size:12px}.legal a{color:var(--muted);text-underline-offset:3px}.legal a:focus-visible{outline:3px solid var(--focus);outline-offset:3px}@media(max-width:500px){body{padding:12px}.card{border-radius:16px}.actions{grid-template-columns:1fr 1fr}}@media(max-width:380px){body{padding:8px}.card{padding:17px}.actions{gap:7px}button{font-size:13px;padding:9px 7px}input{font-size:12px}}
 </style>
 </head>
 <body>
@@ -17,30 +17,37 @@
   <p class="brand">Lingua Relay</p>
   <p id="roomState" class="state" data-state="idle" aria-live="polite">No active room on this device.</p>
   <section id="roomPanel" class="room" hidden aria-label="Current private room">
-    <p class="roomLabel">Room control</p>
-    <label class="field" for="shareLink">Participant link
+    <p class="roomLabel" data-i18n="home.roomControl">Room control</p>
+    <label class="field" for="shareLink"><span data-i18n="home.participantLink">Participant link</span>
       <input id="shareLink" type="url" readonly spellcheck="false" autocomplete="off">
     </label>
     <div class="actions">
-      <button id="copyBtn" type="button">Copy link</button>
-      <button id="shareBtn" type="button">Share</button>
-      <button id="openBtn" type="button">Open room</button>
-      <button id="closeBtn" class="danger" type="button">Close room</button>
+      <button id="copyBtn" type="button" data-i18n="home.copyLink">Copy link</button>
+      <button id="shareBtn" type="button" data-i18n="home.share">Share</button>
+      <button id="openBtn" type="button" data-i18n="home.openRoom">Open room</button>
+      <button id="closeBtn" class="danger" type="button" data-i18n="home.closeRoom">Close room</button>
     </div>
   </section>
   <p id="roomNotice" class="notice" role="status" aria-live="polite"></p>
   <button id="createBtn" class="primary create" type="button">Create private room</button>
+  <label class="field appLocale" for="appLocaleSel"><span data-i18n="gate.language">Language</span>
+    <select id="appLocaleSel"></select>
+  </label>
   <nav class="legal" aria-label="Legal and support">
-    <a href="privacy.html">Privacy</a><a href="terms.html">Terms</a><a href="support.html">Support</a>
+    <a href="privacy.html" data-i18n="legal.privacy">Privacy</a><a href="terms.html" data-i18n="legal.terms">Terms</a><a href="support.html" data-i18n="legal.support">Support</a>
   </nav>
 </main>
 <script>
 const STORAGE_KEY = "live-translator.host-room.v1";
 const $ = id => document.getElementById(id);
 const runtime = window.LinguaRuntime;
+const t = runtime.t;
 let currentRoom = null;
 let statusTimer = null;
 let busy = false;
+// Every visible line is stored as its key, never as finished text, so a
+// language switch can re-render the screen the person is already looking at.
+let stateKey = "home.noRoom", stateParams = null, noticeKey = "", noticeParams = null;
 
 function roomUrl(room) {
   return runtime.inviteUrl(room);
@@ -72,24 +79,28 @@ async function forgetRoom() {
   await runtime.forgetHostRoom();
 }
 
-function setNotice(text) {
-  $("roomNotice").textContent = text || "";
+function setNotice(key, params) {
+  noticeKey = key || "";
+  noticeParams = params || null;
+  $("roomNotice").textContent = noticeKey ? t(noticeKey, noticeParams) : "";
 }
 
-function setState(state, text) {
+function setState(state, key, params) {
+  stateKey = key;
+  stateParams = params || null;
   $("roomState").dataset.state = state;
-  $("roomState").textContent = text;
+  $("roomState").textContent = t(key, params);
 }
 
 function renderRoom(state, participantCount) {
   $("roomPanel").hidden = !currentRoom;
-  $("createBtn").textContent = currentRoom ? "Create a new private room" : "Create private room";
+  $("createBtn").textContent = t(currentRoom ? "home.createAnother" : "home.create");
   if (!currentRoom) return;
   $("shareLink").value = roomUrl(currentRoom);
   const count = Number.isInteger(participantCount) ? participantCount : 0;
-  setState(state, state === "open"
-    ? "Room open — " + count + " participant" + (count === 1 ? "" : "s") + "."
-    : "Room ready — no participants joined yet.");
+  if (state !== "open") setState(state, "home.roomReady");
+  else if (count === 1) setState(state, "home.roomOpenOne");
+  else setState(state, "home.roomOpenMany", {count});
 }
 
 function setBusy(value) {
@@ -104,13 +115,13 @@ function stopPolling() {
   statusTimer = null;
 }
 
-async function clearCurrentRoom(state, message) {
+async function clearCurrentRoom(state, key) {
   await forgetRoom();
   currentRoom = null;
   stopPolling();
   $("roomPanel").hidden = true;
-  $("createBtn").textContent = "Create private room";
-  setState(state, message);
+  $("createBtn").textContent = t("home.create");
+  setState(state, key);
 }
 
 function startPolling() {
@@ -128,27 +139,27 @@ async function refreshStatus() {
       headers: {Authorization: "Bearer " + currentRoom.host_control, Accept: "application/json"}
     });
     if (response.status === 403) {
-      await clearCurrentRoom("expired", "This room has expired or is no longer controlled by this device.");
+      await clearCurrentRoom("expired", "home.controlLost");
       return;
     }
     if (!response.ok) throw new Error("status unavailable");
     const value = await response.json();
     if (value.state === "closed") {
-      await clearCurrentRoom("closed", "This room is closed.");
+      await clearCurrentRoom("closed", "home.roomClosed");
       return;
     }
     if (value.state !== "ready" && value.state !== "open") throw new Error("invalid room state");
     renderRoom(value.state, value.participant_count);
     setNotice("");
   } catch (_) {
-    setState("error", "Room status is temporarily unavailable. The control stays saved on this device.");
+    setState("error", "home.statusUnavailable");
   }
 }
 
 async function createRoom() {
   if (busy) return;
   if (currentRoom) {
-    if (!window.confirm("Close the active room and create a new one? Everyone in it will be disconnected.")) return;
+    if (!window.confirm(t("home.confirmReplace"))) return;
     await closeRoom(false);
     if (currentRoom) return;
   }
@@ -164,9 +175,9 @@ async function createRoom() {
     currentRoom = room;
     renderRoom("ready", 0);
     startPolling();
-    setNotice("Private participant link is ready to share.");
+    setNotice("home.linkReady");
   } catch (_) {
-    setState("error", "Could not create and save a private room on this device.");
+    setState("error", "home.createFailed");
   } finally {
     setBusy(false);
   }
@@ -182,11 +193,11 @@ async function copyLink() {
       $("shareLink").select();
       if (!document.execCommand("copy")) throw new Error("copy failed");
     }
-    setNotice("Participant link copied.");
+    setNotice("home.linkCopied");
   } catch (_) {
     $("shareLink").focus();
     $("shareLink").select();
-    setNotice("Select and copy the participant link.");
+    setNotice("home.selectToCopy");
   }
 }
 
@@ -194,11 +205,11 @@ async function shareLink() {
   if (!currentRoom || busy) return;
   const link = roomUrl(currentRoom);
   if (await runtime.share({
-    title: "Private translated video call",
-    text: "Join my private translated video call.",
+    title: t("share.title"),
+    text: t("share.text"),
     url: link
   })) {
-    setNotice("Participant link shared.");
+    setNotice("home.linkShared");
     return;
   }
   await copyLink();
@@ -207,13 +218,13 @@ async function shareLink() {
 function openRoom() {
   if (!currentRoom || busy) return;
   if (!runtime.openRoom(currentRoom)) {
-    setNotice("Opening was blocked. Copy the participant link instead.");
+    setNotice("home.openBlocked");
   }
 }
 
 async function closeRoom(withConfirmation = true) {
   if (!currentRoom || busy) return;
-  if (withConfirmation && !window.confirm("Close this room now? Everyone will be disconnected and the participant link will stop working.")) return;
+  if (withConfirmation && !window.confirm(t("home.confirmClose"))) return;
   setBusy(true);
   try {
     const response = await fetch(runtime.apiUrl("/api/room-control/close"), {
@@ -221,10 +232,10 @@ async function closeRoom(withConfirmation = true) {
       headers: {Authorization: "Bearer " + currentRoom.host_control, Accept: "application/json"}
     });
     if (!response.ok) throw new Error("close failed");
-    await clearCurrentRoom("closed", "This room is closed. Its participant link no longer works.");
+    await clearCurrentRoom("closed", "home.roomClosedLink");
     setNotice("");
   } catch (_) {
-    setState("error", "Could not close the room. It remains saved on this device.");
+    setState("error", "home.closeFailed");
   } finally {
     setBusy(false);
   }
@@ -241,11 +252,44 @@ document.addEventListener("visibilitychange", () => {
 if (!runtime.isNative && "serviceWorker" in navigator) {
   navigator.serviceWorker.register("/sw.js").catch(() => {});
 }
+// The dashboard is the first screen a host sees, before any room and before
+// the room's own language gate — so the choice has to be offered here too.
+// Native language names come from the platform rather than a catalog fetch.
+function fillAppLocaleSelect() {
+  const select = $("appLocaleSel");
+  const named = runtime.i18n.languages.map(code => {
+    let label = code;
+    try {
+      label = new Intl.DisplayNames([code], {type: "language"}).of(code) || code;
+    } catch (_) { /* an unknown tag keeps its code */ }
+    return {code, label: label.charAt(0).toLocaleUpperCase(code) + label.slice(1)};
+  }).sort((left, right) => left.label.localeCompare(right.label));
+  select.replaceChildren();
+  for (const {code, label} of named) {
+    const option = document.createElement("option");
+    option.value = code;
+    option.textContent = label;
+    option.selected = code === runtime.i18n.language;
+    select.appendChild(option);
+  }
+}
+fillAppLocaleSelect();
+$("appLocaleSel").onchange = () => runtime.i18n.use($("appLocaleSel").value);
+
+// A language switch re-renders whatever is already on screen: the live status
+// line, the notice, and the create button all carry a key, not finished text.
+runtime.i18n.onChange(() => {
+  $("appLocaleSel").value = runtime.i18n.language;
+  $("roomState").textContent = t(stateKey, stateParams);
+  $("roomNotice").textContent = noticeKey ? t(noticeKey, noticeParams) : "";
+  $("createBtn").textContent = t(currentRoom ? "home.createAnother" : "home.create");
+});
+
 async function boot() {
   try {
     await runtime.ready();
   } catch (_) {
-    setState("error", "This app cannot connect or needs an update.");
+    setState("error", "home.needsUpdate");
     $("createBtn").disabled = true;
     return;
   }
@@ -257,7 +301,7 @@ async function boot() {
   } else if (currentRoom) {
     await forgetRoom();
     currentRoom = null;
-    setState("expired", "This room has expired.");
+    setState("expired", "home.roomExpired");
   }
 }
 boot();

@@ -15,6 +15,9 @@ describe("participant terminal-close client", () => {
     expect(html).toContain('m.type === \'room_closed\'');
     expect(html).toContain('event.code === 4001');
     expect(html).toContain('terminalRoom = true');
-    expect(html).toContain('This private room has been closed');
+    // The closed-room line is a dictionary key now, not a sentence: it has to
+    // reach the participant in the language they picked.
+    expect(html).toContain("setStatus('status.roomClosed', null, true)");
+    expect(html).toContain("showVideoNote('note.closedByHost')");
   });
 });

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#111b21">
 <link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
 <script src="/app-runtime.js"></script>
 <title>Lingua Relay · Private room</title>
 <style>
@@ -31,10 +32,10 @@
 @keyframes blink{50%{opacity:0}}
 
 /* ── controls ────────────────────────────────────────────── */
-#bar{flex:0 0 auto;background:#0b1924ee;backdrop-filter:blur(16px);padding:10px clamp(9px,2vw,20px) calc(10px + env(safe-area-inset-bottom));display:grid;grid-template-columns:minmax(110px,1fr) repeat(4,42px);gap:8px;align-items:center;border-top:1px solid var(--line)}button{border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;padding:10px 12px;min-height:42px;color:var(--ink)}#micBtn{background:var(--accent);color:var(--accent-ink);min-width:0;white-space:nowrap;overflow:hidden}#micBtn.on{background:var(--danger);color:#fff}
-#micBtn .dot{display:inline-block;width:9px;height:9px;border-radius:50%;
-             background:#fff;margin-right:7px;animation:blink 1s infinite}
-#settingsBtn{font-size:12px}.icon{background:var(--panel-2);color:var(--ink);padding:8px;width:42px}.icon.off{background:transparent;color:var(--muted);border-color:var(--line)}#settings{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:9px;border-top:1px solid var(--line);padding-top:10px}.setting{display:flex;flex-direction:column;gap:4px;min-width:0;color:var(--muted);font-size:11px;text-align:left}.setting select,.setting input{width:100%;min-width:0;background:var(--panel-2);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:9px 8px;font-size:13px}.setting input{padding:8px}.capability{font-size:11px;color:var(--muted);line-height:1.35;padding:8px 10px;border-radius:9px;background:#0a2930;border:1px solid #286457}.capability.warning{background:#352928;border-color:#795848;color:#f3d0bc}#capabilityNote,#reportBtn{grid-column:1/-1}#reportBtn{background:transparent;border-color:#87515a;color:#f1c7cb}.termsAgree{display:flex;align-items:center;gap:8px;margin:12px 0;color:var(--muted);font-size:12px}.termsAgree input{width:18px;height:18px;accent-color:var(--accent)}.termsAgree a{color:var(--ink)}
+#bar{flex:0 0 auto;background:#0b1924ee;backdrop-filter:blur(16px);padding:10px clamp(9px,2vw,20px) calc(10px + env(safe-area-inset-bottom));display:grid;grid-template-columns:minmax(110px,1fr) repeat(4,42px);gap:8px;align-items:center;border-top:1px solid var(--line)}button{border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;padding:10px 12px;min-height:42px;color:var(--ink)}#micBtn{background:var(--accent);color:var(--accent-ink);min-width:0;padding:0;display:flex;align-items:center;justify-content:center;gap:9px}#micBtn svg{width:23px;height:23px;display:block;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}#micBtn.on{background:var(--danger);color:#fff}
+#micBtn .dot{display:block;width:9px;height:9px;border-radius:50%;
+             background:currentColor;animation:blink 1s infinite}
+#settingsBtn{font-size:12px}.icon{background:var(--panel-2);color:var(--ink);padding:0;width:42px;display:grid;place-items:center}.icon svg{width:21px;height:21px;display:block;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}.icon.off{background:transparent;color:var(--muted);border-color:var(--line)}.icon:disabled{opacity:.45}#settings{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:9px;border-top:1px solid var(--line);padding-top:10px}.setting{display:flex;flex-direction:column;gap:4px;min-width:0;color:var(--muted);font-size:11px;text-align:left}.setting select,.setting input{width:100%;min-width:0;background:var(--panel-2);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:9px 8px;font-size:13px}.setting input{padding:8px}.capability{font-size:11px;color:var(--muted);line-height:1.35;padding:8px 10px;border-radius:9px;background:#0a2930;border:1px solid #286457}.capability.warning{background:#352928;border-color:#795848;color:#f3d0bc}#capabilityNote,#reportBtn{grid-column:1/-1}#reportBtn{background:transparent;border-color:#87515a;color:#f1c7cb}.termsAgree{display:flex;align-items:center;gap:8px;margin:12px 0;color:var(--muted);font-size:12px}.termsAgree input{width:18px;height:18px;accent-color:var(--accent)}.termsAgree a{color:var(--ink)}
 #status{position:absolute;top:9px;left:50%;transform:translateX(-50%);padding:5px 10px;text-align:center;font-size:11px;color:var(--ink);background:#061019b8;border:1px solid #ffffff22;border-radius:999px;z-index:5;max-width:calc(100% - 32px)}#participantCount{position:absolute;top:9px;left:9px;padding:5px 8px;border-radius:999px;font-size:11px;color:var(--ink);background:#061019b8;border:1px solid #ffffff22;z-index:5;direction:ltr;unicode-bidi:plaintext}
 #roleGate{position:fixed;inset:0;z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:18px;overflow-y:auto;background:rgba(4,13,20,.94);backdrop-filter:blur(14px)}
 #roleGate[hidden]{display:none}
@@ -43,9 +44,9 @@ html[dir=rtl] #selfWrap{left:10px;right:auto}html[dir=rtl] #participantCount{rig
 @media(max-width:380px){
   #stage{height:31vh;min-height:160px}
   #captions{padding:8px 10px 6px}
-  #bar{padding-left:7px;padding-right:7px;gap:5px;grid-template-columns:repeat(5,minmax(0,1fr))}
+  #bar{padding-left:7px;padding-right:7px;gap:5px;grid-template-columns:repeat(4,minmax(0,1fr))}
   #micBtn{grid-column:1/-1}
-  .icon{width:100%;min-width:0;padding:7px 2px;font-size:10px;white-space:nowrap}.setting select{font-size:11px;padding:7px 3px}
+  .icon{width:100%;min-width:0;padding:0}.setting select{font-size:11px;padding:7px 3px}
   .roleCard{padding:16px}
 }
 </style>
@@ -54,13 +55,13 @@ html[dir=rtl] #selfWrap{left:10px;right:auto}html[dir=rtl] #participantCount{rig
 
 <div id="roleGate" role="dialog" aria-modal="true" aria-labelledby="roleTitle">
   <div class="roleCard">
-    <p class="brand">Lingua Relay</p><h1 id="roleTitle">Choose language</h1>
-    <label class="roleLocale" for="roleLocaleSel">Language
+    <p class="brand">Lingua Relay</p><h1 id="roleTitle" data-i18n="gate.title">Choose language</h1>
+    <label class="roleLocale" for="roleLocaleSel"><span data-i18n="gate.language">Language</span>
       <select id="roleLocaleSel" aria-describedby="roleCapability" disabled></select>
     </label>
-    <p id="roleCapability" class="capability" role="status" aria-live="polite">Loading…</p>
-    <label class="termsAgree"><input id="termsAgree" type="checkbox">I agree to the <a id="termsLink" href="/terms">Terms</a></label>
-    <button id="joinBtn" class="roleJoin" type="button" disabled>Join room</button>
+    <p id="roleCapability" class="capability" role="status" aria-live="polite" data-i18n="gate.loading">Loading…</p>
+    <label class="termsAgree"><input id="termsAgree" type="checkbox" checked><span data-i18n="gate.agreeBefore">I agree to the </span><a id="termsLink" href="/terms" data-i18n="legal.terms">Terms</a><span data-i18n="gate.agreeAfter"></span></label>
+    <button id="joinBtn" class="roleJoin" type="button" disabled data-i18n="gate.join">Join room</button>
   </div>
 </div>
 
@@ -72,20 +73,20 @@ html[dir=rtl] #selfWrap{left:10px;right:auto}html[dir=rtl] #participantCount{rig
   <div id="participantCount" aria-live="polite">0 / 4 people</div>
 </div>
 
-<div id="captions"><p id="captionEmpty">Captions</p></div>
+<div id="captions"><p id="captionEmpty" data-i18n="captions.heading">Captions</p></div>
 
 <div id="bar">
-  <button id="micBtn">Start microphone</button>
-  <button id="shareBtn" class="icon" title="Share this private room" aria-label="Share this private room">Share</button>
-  <button id="camBtn" class="icon off" title="Turn camera on or off" aria-label="Camera">Camera</button>
-  <button id="voiceBtn" class="icon off" title="Turn translated voice on or off" aria-label="Translated voice">Voice</button>
-  <button id="leaveBtn" class="icon" title="Leave this room" aria-label="Leave room">Leave</button>
+  <button id="micBtn" data-i18n-title="bar.startMic" data-i18n-label="bar.startMic" title="Start microphone" aria-label="Start microphone"></button>
+  <button id="shareBtn" class="icon" data-i18n-title="bar.shareTitle" data-i18n-label="bar.shareTitle" title="Share this private room" aria-label="Share this private room"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="18" cy="5.5" r="2.8"/><circle cx="6" cy="12" r="2.8"/><circle cx="18" cy="18.5" r="2.8"/><path d="M8.5 10.6 15.5 6.9M8.5 13.4l7 3.7"/></svg></button>
+  <button id="camBtn" class="icon off" data-i18n-title="bar.cameraTitle" data-i18n-label="bar.camera" title="Turn camera on or off" aria-label="Camera"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="2.5" y="6.5" width="12.5" height="11" rx="2.5"/><path d="m15 12 6-3.6v7.2z"/></svg></button>
+  <button id="voiceBtn" class="icon off" title="Turn translated voice on or off" aria-label="Translated voice"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 9.5h3.2L12 5.5v13L7.2 14.5H4z"/><path d="M16 9.4a3.7 3.7 0 0 1 0 5.2M18.8 6.8a7.4 7.4 0 0 1 0 10.4"/></svg></button>
+  <button id="leaveBtn" class="icon" data-i18n-title="bar.leaveTitle" data-i18n-label="bar.leaveTitle" title="Leave this room" aria-label="Leave room"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14.5 4.5h3a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-3"/><path d="M10 8.2 6 12l4 3.8M6.4 12H15"/></svg></button>
   <div id="settings">
-    <label class="setting">Language<select id="localeSel" aria-describedby="capabilityNote"></select></label>
-    <label class="setting">Voice<select id="publishVoiceSel"></select></label>
-    <label class="setting">Report reason<select id="reportCategory"><option value="harassment">Harassment</option><option value="threat">Threats</option><option value="sexual">Sexual content</option><option value="hate">Hate</option><option value="scam">Scam</option><option value="other">Other</option></select></label>
-    <p id="capabilityNote" class="capability" role="status">Loading…</p>
-    <button id="reportBtn" type="button">Report &amp; block this room</button>
+    <label class="setting"><span data-i18n="settings.language">Language</span><select id="localeSel" aria-describedby="capabilityNote"></select></label>
+    <label class="setting"><span data-i18n="settings.voice">Voice</span><select id="publishVoiceSel"></select></label>
+    <label class="setting"><span data-i18n="settings.reportReason">Report reason</span><select id="reportCategory"><option value="harassment" data-i18n="report.harassment">Harassment</option><option value="threat" data-i18n="report.threat">Threats</option><option value="sexual" data-i18n="report.sexual">Sexual content</option><option value="hate" data-i18n="report.hate">Hate</option><option value="scam" data-i18n="report.scam">Scam</option><option value="other" data-i18n="report.other">Other</option></select></label>
+    <p id="capabilityNote" class="capability" role="status" data-i18n="gate.loading">Loading…</p>
+    <button id="reportBtn" type="button" data-i18n="report.button">Report &amp; block this room</button>
   </div>
 </div>
 
@@ -114,11 +115,29 @@ let iceExpiresAt = 0;
 const peers = new Map();   // id -> {pc, lang, polite, makingOffer, ignoreOffer}
 const bubbles = new Map(); // "speakerId:seq" -> element
 
-function setStatus(text, sticky) {
+// Nothing on this screen stores finished text. Every live line keeps its key
+// and its values, so switching language re-renders the room as it stands
+// instead of leaving the last English sentence behind.
+const t = runtime.t;
+let statusKey = 'gate.title', statusParams = null, statusSticky = true;
+let noteKey = 'stage.waiting', noteParams = null;
+let participantCount = 0;
+
+function setStatus(key, params, sticky) {
+  statusKey = key || '';
+  statusParams = params || null;
+  statusSticky = Boolean(sticky);
+  renderStatus();
+}
+
+function renderStatus() {
   const el = $('status');
+  const text = statusKey ? t(statusKey, statusParams) : '';
   el.textContent = text;
   el.style.display = text ? 'block' : 'none';
-  if (!sticky && text) setTimeout(() => { if (el.textContent === text) el.style.display = 'none'; }, 3000);
+  if (!statusSticky && text) {
+    setTimeout(() => { if (el.textContent === text) el.style.display = 'none'; }, 3000);
+  }
 }
 
 // ── WebSocket and short-lived ICE configuration ──────────
@@ -137,6 +156,13 @@ function localeOptionLabel(profile) {
 function localeName(id) {
   const profile = localeProfile(id);
   return profile ? localeOptionLabel(profile) : String(id || 'Unknown locale');
+}
+// Inside a sentence a language is called by its own name. `localeOptionLabel`
+// pairs the native and English names so two similar entries can be told apart
+// in the list; read aloud in a status line it just sounds broken.
+function spokenLocaleName(id) {
+  const profile = localeProfile(id);
+  return profile ? profile.native_name : String(id || '');
 }
 function cloudVoices(profile) {
   if (!profile || !Array.isArray(profile.voice_profiles)) return [];
@@ -164,12 +190,17 @@ function availableVoiceCount(profile) {
   return cloudVoices(profile).length + deviceVoices(profile).length;
 }
 function capabilityText(profile) {
-  if (!profile) return 'Choose language';
-  const badges = [profile.capabilities?.asr?.tier === 'verified' ? 'Tested' : 'Preview',
-    runtimeCaptionsAvailable ? 'Captions' : 'Captions unavailable'];
-  const voiceCount = availableVoiceCount(profile);
-  if (voiceCount) badges.push(voiceCount + (voiceCount === 1 ? ' voice' : ' voices'));
-  return badges.join(' · ');
+  if (!profile) return t('gate.title');
+  // One badge for what this language can do, never two that say the same thing.
+  // A raw voice tally reads as test output and tells nobody anything they can
+  // act on — the Voice button is the control — so the only distinction worth
+  // drawing is captions with spoken translation, captions alone, or neither.
+  let capability = 'capability.captionsUnavailable';
+  if (runtimeCaptionsAvailable) {
+    capability = availableVoiceCount(profile) ? 'capability.captions' : 'voice.captionsOnly';
+  }
+  return [t(profile.capabilities?.asr?.tier === 'verified' ? 'tier.verified' : 'tier.preview'),
+          t(capability)].join(' · ');
 }
 function updateCapabilityNote() {
   const profile = localeProfile(myLocale);
@@ -178,24 +209,26 @@ function updateCapabilityNote() {
   $('capabilityNote').classList.toggle('warning', !runtimeCaptionsAvailable);
 }
 function roleCapabilityText(profile) {
-  if (!profile) return 'Choose language';
+  if (!profile) return t('gate.title');
   return capabilityText(profile);
 }
+let gateFailureKey = '';
 function updateRoleGate() {
   const profile = localeProfile($('roleLocaleSel').value);
   const blocked = localStorage.getItem(blockedRoomKey) === '1';
   const joinable = Boolean(profile?.capabilities?.asr?.available && termsAccepted() && !blocked);
   $('joinBtn').disabled = !joinable;
-  $('roleCapability').textContent = blocked ? 'Blocked on this device' : roleCapabilityText(profile);
-  $('roleCapability').classList.toggle('warning', !joinable || !runtimeCaptionsAvailable);
+  $('roleCapability').textContent = gateFailureKey ? t(gateFailureKey)
+    : blocked ? t('gate.blocked') : roleCapabilityText(profile);
+  $('roleCapability').classList.toggle('warning',
+    Boolean(gateFailureKey) || !joinable || !runtimeCaptionsAvailable);
 }
 function termsAccepted() { return $('termsAgree').checked; }
 function previewRoleLocale() {
+  // Picking in the list is choosing: the card, the buttons and the settings
+  // are already in that language before the person taps Join.
   const profile = localeProfile($('roleLocaleSel').value);
-  if (profile) {
-    document.documentElement.lang = profile.id;
-    document.documentElement.dir = profile.rtl ? 'rtl' : 'ltr';
-  }
+  if (profile) runtime.i18n.use(profile.id);
   updateRoleGate();
 }
 function fillLocaleSelect() {
@@ -204,16 +237,17 @@ function fillLocaleSelect() {
   for (const id of ['roleLocaleSel', 'localeSel']) {
     const select = $(id);
     const selected = myLocale || select.value || defaultLocale;
+    const compact = id === 'localeSel';
     select.replaceChildren();
     for (const tier of ['verified', 'preview']) {
       const matching = profiles.filter(profile => profile.capabilities?.asr?.tier === tier);
       if (!matching.length) continue;
       const group = document.createElement('optgroup');
-      group.label = tier === 'verified' ? 'Tested' : 'Preview';
+      group.label = t(tier === 'verified' ? 'tier.verified' : 'tier.preview');
       for (const profile of matching) {
         const option = document.createElement('option');
         option.value = profile.id;
-        option.textContent = localeOptionLabel(profile);
+        option.textContent = compact ? profile.native_name : localeOptionLabel(profile);
         option.selected = profile.id === selected;
         group.appendChild(option);
       }
@@ -232,7 +266,7 @@ function fillVoiceSelect() {
   if (!cloudOptions.length && !deviceOptions.length) {
     const option = document.createElement('option');
     option.value = '';
-    option.textContent = 'Captions only';
+    option.textContent = t('voice.captionsOnly');
     select.appendChild(option);
     select.disabled = true;
     myVoiceProfileId = null;
@@ -243,7 +277,7 @@ function fillVoiceSelect() {
   select.disabled = false;
   if (deviceOptions.length) {
     const group = document.createElement('optgroup');
-    group.label = 'On this device';
+    group.label = t('voice.onThisDevice');
     for (const voice of deviceOptions) {
       const option = document.createElement('option');
       option.value = deviceVoiceId(voice);
@@ -254,11 +288,11 @@ function fillVoiceSelect() {
   }
   if (cloudOptions.length) {
     const group = document.createElement('optgroup');
-    group.label = 'Included';
+    group.label = t('voice.included');
     for (const voice of cloudOptions) {
       const option = document.createElement('option');
       option.value = 'cloud:' + voice.id;
-      option.textContent = `${voice.name} · ${voice.style}`;
+      option.textContent = `${voice.name} · ${t('voice.' + voice.style)}`;
       group.appendChild(option);
     }
     select.appendChild(group);
@@ -299,8 +333,8 @@ function applyLocale(localeId, preferredVoiceId = null) {
   myLang = profile.language;
   myVoiceProfileId = preferredVoiceId || null;
   myVoiceChoice = preferredVoiceId ? 'cloud:' + preferredVoiceId : null;
-  document.documentElement.lang = profile.id;
-  document.documentElement.dir = profile.rtl ? 'rtl' : 'ltr';
+  // The chosen language owns the whole interface, not just the captions.
+  runtime.i18n.use(profile.id);
   fillLocaleSelect();
   fillVoiceSelect();
   updateCapabilityNote();
@@ -318,7 +352,7 @@ function chooseLocale(localeId) {
   localStorage.setItem(termsKey, '1');
   roleChosen = true;
   $('roleGate').hidden = true;
-  setStatus('Joining as ' + localeName(myLocale) + '…', true);
+  setStatus('status.joiningAs', {language: spokenLocaleName(myLocale)}, true);
   connect();
 }
 async function loadCapabilities() {
@@ -354,17 +388,23 @@ async function loadCapabilities() {
   } catch (error) {
     $('roleLocaleSel').disabled = true;
     $('joinBtn').disabled = true;
-    $('roleCapability').textContent = 'Languages unavailable';
+    gateFailureKey = 'gate.languagesUnavailable';
+    $('roleCapability').textContent = t(gateFailureKey);
     $('roleCapability').classList.add('warning');
-    setStatus('Languages unavailable', true);
+    setStatus('gate.languagesUnavailable', null, true);
   }
 }
 
 function updateParticipantCount(serverCount) {
   const derived = myId === null ? 0 : peers.size + 1;
-  const count = Number.isInteger(serverCount) && serverCount >= 0 && serverCount <= 4
+  participantCount = Number.isInteger(serverCount) && serverCount >= 0 && serverCount <= 4
     ? serverCount : derived;
-  $('participantCount').textContent = count + ' / 4 ' + (count === 1 ? 'person' : 'people');
+  renderParticipantCount();
+}
+
+function renderParticipantCount() {
+  $('participantCount').textContent = t(
+    participantCount === 1 ? 'stage.countOne' : 'stage.countMany', {count: participantCount});
 }
 
 function stopPresenceHeartbeat() {
@@ -435,9 +475,9 @@ async function preflightRoom() {
     if (response.status === 401 || response.status === 410) {
       terminalRoom = true;
       clearTimeout(turnRefreshTimer);
-      failVoice('Natural audio restored because this private room expired');
-      setStatus('This private room has expired or is unavailable', true);
-      showVideoNote('Ask the caller to create a new private room.');
+      failVoice('voice.naturalAudioRestored');
+      setStatus('status.roomExpired', null, true);
+      showVideoNote('note.askForNewRoom');
       return false;
     }
     // 404 keeps compatibility with an older local adapter that has no
@@ -456,7 +496,7 @@ async function connect() {
   ws.binaryType = 'arraybuffer';
   ws.onopen = () => {
     reconnectFailures = 0;
-    setStatus('Connected');
+    setStatus('status.connected');
     if (!myLocale || !catalogRevision) {
       ws.close(1008, 'capability catalog unavailable');
       return;
@@ -471,16 +511,16 @@ async function connect() {
       closeByHost();
       return;
     }
-    failVoice('Natural audio restored while reconnecting');
+    failVoice('voice.naturalAudioRestored');
     ttsToken = null;
     if (terminalRoom) return;
     if (event.code === 1008) {
-      setStatus('This private room has expired or is unavailable', true);
-      showVideoNote('Ask the caller to create a new private room.');
+      setStatus('status.roomExpired', null, true);
+      showVideoNote('note.askForNewRoom');
       return;
     }
     if (roomFull) return;   // retrying a full room just hammers the server
-    setStatus('Reconnecting…', true);
+    setStatus('status.reconnecting', null, true);
     reconnectFailures++;
     const delay = Math.min(8000, 250 * 2 ** Math.min(reconnectFailures, 5));
     setTimeout(connect, delay);
@@ -526,19 +566,19 @@ function closeByHost() {
   if (terminalRoom) return;
   terminalRoom = true;
   disconnectRoom(false, true);
-  setStatus('This private room has been closed', true);
-  showVideoNote('This private room has been closed by its host.');
+  setStatus('status.roomClosed', null, true);
+  showVideoNote('note.closedByHost');
 }
 
 function leaveRoom() {
   explicitLeave = true;
   disconnectRoom(true);
-  setStatus('You left this room', true);
-  showVideoNote('You left this private room.');
+  setStatus('status.youLeft', null, true);
+  showVideoNote('note.youLeft');
 }
 
 async function reportAndBlockRoom() {
-  if (!confirm('Send a private report and block this room on this device?')) return;
+  if (!confirm(t('report.confirm'))) return;
   const category = $('reportCategory').value;
   $('reportBtn').disabled = true;
   let sent = false;
@@ -556,8 +596,7 @@ async function reportAndBlockRoom() {
   } catch (_) {}
   localStorage.setItem(blockedRoomKey, '1');
   leaveRoom();
-  setStatus(sent ? 'Report sent. Room blocked on this device.'
-                 : 'Room blocked. Report could not be sent.', true);
+  setStatus(sent ? 'report.sent' : 'report.failed', null, true);
 }
 
 function suspendRoom() {
@@ -576,8 +615,8 @@ function restoreSuspendedRoom(event) {
   myId = null;
   updateParticipantCount(0);
   if (!roleChosen || terminalRoom) return;
-  setStatus('Rejoining this room…', true);
-  showVideoNote('Reconnecting to the other person…');
+  setStatus('status.rejoining', null, true);
+  showVideoNote('note.reconnectingPeer');
   connect();
 }
 
@@ -592,13 +631,13 @@ async function handle(m) {
     if (myId !== null && myId !== m.id) {
       peers.forEach(p => p.pc.close());
       peers.clear();
-      showVideoNote('Reconnecting to the other person…');
+      showVideoNote('note.reconnectingPeer');
     }
     myId = m.id;
     ttsToken = m.tts_token;
     if (!catalog || m.catalog_revision !== catalogRevision) {
       terminalRoom = true;
-      setStatus('Languages updated — reload to continue', true);
+      setStatus('status.languagesUpdated', null, true);
       ws.close(1008, 'catalog revision mismatch');
       return;
     }
@@ -607,7 +646,7 @@ async function handle(m) {
     for (const peer of m.peers) startPeer(peer);
     updateParticipantCount(m.participant_count);
   } else if (m.type === 'peer_join') {
-    setStatus(localeName(m.locale) + ' speaker joined');
+    setStatus('status.speakerJoined', {language: spokenLocaleName(m.locale)});
     startPeer(m);
     updateParticipantCount(m.participant_count);
   } else if (m.type === 'peer_update') {
@@ -617,9 +656,9 @@ async function handle(m) {
     const p = peers.get(m.id);
     if (p) { p.pc.close(); peers.delete(m.id); }
     updateParticipantCount(m.participant_count);
-    failVoice('Natural audio restored because a participant left');
+    failVoice('voice.naturalAudioRestored');
     if (peers.size === 0) {
-      showVideoNote('The other person left.');
+      showVideoNote('note.otherLeft');
     }
   } else if (m.type === 'presence') {
     updateParticipantCount(m.participant_count);
@@ -629,7 +668,7 @@ async function handle(m) {
     renderCaption(m);
   } else if (m.type === 'caption_status' && m.status === 'capacity' && m.scope === 'global') {
     const retry = Number.isInteger(m.retry_after_ms) ? Math.ceil(m.retry_after_ms / 1000) : 1;
-    setStatus('Captions are busy. Try again in about ' + retry + 's.', true);
+    setStatus('status.captionsBusy', {seconds: retry}, true);
   } else if (m.type === 'room_closed') {
     closeByHost();
   } else if (m.type === 'room_full') {
@@ -637,8 +676,8 @@ async function handle(m) {
     // retries forever, looking like the server is down.
     roomFull = true;
     updateParticipantCount(m.participant_count);
-    setStatus('Room is full (' + m.limit + ' people)', true);
-    showVideoNote('Room is full. If someone just closed it, try again within 90 seconds.');
+    setStatus('status.roomFull', {limit: m.limit}, true);
+    showVideoNote('note.roomFull');
   }
 }
 
@@ -672,8 +711,8 @@ function renderCaption(m) {
 
   el.classList.toggle('live', !m.final);
   el.querySelector('.who').textContent =
-    (mine ? 'You' : localeName(peers.get(m.speaker)?.locale) || m.speaker_lang) +
-    (m.final ? '' : ' · live');
+    (mine ? t('captions.you') : localeName(peers.get(m.speaker)?.locale) || m.speaker_lang) +
+    (m.final ? '' : ' · ' + t('captions.live'));
   el.querySelector('.lead').textContent = lead;
   el.querySelector('.sub').textContent = sub;
   $('captions').scrollTop = $('captions').scrollHeight;
@@ -704,9 +743,9 @@ function updateVoiceButton() {
   ));
   if (!available && voiceOn) failVoice();
   $('voiceBtn').className = 'icon' + (voiceOn && available ? '' : ' off');
-  $('voiceBtn').textContent = voiceOn && available ? 'Voice on' : 'Voice off';
   $('voiceBtn').disabled = !available;
-  $('voiceBtn').title = available ? 'Turn translated voice on or off' : 'Captions only';
+  $('voiceBtn').setAttribute('aria-label', t(voiceOn && available ? 'voice.on' : 'voice.off'));
+  $('voiceBtn').title = t(available ? 'bar.voiceTitle' : 'voice.captionsOnly');
   $('voiceBtn').setAttribute('aria-pressed', String(voiceOn));
 }
 
@@ -736,7 +775,7 @@ function drainSpeech() {
 function requestDeviceSpeech(item) {
   const voice = deviceVoicesById.get(item.voiceChoice);
   if (!voice || !('speechSynthesis' in window) || typeof SpeechSynthesisUtterance !== 'function') {
-    finishSpeech(item, 'Voice unavailable');
+    finishSpeech(item, 'voice.unavailable');
     return;
   }
   const utterance = new SpeechSynthesisUtterance(item.text);
@@ -748,14 +787,14 @@ function requestDeviceSpeech(item) {
     setNaturalAudioMuted(true);
   };
   utterance.onend = () => finishSpeech(item);
-  utterance.onerror = () => finishSpeech(item, 'Could not play spoken translation');
+  utterance.onerror = () => finishSpeech(item, 'voice.playFailed');
   item.playTimer = setTimeout(
-    () => finishSpeech(item, 'Spoken translation playback timed out'), 60000);
+    () => finishSpeech(item, 'voice.playTimedOut'), 60000);
   setAsrPaused(true);
   try {
     speechSynthesis.speak(utterance);
   } catch (_) {
-    finishSpeech(item, 'Could not play spoken translation');
+    finishSpeech(item, 'voice.playFailed');
   }
 }
 
@@ -802,9 +841,9 @@ async function requestFallbackSpeech(item) {
       setNaturalAudioMuted(true);
     };
     fallbackAudio.onended = () => finishSpeech(item);
-    fallbackAudio.onerror = () => finishSpeech(item, 'Could not play spoken translation');
+    fallbackAudio.onerror = () => finishSpeech(item, 'voice.playFailed');
     item.playTimer = setTimeout(
-      () => finishSpeech(item, 'Spoken translation playback timed out'), 60000);
+      () => finishSpeech(item, 'voice.playTimedOut'), 60000);
     // Pause only the local caption feed before translated audio can enter the
     // room. Natural peer audio stays live until the playback event itself.
     setAsrPaused(true);
@@ -894,7 +933,10 @@ function cancelSpeech() {
   }
 }
 
-function failVoice(message) {
+// `messageKey` is a dictionary key, never finished text: this status line is
+// shown in the language the person picked, like every other line.
+function failVoice(messageKey) {
+  const message = messageKey;
   const wasOn = voiceOn;
   voiceOn = false;
   cancelSpeech();
@@ -936,7 +978,7 @@ function sendSpeechEnd() {
 $('voiceBtn').onclick = () => {
   unlockFallbackAudio();
   if (!myVoiceChoice) {
-    setStatus('Captions only', true);
+    setStatus('voice.captionsOnly', null, true);
     return;
   }
   if (voiceOn) {
@@ -945,7 +987,7 @@ $('voiceBtn').onclick = () => {
     voiceOn = true;
     updateVoiceButton();
   }
-  setStatus(voiceOn ? 'Speaking translations aloud' : 'Translations muted — captions only');
+  setStatus(voiceOn ? 'voice.speakingAloud' : 'voice.mutedCaptionsOnly');
 };
 
 $('publishVoiceSel').onchange = () => {
@@ -973,7 +1015,7 @@ $('shareBtn').onclick = async () => {
     url: runtime.inviteUrl('/room/' + roomId)
   };
   if (await runtime.share(invite)) {
-    setStatus('Invitation shared');
+    setStatus('status.invitationShared');
     return;
   }
   const message = invite.text + '\n' + invite.url;
@@ -984,11 +1026,11 @@ $('shareBtn').onclick = async () => {
     try {
       if (navigator.clipboard) {
         await navigator.clipboard.writeText(invite.url);
-        setStatus('Private room link copied');
+        setStatus('status.linkCopied');
         return;
       }
     } catch (_) {}
-    setStatus('Could not open WhatsApp — copy the address-bar link', true);
+    setStatus('status.shareFailed', null, true);
   }
 };
 
@@ -1070,9 +1112,37 @@ function setMicEnabled(on) {
   // The peer still hears the live track; only the caption feed is held.
   if (workletNode) workletNode.port.postMessage({on: on && !asrPaused});
   $('micBtn').className = on ? 'on' : '';
-  $('micBtn').innerHTML = on
-    ? '<span class="dot"></span>Listening — tap to mute'
-    : 'Start microphone';
+  setMicButtonLabel();
+}
+
+// A picture, not a phrase. Every language renders a microphone the same width,
+// and the words that would have been on the button are on the status line and
+// in the accessible name instead.
+const MIC_GLYPH = 'M12 4.2a2.7 2.7 0 0 1 2.7 2.7v4.6a2.7 2.7 0 0 1-5.4 0V6.9A2.7 2.7 0 0 1 12 4.2z'
+  + 'M6.6 11a5.4 5.4 0 0 0 10.8 0M12 16.4v3.4';
+const MIC_MUTED_GLYPH = MIC_GLYPH + 'M4.6 4.6 19.4 19.4';
+
+function setMicButtonLabel() {
+  const button = $('micBtn');
+  const key = micOn ? 'bar.listening' : 'bar.startMic';
+  button.replaceChildren();
+  if (micOn) {
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    button.append(dot);
+  }
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', micOn ? MIC_GLYPH : MIC_MUTED_GLYPH);
+  svg.append(path);
+  button.append(svg);
+  button.title = t(key);
+  button.setAttribute('aria-label', t(key));
+  button.dataset.i18nTitle = key;
+  button.dataset.i18nLabel = key;
 }
 
 async function startCapture() {
@@ -1098,17 +1168,17 @@ $('micBtn').onclick = async () => {
   try {
     if (micOn) {
       setMicEnabled(false);
-      setStatus('Muted — the other person cannot hear you');
+      setStatus('status.muted');
       return;
     }
-    $('micBtn').textContent = 'Starting…';
+    $('micBtn').setAttribute('aria-label', t('bar.starting'));
     await startCapture();
     for (const p of peers.values()) addTracks(p.pc);
     setMicEnabled(true);
-    setStatus('Mic on — speak ' + localeName(myLocale));
+    setStatus('status.micOn', {language: spokenLocaleName(myLocale)});
   } catch (err) {
     setMicEnabled(false);
-    setStatus('Microphone unavailable', true);
+    setStatus('status.micUnavailable', null, true);
   }
 };
 
@@ -1128,7 +1198,7 @@ $('camBtn').onclick = async () => {
   } catch (_) {
     camOn = false;
     $('camBtn').className = 'icon off';
-    setStatus('Camera unavailable — microphone still works', true);
+    setStatus('status.cameraUnavailable', null, true);
   }
 };
 
@@ -1138,12 +1208,14 @@ $('localeSel').onchange = () => {
   cancelSpeech();
   sendSpeechEnd();
   send({type: 'set_locale', locale: myLocale, voice_profile: myVoiceProfileId});
-  setStatus('Language changed to ' + localeName(myLocale));
+  setStatus('status.languageChanged', {language: spokenLocaleName(myLocale)});
 };
 
 // ── WebRTC (perfect negotiation; lower id is polite) ──────
-function showVideoNote(text) {
-  $('videoNote').textContent = text;
+function showVideoNote(key, params) {
+  noteKey = key || '';
+  noteParams = params || null;
+  $('videoNote').textContent = noteKey ? t(noteKey, noteParams) : '';
   $('videoNote').classList.remove('hidden');
 }
 
@@ -1202,18 +1274,18 @@ function startPeer(peer) {
   };
   pc.oniceconnectionstatechange = () => {
     if (pc.iceConnectionState === 'failed') {
-      failVoice('Natural audio restored after the media connection failed');
-      showVideoNote('Video could not connect through your networks. Captions are still live.');
+      failVoice('voice.naturalAudioRestored');
+      showVideoNote('note.videoFailed');
     }
   };
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-      failVoice('Natural audio restored after the media connection ended');
+      failVoice('voice.naturalAudioRestored');
     }
   };
   setTimeout(() => {
     if (pc.iceConnectionState !== 'connected' && pc.iceConnectionState !== 'completed') {
-      showVideoNote('Still trying to connect video… captions are already live.');
+      showVideoNote('note.videoSlow');
     }
   }, 10000);
 
@@ -1245,7 +1317,7 @@ window.addEventListener('pageshow', restoreSuspendedRoom);
 window.addEventListener('lingua-app-state', event => {
   if (!event.detail?.isActive) {
     suspendRoom();
-    setStatus('Call paused while Lingua Relay is in the background', true);
+    setStatus('status.backgroundPaused', null, true);
     return;
   }
   if (explicitLeave || terminalRoom || !roleChosen || !leaving) return;
@@ -1253,12 +1325,28 @@ window.addEventListener('lingua-app-state', event => {
   roomFull = false;
   reconnectFailures = 0;
   myId = null;
-  setStatus('Rejoining this room…', true);
+  setStatus('status.rejoining', null, true);
   connect();
 });
+// One place re-paints everything that is not plain markup when the interface
+// language changes; `data-i18n` nodes are handled by the runtime itself.
+runtime.i18n.onChange(() => {
+  renderStatus();
+  renderParticipantCount();
+  if (noteKey) $('videoNote').textContent = t(noteKey, noteParams);
+  if (catalog) {
+    fillLocaleSelect();
+    if (myLocale) fillVoiceSelect();
+  }
+  updateVoiceButton();
+  updateCapabilityNote();
+  setMicButtonLabel();
+});
+
 $('roleLocaleSel').onchange = previewRoleLocale;
 $('termsLink').href = runtime.contentUrl('terms');
-$('termsAgree').checked = localStorage.getItem(termsKey) === '1';
+// The box arrives ticked; joining is the act of agreeing. Clearing it still
+// blocks Join, so the agreement is never assumed against an explicit refusal.
 $('termsAgree').onchange = updateRoleGate;
 $('joinBtn').onclick = () => chooseLocale($('roleLocaleSel').value);
 $('reportBtn').onclick = reportAndBlockRoom;
@@ -1272,9 +1360,10 @@ if (!runtime.isNative && 'serviceWorker' in navigator && location.protocol === '
 runtime.ready().then(loadCapabilities).catch(() => {
   $('roleLocaleSel').disabled = true;
   $('joinBtn').disabled = true;
-  $('roleCapability').textContent = 'App update or connection required';
+  gateFailureKey = 'gate.updateRequired';
+  $('roleCapability').textContent = t(gateFailureKey);
   $('roleCapability').classList.add('warning');
-  setStatus('App update or connection required', true);
+  setStatus('gate.updateRequired', null, true);
 });
 </script>
 </body>

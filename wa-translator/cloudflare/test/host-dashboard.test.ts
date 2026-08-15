@@ -25,10 +25,14 @@ describe("installed host dashboard client", () => {
     expect(html).not.toContain('Conversations that keep their natural flow.');
     expect(html).not.toContain('Create a private video room, share its link');
     expect(html).not.toContain('Capability declarations never imply locale-specific ASR');
-    expect(html).toContain("function clearCurrentRoom(state, message)");
-    expect(html).toContain('clearCurrentRoom("expired", "This room has expired or is no longer controlled by this device.")');
-    expect(html).toContain('clearCurrentRoom("closed", "This room is closed.")');
-    expect(html).toContain('clearCurrentRoom("closed", "This room is closed. Its participant link no longer works.")');
+    // Each terminal state is carried as a dictionary key so the dashboard can
+    // state it in the host's own language.
+    expect(html).toContain("function clearCurrentRoom(state, key)");
+    expect(html).toContain('clearCurrentRoom("expired", "home.controlLost")');
+    expect(html).toContain('clearCurrentRoom("closed", "home.roomClosed")');
+    expect(html).toContain('clearCurrentRoom("closed", "home.roomClosedLink")');
+    expect(html).toContain('id="appLocaleSel"');
+    expect(html).toContain("runtime.i18n.use($(\"appLocaleSel\").value)");
     const runtime = await (await exports.default.fetch(`${ORIGIN}/app-runtime.js`)).text();
     expect(runtime).toContain("localStorage");
     expect(runtime).toContain("navigator.share");
