@@ -77,6 +77,25 @@ class CloudClientContractTests(unittest.TestCase):
         self.assertIn("localStorage.setItem(blockedRoomKey", HTML)
         self.assertNotIn("location.href = 'support.html#report'", HTML)
 
+    def test_report_controls_live_behind_the_overflow_menu(self):
+        # The report path is store-compliance critical, so it moved rather than
+        # went away: the same ids, one tap behind the ⋯ button.
+        self.assertIn('id="menuBtn"', HTML)
+        self.assertIn('aria-controls="roomMenu"', HTML)
+        self.assertIn('data-i18n-title="bar.moreTitle"', HTML)
+        self.assertIn('"bar.moreTitle": "More options"', RUNTIME)
+        menu_start = HTML.index('<div id="roomMenu"')
+        menu_end = HTML.index("</div>", menu_start)
+        menu = HTML[menu_start:menu_end]
+        self.assertIn('id="reportCategory"', menu)
+        self.assertIn('id="reportBtn"', menu)
+        self.assertIn('data-i18n="report.button"', menu)
+        # A panel that only carries `hidden` while its own rule says
+        # `display:grid` is a panel that never closes.
+        self.assertIn("#roomMenu[hidden]{display:none}", HTML)
+        self.assertIn("$('menuBtn').onclick", HTML)
+        self.assertIn("$('menuBtn').setAttribute('aria-expanded', String(opening))", HTML)
+
     def test_microphone_and_camera_permissions_are_independent(self):
         self.assertIn("function getAudioMedia()", HTML)
         self.assertIn("function getVideoMedia()", HTML)

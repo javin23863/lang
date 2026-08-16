@@ -3,20 +3,48 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#111b21">
+<meta name="theme-color" content="#F2F2F7">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <script src="/app-runtime.js"></script>
 <title>Lingua Relay · Private rooms</title>
 <style>
-*{box-sizing:border-box}:root{color-scheme:dark;--panel:#10212e;--panel-2:#172d3b;--line:#294455;--ink:#eef3f5;--muted:#aab8c1;--accent:#67e0bc;--accent-ink:#06251e;--danger:#df6572;--focus:#a9ecff}body{margin:0;min-height:100vh;background:radial-gradient(circle at 86% 0,#17445b 0,#09141e 36rem);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:clamp(12px,4vw,42px);display:grid;place-items:center}.card{width:min(760px,100%);background:linear-gradient(145deg,#10212ef2,#0b1924f2);border:1px solid var(--line);border-radius:22px;padding:clamp(20px,5vw,42px);box-shadow:0 22px 62px #0009}.brand{font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin:0 0 16px}.state{border-radius:12px;padding:12px 14px;background:var(--panel-2);border:1px solid var(--line);margin:0 0 18px;font-weight:700}.state[data-state="open"]{background:#115646;border-color:#2c8a70}.state[data-state="closed"],.state[data-state="expired"],.state[data-state="error"]{background:#3d272c;border-color:#87515a}.room{display:grid;gap:14px;border-top:1px solid var(--line);padding-top:22px}.room[hidden]{display:none}.field{display:grid;gap:7px;color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.03em}input{width:100%;min-width:0;border:1px solid var(--line);border-radius:10px;background:#09141e;color:var(--ink);font:14px ui-monospace,SFMono-Regular,Consolas,monospace;padding:12px;direction:ltr;text-align:left}.actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}.actions button{overflow-wrap:anywhere;line-height:1.2}button{border:1px solid transparent;border-radius:12px;min-height:44px;padding:10px 12px;font:700 14px inherit;cursor:pointer;background:var(--panel-2);color:var(--ink)}button.primary{background:var(--accent);color:var(--accent-ink)}button.danger{background:#572a32;border-color:#87515a;color:#fff}button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-offset:2px}button:disabled{cursor:wait;opacity:.65}.notice{min-height:20px;margin:2px 0 0;color:var(--muted);font-size:13px}.create{width:100%;margin-top:22px;font-size:16px}.roomLabel{font-size:13px;font-weight:800;margin:0;color:var(--ink)}.appLocale{margin-top:22px}.appLocale select{width:100%;min-width:0;min-height:44px;border:1px solid var(--line);border-radius:10px;background:#09141e;color:var(--ink);font:14px inherit;padding:11px 10px}.appLocale select:focus-visible{outline:3px solid var(--focus);outline-offset:2px}.legal{display:flex;justify-content:center;gap:16px;margin:18px 0 0;font-size:12px}.legal a{color:var(--muted);text-underline-offset:3px}.legal a:focus-visible{outline:3px solid var(--focus);outline-offset:3px}@media(max-width:500px){body{padding:12px}.card{border-radius:16px}.actions{grid-template-columns:1fr 1fr}}@media(max-width:380px){body{padding:8px}.card{padding:17px}.actions{gap:7px}button{font-size:13px;padding:9px 7px}input{font-size:12px}}
+*{box-sizing:border-box}:root{color-scheme:light dark;--font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;--bg:#F2F2F7;--card:#FFFFFF;--fill:#F2F2F7;--separator:#C6C6C8;--label:#000;--label-2:#8E8E93;--accent:#007AFF;--destructive:#FF3B30;--confirm:#34C759;--focus:#007AFF}
+@media (prefers-color-scheme: dark){:root{--bg:#000;--card:#1C1C1E;--fill:#2C2C2E;--separator:#38383A;--label:#FFF;--label-2:#8E8E93;--focus:#0A84FF}}
+body{margin:0;min-height:100vh;background:var(--bg);color:var(--label);font-family:var(--font);font-size:17px;-webkit-font-smoothing:antialiased;padding:clamp(16px,4vw,42px) clamp(12px,4vw,42px) calc(24px + env(safe-area-inset-bottom));display:flex;justify-content:center}
+.page{width:min(560px,100%);display:grid;gap:16px;align-content:start}
+.title{font-size:34px;font-weight:700;letter-spacing:-.022em;line-height:1.1;margin:8px 0 0}
+.card{background:var(--card);border-radius:16px;overflow:hidden}
+.state{margin:0;padding:14px 16px;font-size:17px;font-weight:600;letter-spacing:-.01em;color:var(--label)}
+.state[data-state="open"]{color:var(--confirm)}.state[data-state="closed"],.state[data-state="expired"],.state[data-state="error"]{color:var(--destructive)}
+.room{display:grid;gap:14px;padding:16px}.room[hidden]{display:none}
+.field{display:grid;gap:7px;color:var(--label-2);font-size:13px}
+input{width:100%;min-width:0;min-height:44px;border:none;border-radius:10px;background:var(--fill);color:var(--label);font:15px ui-monospace,SFMono-Regular,Consolas,monospace;padding:12px;direction:ltr;text-align:left}
+.actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}.actions button{overflow-wrap:anywhere;line-height:1.2;font-size:15px}
+button{border:none;border-radius:12px;min-height:44px;padding:10px 12px;font:600 17px var(--font);letter-spacing:-.01em;cursor:pointer;background:var(--fill);color:var(--accent)}
+button.primary{background:var(--accent);color:#FFF;min-height:50px}
+button.danger{background:transparent;color:var(--destructive)}
+button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+button:disabled{cursor:wait;opacity:.4}
+.notice{min-height:20px;margin:-6px 4px 0;color:var(--label-2);font-size:13px}
+.create{width:100%}
+.roomLabel{font-size:13px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;margin:0;color:var(--label-2)}
+.appLocale{display:grid;gap:7px;padding:14px 16px;color:var(--label-2);font-size:13px}
+.appLocale select{width:100%;min-width:0;min-height:44px;border:none;border-radius:10px;background:var(--fill);color:var(--label);font:17px var(--font);padding:11px 10px}
+.legal{display:grid}
+.legal a{display:flex;align-items:center;min-height:44px;padding:0 16px;color:var(--accent);font-size:17px;text-decoration:none;border-top:.5px solid var(--separator)}
+.legal a:first-child{border-top:none}
+@media(max-width:500px){.actions{grid-template-columns:1fr 1fr}}
+@media(max-width:380px){body{padding:12px 8px}.actions{gap:7px}.actions button{font-size:14px;padding:9px 7px}input{font-size:13px}}
 </style>
 </head>
 <body>
-<main class="card" aria-label="Lingua Relay">
-  <p class="brand">Lingua Relay</p>
-  <p id="roomState" class="state" data-state="idle" aria-live="polite">No active room on this device.</p>
-  <section id="roomPanel" class="room" hidden aria-label="Current private room">
+<main class="page" aria-label="Lingua Relay">
+  <h1 class="title">Lingua Relay</h1>
+  <section class="card">
+    <p id="roomState" class="state" data-state="idle" aria-live="polite">No active room on this device.</p>
+  </section>
+  <section id="roomPanel" class="card room" hidden aria-label="Current private room">
     <p class="roomLabel" data-i18n="home.roomControl">Room control</p>
     <label class="field" for="shareLink"><span data-i18n="home.participantLink">Participant link</span>
       <input id="shareLink" type="url" readonly spellcheck="false" autocomplete="off">
@@ -30,10 +58,10 @@
   </section>
   <p id="roomNotice" class="notice" role="status" aria-live="polite"></p>
   <button id="createBtn" class="primary create" type="button">Create private room</button>
-  <label class="field appLocale" for="appLocaleSel"><span data-i18n="gate.language">Language</span>
+  <label class="card appLocale" for="appLocaleSel"><span data-i18n="gate.language">Language</span>
     <select id="appLocaleSel"></select>
   </label>
-  <nav class="legal" aria-label="Legal and support">
+  <nav class="legal card" aria-label="Legal and support">
     <a href="privacy.html" data-i18n="legal.privacy">Privacy</a><a href="terms.html" data-i18n="legal.terms">Terms</a><a href="support.html" data-i18n="legal.support">Support</a>
   </nav>
 </main>

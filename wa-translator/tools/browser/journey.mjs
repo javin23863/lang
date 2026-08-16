@@ -73,7 +73,7 @@ try {
   const bar = await page.eval(`(() => {
     const bar = document.getElementById('bar');
     const barBox = bar.getBoundingClientRect();
-    const rows = [...bar.children].filter(el => el.id !== 'settings').map(el => {
+    const rows = [...bar.children].filter(el => el.id !== 'settings' && el.id !== 'roomMenu').map(el => {
       const r = el.getBoundingClientRect();
       return {id: el.id, x: Math.round(r.left), right: Math.round(r.right),
               w: Math.round(r.width), h: Math.round(r.height),
@@ -126,6 +126,15 @@ try {
   await page.shot(`${SHOTS}/room-live-${tag}.png`);
 
   console.log("\n[settings]");
+  // The report row lives in the ⋯ menu now. Measuring it while the panel is
+  // still hidden measures nothing and passes vacuously.
+  await page.tap("#menuBtn");
+  const menu = await page.eval(`({
+    hidden: document.getElementById('roomMenu').hidden,
+    expanded: document.getElementById('menuBtn').getAttribute('aria-expanded')
+  })`);
+  check("overflow menu opens", menu.hidden === false, JSON.stringify(menu));
+  check("overflow menu reports its state", menu.expanded === "true", menu.expanded);
   const settings = await page.eval(`(() => {
     const rows = [...document.querySelectorAll('#settings .setting')].map(el => ({
       label: el.querySelector('span').textContent,
