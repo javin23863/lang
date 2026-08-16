@@ -57,6 +57,7 @@ class FakeEndpointer:
 class FakeCompute:
     def __init__(self):
         self.calls = []
+        self.translate_calls = []
 
     def transcribe_translate(self, pcm, source_lang, target_langs, stream_id, final):
         marker = int(round(float(pcm.max()) * 32768)) if len(pcm) else 0
@@ -64,6 +65,10 @@ class FakeCompute:
         return f"source-{marker}", {
             target: f"translated-{target}-{marker}" for target in target_langs
         }
+
+    def translate_text(self, text, source_lang, target_langs):
+        self.translate_calls.append((text, source_lang, target_langs))
+        return {target: f"chat-{target}-{text}" for target in target_langs}
 
 
 class FailingCompute:
@@ -378,6 +383,79 @@ class ModalStreamTests(unittest.TestCase):
         self.assertIn("RuntimeError: model init failed", logged)
         self.assertNotIn(SECRET, logged)
         self.assertLessEqual(len(logged), 300)
+
+
+class ModalTranslateTests(unittest.TestCase):
+    def test_translate_auth_caps_and_language_validation(self):
+        client, compute, _tts = client_fixture()
+        headers = {"authorization": f"Bearer {SECRET}"}
+        valid = {"text": "hello", "source_lang": "en", "target_langs": ["es"]}
+        self.assertEqual(client.post("/translate", json=valid).status_code, 401)
+        self.assertEqual(
+            client.post("/translate", headers=headers,
+                        content=b"x" * (modal_app.MAX_TRANSLATE_BODY_BYTES + 1)).status_code,
+            413)
+        rejected = (
+            {**valid, "text": "x" * (modal_app.MAX_CHAT_CHARS + 1)},
+            {**valid, "source_lang": "not-a-language"},
+            {**valid, "target_langs": ["es", "fr", "it", "pt"]},
+            {**valid, "text": "   "},
+        )
+        for body in rejected:
+            self.assertEqual(
+                client.post("/translate", headers=headers, json=body).status_code, 422,
+                body)
+        self.assertEqual(compute.translate_calls, [])
+
+    def test_translate_returns_only_the_requested_targets_uncached(self):
+        client, compute, _tts = client_fixture()
+        response = client.post(
+            "/translate", headers={"authorization": f"Bearer {SECRET}"},
+            json={"text": "  hello  ", "source_lang": "en", "target_langs": ["es", "fr"]})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        self.assertEqual(response.json(), {"translations": {
+            "es": "chat-es-hello", "fr": "chat-fr-hello"}})
+        self.assertEqual(compute.translate_calls, [("hello", "en", ["es", "fr"])])
+
+    def test_health_starts_one_nonblocking_sequential_model_preload(self):
+        compute = BlockingPreloadCompute()
+        tts = BlockingPreloadTTS()
+        api = modal_app.create_api(
+            shared_secret=SECRET,
+            compute=compute,
+            tts=tts,
+            endpointer_factory=FakeEndpointer,
+        )
+        client = TestClient(api)
+        try:
+            for _ in range(2):
+                # A blocked preload must not hold the health response: the
+                # Worker's prewarm probe is on the room-create path.
+                response = client.get("/health",
+                                      headers={"authorization": f"Bearer {SECRET}"})
+                self.assertEqual(response.status_code, 200)
+            self.assertTrue(compute.preload_started.wait(timeout=1))
+            self.assertFalse(tts.preload_started.wait(timeout=0.05))
+            compute.preload_release.set()
+            self.assertTrue(tts.preload_started.wait(timeout=1))
+            tts.preload_release.set()
+            self.assertTrue(tts.preload_finished.wait(timeout=1))
+            self.assertEqual((compute.preload_calls, tts.preload_calls), (1, 1))
+        finally:
+            compute.preload_release.set()
+            tts.preload_release.set()
+
+    def test_unauthenticated_health_does_not_start_a_preload(self):
+        compute = BlockingPreloadCompute()
+        api = modal_app.create_api(
+            shared_secret=SECRET, compute=compute, tts=FakeTTS(),
+            endpointer_factory=FakeEndpointer,
+        )
+        self.assertEqual(TestClient(api).get("/health").status_code, 401)
+        self.assertFalse(compute.preload_started.wait(timeout=0.05))
+        self.assertEqual(compute.preload_calls, 0)
 
 
 class ModalTTSTests(unittest.TestCase):
