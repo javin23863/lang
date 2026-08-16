@@ -1850,27 +1850,36 @@ async function consumeIpQuota(
 
 export default {
   async fetch(request, env): Promise<Response> {
-    const url = new URL(request.url);
-    if (request.method === "OPTIONS" && url.pathname.startsWith("/api/v1/")) {
-      return mobilePreflight(request);
+    // An unhandled throw here is served as the runtime's own error page, which
+    // is neither no-store nor ours. One boundary at the entry point keeps every
+    // unexpected failure a plain 500 that no cache will keep.
+    try {
+      const url = new URL(request.url);
+      if (request.method === "OPTIONS" && url.pathname.startsWith("/api/v1/")) {
+        return mobilePreflight(request);
+      }
+      if (url.pathname === "/api/v1/mobile/bootstrap") {
+        if (request.method !== "GET") return mobileCors(
+          request, new Response("Method Not Allowed", { status: 405 })
+        );
+        return mobileCors(request, mobileBootstrap(request, env));
+      }
+      const alias = MOBILE_API_ALIASES.get(url.pathname);
+      if (url.pathname.startsWith("/api/v1/")) {
+        if (!alias) return mobileCors(request, new Response("Not Found", { status: 404 }));
+        url.pathname = alias;
+        return mobileCors(request, await routeRequest(new Request(url, request), env));
+      }
+      const socket = url.pathname.match(/^\/ws\/v1\/(.+)$/);
+      if (socket) {
+        url.pathname = `/ws/${socket[1]}`;
+        return await routeRequest(new Request(url, request), env);
+      }
+      return await routeRequest(request, env);
+    } catch {
+      return new Response("Service unavailable", {
+        status: 500, headers: {"Cache-Control": "no-store"}
+      });
     }
-    if (url.pathname === "/api/v1/mobile/bootstrap") {
-      if (request.method !== "GET") return mobileCors(
-        request, new Response("Method Not Allowed", { status: 405 })
-      );
-      return mobileCors(request, mobileBootstrap(request, env));
-    }
-    const alias = MOBILE_API_ALIASES.get(url.pathname);
-    if (url.pathname.startsWith("/api/v1/")) {
-      if (!alias) return mobileCors(request, new Response("Not Found", { status: 404 }));
-      url.pathname = alias;
-      return mobileCors(request, await routeRequest(new Request(url, request), env));
-    }
-    const socket = url.pathname.match(/^\/ws\/v1\/(.+)$/);
-    if (socket) {
-      url.pathname = `/ws/${socket[1]}`;
-      return routeRequest(new Request(url, request), env);
-    }
-    return routeRequest(request, env);
   }
 } satisfies ExportedHandler<Env>;

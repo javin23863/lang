@@ -4,7 +4,7 @@ The shared phone client lives in [`windows/static/`](windows/static/). The local
 development adapter is documented in [`windows/`](windows/README.md); the
 production beta uses [`cloudflare/`](cloudflare/DEPLOYMENT.md) for room state and
 `modal_app.py` for authenticated compute. The remaining top-level files are the
-Sprint-0 benchmark evidence that chose the models.
+deployment checks and the Sprint-0 findings that chose the models.
 
 ## The app
 
@@ -29,26 +29,21 @@ production lane uses M2M100 and only catalog-declared Kokoro profiles. See
 
 ## Benchmarks that chose the models
 
-Runnable, no GPU needed, none of it imported by the app:
+The Sprint-0 benchmark programs (whisper.cpp two-stream/single-stream ASR
+latency, the CTranslate2 int8 and raw-torch MarianMT MT comparisons, the
+Moonshine ASR runs) were deleted once their verdicts had shipped: nothing in the
+app imported them and none of them had been re-run since. Their numbers and the
+decisions they bought are the receipts, and those stay:
+[`SPIKE-FINDINGS.md`](SPIKE-FINDINGS.md), [`SPIKE-FINDINGS-MT.md`](SPIKE-FINDINGS-MT.md),
+[`SPIKE-FINDINGS-MOONSHINE.md`](SPIKE-FINDINGS-MOONSHINE.md). Recover the
+programs from git history if a gate has to be re-run. The CTranslate2 OPUS-MT
+experiment in particular is *not* the shipping MT path — its pairwise findings
+must never be used as M2M100 quality or latency evidence.
 
-- `two_stream_latency.cpp`, `single_stream.cpp` — whisper.cpp two-stream and
-  single-stream ASR latency. Gate 1.
-- `mt_latency_ct2.py` — historical CTranslate2 int8 OPUS-MT experiment. It is
-  not the shipping MT path and its pairwise findings must not be used as M2M100
-  quality or latency evidence.
-- `mt_latency_benchmark.py` — raw torch MarianMT, ~10x slower, the comparison
-  that justified CTranslate2.
-- `moonshine_bench.py`, `moonshine_two_stream.py` — Moonshine ASR. Gate 1c.
-  Moonshine lost to faster-whisper for this app because its catalog has no
-  streaming Spanish model, only a non-streaming `BASE`.
+The portable single-header C++ caption filter and its two test ports went the
+same way; `windows/mt_ct2.py` is the one that ships.
 
-## Portable caption filter
-
-- `caption_filter.h` — single-header C++, no dependencies. Loop detector
-  (n-gram frequency, non-adjacent), blank-token, dedup (Levenshtein), length
-  cap.
-- `caption_filter_test.cpp` / `caption_filter_test.py` — 14/14 in both
-  languages, against real repetition-loop output captured during the gates.
+## The shipping MT adapter
 
 The Python port in `windows/mt_ct2.py` is the shipping M2M100 adapter. It keeps
 the caption filter/dedup behavior while using official source-language tokens
@@ -63,9 +58,11 @@ The Spanish clip is what the whisper hallucination regression is pinned to; see
 
 ## Superseded
 
-`ios-spike/` — ReplayKit capture spike for the original iOS design (Gate 2,
-never built out). The Windows WASAPI-loopback and topmost-overlay skeletons that
-used to sit beside it were deleted in the v7 rewrite: they belonged to a
-local-overlay architecture the browser room replaced, and the host app that
-drove them called server endpoints that no longer exist. Recover from git
-history if the "translate a call playing on this PC" idea comes back.
+The ReplayKit capture spike for the original iOS design (Gate 2, never built
+out, never run — it needed a Mac and an iPhone) has been deleted, as were the
+Windows WASAPI-loopback and topmost-overlay skeletons beside it in the v7
+rewrite: they belonged to a local-overlay architecture the browser room
+replaced, and the host app that drove them called server endpoints that no
+longer exist. [`SPIKE-FINDINGS.md`](SPIKE-FINDINGS.md) still describes the
+spike. Recover the code from git history if the "translate a call playing on
+this PC" idea comes back.
