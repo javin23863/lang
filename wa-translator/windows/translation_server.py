@@ -80,6 +80,7 @@ WS_MAX_SIZE = 65536
 MAX_PARTICIPANTS = 4
 PRE_JOIN_TIMEOUT_S = 10    # a socket that opens and says nothing is not a guest
 MAX_CHAT_CHARS = 200       # a typed line, and mt_ct2 filters anything longer out
+CHAT_SEQ_BASE = 1_000_000  # chat seq = base + client cid, same contract as the worker
 MAX_TTS_CHARS = 300        # a final caption, not an arbitrary audiobook request
 MAX_TTS_BODY_BYTES = 2048  # reject before buffering a public request body
 ROOM_TTL_S = 24 * 60 * 60  # an invite survives a restart-free day, then expires
@@ -134,7 +135,6 @@ class Participant:
     voice_profile_id: str | None = None  # explicit profile; never inferred
     ep: Endpointer = field(default_factory=Endpointer)
     seq: int = 0                  # utterance counter
-    chat_seq: int = 0             # typed-message counter, server-assigned
     onset: float = 0.0            # wall clock when the current utterance began
     last_partial: float = 0.0
     tts_pending: bool = False
@@ -950,7 +950,9 @@ async def _on_control(p: Participant, data: dict):
 
     elif kind == "chat":
         text = data.get("text")
-        if not isinstance(text, str):
+        cid = data.get("cid")
+        if (not isinstance(text, str) or not isinstance(cid, int)
+                or isinstance(cid, bool) or not 0 <= cid < CHAT_SEQ_BASE):
             await p.ws.close(code=1008, reason="invalid chat message")
             return
         text = text.strip()[:MAX_CHAT_CHARS]
@@ -966,13 +968,15 @@ async def _on_control(p: Participant, data: dict):
                     mt_ct2.translate_many, text, p.lang, targets, f"chat-{p.id}", False)
             except Exception as e:  # noqa: BLE001 - no local model cache is normal here
                 print(f"[chat] translation unavailable: {type(e).__name__}: {e}")
-        # The sequence is the server's, so a client cannot renumber the thread.
-        p.chat_seq += 1
+        # Numbered off the client's own draft counter, same contract as the
+        # worker: the sender's optimistic bubble at CHAT_SEQ_BASE + cid is
+        # rewritten in place by this broadcast instead of gaining a twin.
         await broadcast({
             "type": "chat",
             "speaker": p.id,
             "speaker_lang": p.lang,
-            "seq": p.chat_seq,
+            "seq": CHAT_SEQ_BASE + cid,
+            "final": True,
             "original": text,
             "translations": translations,
             "t_ms": 0,

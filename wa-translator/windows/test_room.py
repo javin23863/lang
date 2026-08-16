@@ -387,12 +387,13 @@ def test_chat_round_trip_is_server_sequenced_and_translated():
                 assert es.receive_json()["type"] == "welcome"
                 assert en.receive_json()["type"] == "peer_join"
 
-                en.send_json({"type": "chat", "text": "  hello there  "})
+                en.send_json({"type": "chat", "text": "  hello there  ", "cid": 0})
                 for socket in (en, es):
                     msg = socket.receive_json()
                     assert msg == {
                         "type": "chat", "speaker": welcome_en["id"],
-                        "speaker_lang": "en", "seq": 1, "original": "hello there",
+                        "speaker_lang": "en", "seq": srv.CHAT_SEQ_BASE,
+                        "final": True, "original": "hello there",
                         "translations": {"es": "es:hello there"}, "t_ms": 0,
                     }, msg
                 assert calls == [("hello there", "en", ["es"],
@@ -400,17 +401,29 @@ def test_chat_round_trip_is_server_sequenced_and_translated():
 
                 # Over-long input is truncated to the wire cap, never dropped:
                 # mt_ct2 filters anything past 200 characters out entirely.
-                en.send_json({"type": "chat", "text": "x" * 250})
+                en.send_json({"type": "chat", "text": "x" * 250, "cid": 7})
                 sent = en.receive_json()
                 es.receive_json()
                 assert len(sent["original"]) == srv.MAX_CHAT_CHARS == 200
-                assert sent["seq"] == 2, "the server did not advance its own sequence"
+                # seq = base + cid, the worker's contract: the sender's
+                # optimistic bubble is upgraded in place, never duplicated.
+                assert sent["seq"] == srv.CHAT_SEQ_BASE + 7, sent["seq"]
 
                 # A non-string body is a protocol violation, not a chat line.
-                en.send_json({"type": "chat", "text": 5})
+                en.send_json({"type": "chat", "text": 5, "cid": 0})
                 try:
                     en.receive_json()
                     raise AssertionError("non-string chat text stayed connected")
+                except WebSocketDisconnect as exc:
+                    assert exc.code == 1008
+
+                # A cid outside [0, CHAT_SEQ_BASE) is one too. en's departure
+                # may queue a peer_leave first, so drain to the disconnect.
+                es.send_json({"type": "chat", "text": "hi", "cid": srv.CHAT_SEQ_BASE})
+                try:
+                    for _ in range(3):
+                        es.receive_json()
+                    raise AssertionError("out-of-range cid stayed connected")
                 except WebSocketDisconnect as exc:
                     assert exc.code == 1008
     finally:
