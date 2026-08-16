@@ -26,6 +26,32 @@ The complete license text is in `licenses/Apache-2.0.txt`.
   then converts only that local snapshot with CTranslate2. Source:
   <https://huggingface.co/facebook/m2m100_418M>.
 
+## MIT License components
+
+- **QR Code generator library (Project Nayuki)**, MIT. Vendored verbatim in
+  behaviour as `windows/static/qr.js` and served to the browser; it renders the
+  room-invite QR code offline, so no link is ever sent to a code-generating
+  service. Source: <https://www.nayuki.io/page/qr-code-generator-library>.
+
+  > Copyright (c) Project Nayuki. (MIT License)
+  >
+  > Permission is hereby granted, free of charge, to any person obtaining a copy
+  > of this software and associated documentation files (the "Software"), to
+  > deal in the Software without restriction, including without limitation the
+  > rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+  > sell copies of the Software, and to permit persons to whom the Software is
+  > furnished to do so, subject to the following conditions:
+  >
+  > - The above copyright notice and this permission notice shall be included in
+  >   all copies or substantial portions of the Software.
+  > - The Software is provided "as is", without warranty of any kind, express or
+  >   implied, including but not limited to the warranties of merchantability,
+  >   fitness for a particular purpose and noninfringement. In no event shall the
+  >   authors or copyright holders be liable for any claim, damages or other
+  >   liability, whether in an action of contract, tort or otherwise, arising
+  >   from, out of or in connection with the Software or the use or other
+  >   dealings in the Software.
+
 ## Other production licenses
 
 - **faster-whisper** and **CTranslate2** are MIT licensed. The deployed

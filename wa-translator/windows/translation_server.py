@@ -58,7 +58,10 @@ PARTIAL_EVERY_S = 0.4      # cadence of in-flight captions; ASR takes ~0.25s,
 MIN_PARTIAL_S = 0.8        # below this, whisper returns confident filler
                            # ("Gracias." for 0.6s of Spanish) rather than nothing
                            # — see the regression check in asr_whisper._demo
-END_SILENCE_MS = 500       # trailing quiet that ends an utterance
+# Trailing quiet that ends an utterance. Operator-tunable, clamped to a range
+# that still ends an utterance without cutting one in half; the identical
+# expression is the one in modal_app.py.
+END_SILENCE_MS = max(200, min(1500, int(os.environ.get("LANG_ROOM_END_SILENCE_MS") or "500")))
 MAX_UTTERANCE_S = 15.0     # force a final; whisper degrades on long audio
 IDLE_DROP_S = 3.0          # discard a buffer holding nothing but silence
 
@@ -76,6 +79,8 @@ WS_MAX_SIZE = 65536
 # would starve the conversation the room exists for.
 MAX_PARTICIPANTS = 4
 PRE_JOIN_TIMEOUT_S = 10    # a socket that opens and says nothing is not a guest
+MAX_CHAT_CHARS = 200       # a typed line, and mt_ct2 filters anything longer out
+CHAT_SEQ_BASE = 1_000_000  # chat seq = base + client cid, same contract as the worker
 MAX_TTS_CHARS = 300        # a final caption, not an arbitrary audiobook request
 MAX_TTS_BODY_BYTES = 2048  # reject before buffering a public request body
 ROOM_TTL_S = 24 * 60 * 60  # an invite survives a restart-free day, then expires
@@ -942,6 +947,40 @@ async def _on_control(p: Participant, data: dict):
             jobs.put(Job(p.id, audio, p.lang, target_langs(p), p.seq, True, p.onset))
             p.onset = 0.0
             p.last_partial = 0.0
+
+    elif kind == "chat":
+        text = data.get("text")
+        cid = data.get("cid")
+        if (not isinstance(text, str) or not isinstance(cid, int)
+                or isinstance(cid, bool) or not 0 <= cid < CHAT_SEQ_BASE):
+            await p.ws.close(code=1008, reason="invalid chat message")
+            return
+        text = text.strip()[:MAX_CHAT_CHARS]
+        if not text:
+            return
+        targets = target_langs(p)
+        translations = {}
+        if targets:
+            try:
+                # ``final=False``: the final filter dedups against the previous
+                # caption, which would swallow a deliberately repeated message.
+                translations, _reason = await asyncio.to_thread(
+                    mt_ct2.translate_many, text, p.lang, targets, f"chat-{p.id}", False)
+            except Exception as e:  # noqa: BLE001 - no local model cache is normal here
+                print(f"[chat] translation unavailable: {type(e).__name__}: {e}")
+        # Numbered off the client's own draft counter, same contract as the
+        # worker: the sender's optimistic bubble at CHAT_SEQ_BASE + cid is
+        # rewritten in place by this broadcast instead of gaining a twin.
+        await broadcast({
+            "type": "chat",
+            "speaker": p.id,
+            "speaker_lang": p.lang,
+            "seq": CHAT_SEQ_BASE + cid,
+            "final": True,
+            "original": text,
+            "translations": translations,
+            "t_ms": 0,
+        }, p.room)
 
 
 # ── Startup ───────────────────────────────────────────────────────────

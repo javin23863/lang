@@ -1,12 +1,13 @@
 import { exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
+import { hostSessionCookie } from "./session";
 
 const ORIGIN = "https://room.test";
 const BASE64URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 async function token(): Promise<string> {
   const response = await exports.default.fetch(`${ORIGIN}/api/rooms`, {
-    method: "POST", headers: { Origin: ORIGIN }
+    method: "POST", headers: { Origin: ORIGIN, Cookie: await hostSessionCookie() }
   });
   return (await response.json<{ path: string }>()).path.split("/").pop()!;
 }

@@ -15,14 +15,19 @@
     "bindings": [
       { "name": "ROOMS", "class_name": "Room" },
       { "name": "ABUSE", "class_name": "AbuseGate" },
-      { "name": "REPORTS", "class_name": "ReportInbox" }
+      { "name": "REPORTS", "class_name": "ReportInbox" },
+      { "name": "USERS", "class_name": "UserDirectory" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["Room"] },
-    { "tag": "v2", "new_sqlite_classes": ["AbuseGate", "ReportInbox"] }
+    { "tag": "v2", "new_sqlite_classes": ["AbuseGate", "ReportInbox"] },
+    { "tag": "v3", "new_sqlite_classes": ["UserDirectory"] }
   ],
   "vars": {
-    "TURN_TTL_SECONDS": "3600"
+    "TURN_TTL_SECONDS": "3600",
+    // Pins the OAuth redirect_uri to one origin the provider consoles know.
+    // Sign-in 503s until this matches the deployed origin exactly.
+    "PUBLIC_ORIGIN": "https://spoken-translation-room.spoken-translation-cloudflare.workers.dev"
   }
 }

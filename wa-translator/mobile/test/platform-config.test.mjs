@@ -46,8 +46,15 @@ test("iOS declares foreground media, universal links, and privacy manifest", asy
   assert.match(privacy, /NSPrivacyTracking[\s\S]*<false\/>/);
   assert.match(privacy, /NSPrivacyCollectedDataTypeOtherUserContent/);
   assert.match(privacy, /NSPrivacyCollectedDataTypePurposeAppFunctionality/);
-  assert.match(privacy, /NSPrivacyCollectedDataTypeLinked[\s\S]*<false\/>/);
-  assert.match(privacy, /NSPrivacyCollectedDataTypeTracking[\s\S]*<false\/>/);
+  // The account entries are linked by definition; the user-content entry is the
+  // one that must stay unlinked, so this assertion is scoped to that entry.
+  assert.match(
+    privacy,
+    /NSPrivacyCollectedDataTypeOtherUserContent<\/string>\s*<key>NSPrivacyCollectedDataTypeLinked<\/key>\s*<false\/>/
+  );
+  assert.match(privacy, /NSPrivacyCollectedDataTypeEmailAddress[\s\S]*?NSPrivacyCollectedDataTypeLinked<\/key>\s*<true\/>/);
+  assert.match(privacy, /NSPrivacyCollectedDataTypeUserID[\s\S]*?NSPrivacyCollectedDataTypeLinked<\/key>\s*<true\/>/);
+  assert.doesNotMatch(privacy, /NSPrivacyCollectedDataTypeTracking<\/key>\s*<true\/>/);
   assert.match(project, /CODE_SIGN_ENTITLEMENTS = App\/App\.entitlements;/);
   assert.match(project, /PrivacyInfo\.xcprivacy in Resources/);
   assert.match(project, /PRODUCT_BUNDLE_IDENTIFIER = com\.javin23863\.linguarelay;/);

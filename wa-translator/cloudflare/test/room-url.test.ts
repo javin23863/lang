@@ -1,5 +1,6 @@
 import { exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
+import { hostSessionCookie } from "./session";
 
 const ORIGIN = "https://room.test";
 const SECRET = "test-only-room-signing-key-32-bytes";
@@ -29,7 +30,7 @@ async function signedToken(roomId: string, expires: number): Promise<string> {
 async function createRoom(): Promise<string> {
   const response = await exports.default.fetch(`${ORIGIN}/api/rooms`, {
     method: "POST",
-    headers: { Origin: ORIGIN }
+    headers: { Origin: ORIGIN, Cookie: await hostSessionCookie() }
   });
   expect(response.status).toBe(201);
   return (await response.json<{ path: string }>()).path;
@@ -38,7 +39,8 @@ async function createRoom(): Promise<string> {
 describe("public room URL interface", () => {
   it("keeps the legacy form route as a participant-only redirect", async () => {
     const response = await exports.default.fetch(new Request(`${ORIGIN}/rooms`, {
-      method: "POST", headers: { Origin: ORIGIN }, redirect: "manual"
+      method: "POST", headers: { Origin: ORIGIN, Cookie: await hostSessionCookie() },
+      redirect: "manual"
     }));
 
     expect(response.status).toBe(303);
@@ -95,6 +97,20 @@ describe("public room URL interface", () => {
       }
     });
     expect(deniedPreflight.status).toBe(401);
+  });
+
+  it("serves the same room page whatever mode the link asks for", async () => {
+    // `?m=` is the participant's own furniture. The router matches on pathname,
+    // nothing signs the mode, and an unknown value must not deny a valid room.
+    const path = await createRoom();
+    for (const query of ["?m=voice", "?m=chat", "?m=video", "?m=nonsense", "?m=voice&n=Ana%20R"]) {
+      const page = await exports.default.fetch(`${ORIGIN}${path}${query}`);
+      expect(page.status, query).toBe(200);
+      expect(page.headers.get("Cache-Control")).toBe("no-store");
+    }
+    const html = await (await exports.default.fetch(`${ORIGIN}${path}?m=voice`)).text();
+    // The page decides the mode itself; the server sends one document.
+    expect(html).toContain("document.body.dataset.mode = roomMode");
   });
 
   it("rejects expired bearers and cross-origin room creation", async () => {

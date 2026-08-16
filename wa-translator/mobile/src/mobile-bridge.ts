@@ -21,7 +21,7 @@ declare global {
       setItem(key: string, value: string): Promise<void>;
       removeItem(key: string): Promise<void>;
       share(value: {title: string; text: string; url: string}): Promise<boolean>;
-      openRoom(token: string): boolean;
+      openRoom(token: string, mode?: string): boolean;
     };
   }
 }
@@ -43,15 +43,15 @@ const compatibilityReady = isNative ? (async () => {
   return true;
 })() : Promise.resolve(true);
 
-function openRoom(token: string): boolean {
+function openRoom(token: string, mode?: string): boolean {
   if (!isRoomToken(token)) return false;
-  window.location.replace(roomPageUrl(token));
+  window.location.replace(roomPageUrl(token, mode));
   return true;
 }
 
 function routeAppLink(value: string | undefined): void {
-  const token = value ? parseRoomLink(value) : null;
-  if (token) openRoom(token);
+  const link = value ? parseRoomLink(value) : null;
+  if (link) openRoom(link.token, link.mode);
 }
 
 window.LinguaNative = {

@@ -1,6 +1,7 @@
 import { env, exports } from "cloudflare:workers";
 import { runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
+import { hostSessionCookie } from "./session";
 
 const ORIGIN = "https://room.test";
 const BASE64URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
@@ -35,7 +36,7 @@ async function signedHostControl(roomId: string, expiresAt: number): Promise<str
 
 async function createRoom(): Promise<CreatedRoom> {
   const response = await exports.default.fetch(`${ORIGIN}/api/rooms`, {
-    method: "POST", headers: { Origin: ORIGIN }
+    method: "POST", headers: { Origin: ORIGIN, Cookie: await hostSessionCookie() }
   });
   expect(response.status).toBe(201);
   expect(response.headers.get("Cache-Control")).toBe("no-store");

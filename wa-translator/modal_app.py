@@ -99,11 +99,15 @@ MAX_PCM_FRAME_BYTES = 32_000
 MAX_CONTROL_BYTES = 8_192
 MAX_STREAM_ID_CHARS = 64
 MAX_CAPTION_CHARS = 300
+MAX_CHAT_CHARS = 200
 MAX_TTS_BODY_BYTES = 2_048
+MAX_TRANSLATE_BODY_BYTES = 512
 MAX_TTS_CHARS = 300
 MAX_TTS_AUDIO_BYTES = 4 * 1024 * 1024
 MAX_DIAGNOSTIC_CHARS = 240
-END_SILENCE_MS = 500
+# Operator-tunable end-of-utterance silence, clamped to a range that still ends
+# an utterance without cutting one in half.  Mirrored in translation_server.py.
+END_SILENCE_MS = max(200, min(1500, int(os.environ.get("LANG_ROOM_END_SILENCE_MS") or "500")))
 PARTIAL_EVERY_S = 0.4
 MIN_PARTIAL_S = 0.8
 MAX_UTTERANCE_S = 15.0
@@ -125,6 +129,10 @@ class Compute(Protocol):
         self, pcm: np.ndarray, source_lang: str, target_langs: list[str],
         stream_id: str, final: bool,
     ) -> tuple[str, dict[str, str]]: ...
+
+    def translate_text(
+        self, text: str, source_lang: str, target_langs: list[str],
+    ) -> dict[str, str]: ...
 
 
 class TTS(Protocol):
@@ -271,6 +279,22 @@ class ModelRuntime:
         return original[:MAX_CAPTION_CHARS], {
             language: value[:MAX_CAPTION_CHARS] for language, value in translated.items()
         }
+
+    def translate_text(
+        self, text: str, source_lang: str, target_langs: list[str],
+    ) -> dict[str, str]:
+        # One initialization path only; ``_ensure_loaded`` serializes the GPU
+        # stack imports that a concurrent cold start would otherwise interleave.
+        self._ensure_loaded()
+        import mt_ct2
+
+        # ``final=False`` on purpose: the final path dedups against the stream's
+        # ``_previous`` caption, which would swallow a typed message the sender
+        # deliberately repeats.
+        translated, _reason = mt_ct2.translate_many(
+            text, source_lang, target_langs, stream_id="chat", final=False)
+        return {language: value[:MAX_CAPTION_CHARS]
+                for language, value in translated.items()}
 
     def preload(self) -> None:
         started = time.monotonic()
@@ -626,6 +650,9 @@ def create_api(
     async def health(request: Request) -> Response:
         if not _authorized(request.headers.get("authorization"), secret):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
+        # An authenticated health check is the Worker's prewarm: the room is
+        # created and shared before anyone speaks, so pay the cold start there.
+        start_model_preload()
         return JSONResponse({"status": "ok", "languages": list(LANGUAGES),
                              "max_streams": MAX_STREAM_INPUTS,
                              "max_tts": MAX_TTS_INPUTS,
@@ -638,6 +665,56 @@ def create_api(
         if not _authorized(request.headers.get("authorization"), secret):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
         return JSONResponse(language_catalog.public_catalog(),
+                            headers={"Cache-Control": "no-store"})
+
+    @api.post("/translate")
+    async def translate_chat(request: Request) -> Response:
+        """Typed-chat translation: bounded text, no ASR and no stream state."""
+        if not _authorized(request.headers.get("authorization"), secret):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        body = await _read_limited(request, MAX_TRANSLATE_BODY_BYTES)
+        if body is None:
+            return JSONResponse({"error": "request body is too large"}, status_code=413)
+        try:
+            data = json.loads(body)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return JSONResponse({"error": "invalid JSON"}, status_code=400)
+        if not isinstance(data, dict):
+            return JSONResponse({"error": "invalid translate request"}, status_code=422)
+        text = data.get("text")
+        source_lang = data.get("source_lang")
+        target_langs = data.get("target_langs")
+        if (not isinstance(text, str) or not text.strip()
+                or len(text) > MAX_CHAT_CHARS
+                or not isinstance(source_lang, str)
+                or source_lang not in M2M_LANGUAGE_CODES
+                or not isinstance(target_langs, list)
+                or not target_langs or len(target_langs) > 3
+                or any(not isinstance(target, str) or target not in M2M_LANGUAGE_CODES
+                       for target in target_langs)):
+            return JSONResponse({"error": "invalid translate request"}, status_code=422)
+        # A chat translate is a short bounded job on the same one GPU, so it
+        # takes the existing TTS admission slot instead of adding a capacity
+        # class the container cannot actually serve in parallel.
+        if not input_capacity.try_tts():
+            return JSONResponse({"error": "translate busy"}, status_code=429,
+                                headers={"Retry-After": "1"})
+        start_model_preload()
+        try:
+            translations = await asyncio.wait_for(
+                asyncio.to_thread(compute_engine.translate_text,
+                                  text.strip(), source_lang, target_langs),
+                timeout=30)
+        except Exception as error:
+            print(f"[translate] {_bounded_diagnostic(error, secret, text)}",
+                  file=sys.stderr, flush=True)
+            return JSONResponse({"error": "translation unavailable"}, status_code=503)
+        finally:
+            # ponytail: the slot is returned on timeout even though the worker
+            # thread may still be finishing — one bounded 30 s overlap. Adopt
+            # the /tts shield+done_callback dance if chat ever runs long.
+            input_capacity.release_tts()
+        return JSONResponse({"translations": translations},
                             headers={"Cache-Control": "no-store"})
 
     @api.post("/mt-receipt")

@@ -363,6 +363,75 @@ def test_room_peer_discovery_is_isolated():
     srv.participants.clear()
 
 
+def test_chat_round_trip_is_server_sequenced_and_translated():
+    """A typed line reaches everyone in the room, numbered by the server."""
+    srv.participants.clear()
+    srv.rooms.clear()
+    client = TestClient(srv.app)
+    room = client.post("/api/rooms", headers=SAME_ORIGIN).json()["path"].split("/")[-1]
+
+    calls = []
+
+    def fake_translate(text, source, targets, stream_id="default", final=True):
+        calls.append((text, source, list(targets), stream_id, final))
+        return {target: f"{target}:{text}" for target in targets}, "ok"
+
+    original_translate = srv.mt_ct2.translate_many
+    srv.mt_ct2.translate_many = fake_translate
+    try:
+        with client.websocket_connect(f"/ws/{room}") as en:
+            en.send_json(join_message("en-US", "EN"))
+            welcome_en = en.receive_json()
+            with client.websocket_connect(f"/ws/{room}") as es:
+                es.send_json(join_message("es-ES", "ES"))
+                assert es.receive_json()["type"] == "welcome"
+                assert en.receive_json()["type"] == "peer_join"
+
+                en.send_json({"type": "chat", "text": "  hello there  ", "cid": 0})
+                for socket in (en, es):
+                    msg = socket.receive_json()
+                    assert msg == {
+                        "type": "chat", "speaker": welcome_en["id"],
+                        "speaker_lang": "en", "seq": srv.CHAT_SEQ_BASE,
+                        "final": True, "original": "hello there",
+                        "translations": {"es": "es:hello there"}, "t_ms": 0,
+                    }, msg
+                assert calls == [("hello there", "en", ["es"],
+                                  f"chat-{welcome_en['id']}", False)], calls
+
+                # Over-long input is truncated to the wire cap, never dropped:
+                # mt_ct2 filters anything past 200 characters out entirely.
+                en.send_json({"type": "chat", "text": "x" * 250, "cid": 7})
+                sent = en.receive_json()
+                es.receive_json()
+                assert len(sent["original"]) == srv.MAX_CHAT_CHARS == 200
+                # seq = base + cid, the worker's contract: the sender's
+                # optimistic bubble is upgraded in place, never duplicated.
+                assert sent["seq"] == srv.CHAT_SEQ_BASE + 7, sent["seq"]
+
+                # A non-string body is a protocol violation, not a chat line.
+                en.send_json({"type": "chat", "text": 5, "cid": 0})
+                try:
+                    en.receive_json()
+                    raise AssertionError("non-string chat text stayed connected")
+                except WebSocketDisconnect as exc:
+                    assert exc.code == 1008
+
+                # A cid outside [0, CHAT_SEQ_BASE) is one too. en's departure
+                # may queue a peer_leave first, so drain to the disconnect.
+                es.send_json({"type": "chat", "text": "hi", "cid": srv.CHAT_SEQ_BASE})
+                try:
+                    for _ in range(3):
+                        es.receive_json()
+                    raise AssertionError("out-of-range cid stayed connected")
+                except WebSocketDisconnect as exc:
+                    assert exc.code == 1008
+    finally:
+        srv.mt_ct2.translate_many = original_translate
+        srv.participants.clear()
+        srv.rooms.clear()
+
+
 def test_ingest_ignores_silence():
     srv.participants.clear()
     srv._asr_ready.set()

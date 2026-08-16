@@ -5,6 +5,7 @@ the security/default-mode surface fail before a browser is even launched.
 """
 
 import pathlib
+import re
 import unittest
 
 
@@ -76,6 +77,60 @@ class CloudClientContractTests(unittest.TestCase):
         self.assertIn('id="reportCategory"', HTML)
         self.assertIn("localStorage.setItem(blockedRoomKey", HTML)
         self.assertNotIn("location.href = 'support.html#report'", HTML)
+
+    def test_report_controls_live_behind_the_overflow_menu(self):
+        # The report path is store-compliance critical, so it moved rather than
+        # went away: the same ids, one tap behind the ⋯ button.
+        self.assertIn('id="menuBtn"', HTML)
+        self.assertIn('aria-controls="roomMenu"', HTML)
+        self.assertIn('data-i18n-title="bar.moreTitle"', HTML)
+        self.assertIn('"bar.moreTitle": "More options"', RUNTIME)
+        menu_start = HTML.index('<div id="roomMenu"')
+        menu_end = HTML.index("</div>", menu_start)
+        menu = HTML[menu_start:menu_end]
+        self.assertIn('id="reportCategory"', menu)
+        self.assertIn('id="reportBtn"', menu)
+        self.assertIn('data-i18n="report.button"', menu)
+        # A panel that only carries `hidden` while its own rule says
+        # `display:grid` is a panel that never closes.
+        self.assertIn("#roomMenu[hidden]{display:none}", HTML)
+        self.assertIn("$('menuBtn').onclick", HTML)
+        self.assertIn("$('menuBtn').setAttribute('aria-expanded', String(opening))", HTML)
+
+    def test_share_row_opens_the_apps_and_draws_its_code_only_on_tap(self):
+        self.assertIn('<script src="/qr.js" defer></script>', HTML)
+        menu_start = HTML.index('<div id="roomMenu"')
+        menu_end = HTML.index("</div>", menu_start)
+        menu = HTML[menu_start:menu_end]
+        for marker in ('id="waBtn"', 'id="lineBtn"', 'id="qrBtn"', 'id="qrBox"',
+                       'data-i18n="share.qr"'):
+            self.assertIn(marker, menu)
+        self.assertIn("https://wa.me/?text=", HTML)
+        # The /R/share form carries the sentence with the link; the
+        # social-plugins form takes a url alone and drops it.
+        self.assertIn("https://line.me/R/share?text=", HTML)
+        self.assertNotIn("social-plugins.line.me", HTML)
+        # The link inside the code is the bearer token that opens the room, so
+        # the drawing happens inside the tap handler and nowhere else — never
+        # at load, and never left behind when the panel closes.
+        qr_start = HTML.index("$('qrBtn').onclick")
+        qr_end = HTML.index("\n};", qr_start)
+        handler = HTML[qr_start:qr_end]
+        self.assertIn("window.LinguaQR.svg(inviteLink())", handler)
+        self.assertIn("box.replaceChildren()", handler)
+        self.assertEqual(HTML.count("LinguaQR.svg("), 1)
+        self.assertIn("#qrBox[hidden]{display:none}", HTML)
+        # A native shell has a share sheet, and window.open there navigates the
+        # call away. The code stays: it is the only WeChat path.
+        self.assertIn("$('waBtn').hidden = true", HTML)
+        self.assertIn("$('lineBtn').hidden = true", HTML)
+        self.assertNotIn("$('qrBtn').hidden = true", HTML)
+
+    def test_share_sentence_names_the_surface_the_link_opens(self):
+        self.assertIn("SHARE_TEXT = {voice: 'share.textVoice', chat: 'share.textChat', "
+                      "video: 'share.textVideo'}", HTML)
+        self.assertIn("t(SHARE_TEXT[roomMode])", HTML)
+        self.assertNotIn("t('share.text')", HTML)
 
     def test_microphone_and_camera_permissions_are_independent(self):
         self.assertIn("function getAudioMedia()", HTML)
@@ -204,6 +259,137 @@ class CloudClientContractTests(unittest.TestCase):
         self.assertIn("disconnectRoom(true)", HTML)
         self.assertIn("window.addEventListener('pageshow', restoreSuspendedRoom)", HTML)
         self.assertIn("window.addEventListener('pagehide', suspendRoom)", HTML)
+
+    def test_mode_is_read_from_the_link_and_never_from_the_server(self):
+        self.assertIn("const MODES = new Set(['voice', 'chat', 'video'])", HTML)
+        self.assertIn("MODES.has(requestedMode) ? requestedMode : 'video'", HTML)
+        self.assertIn("document.body.dataset.mode = roomMode", HTML)
+        self.assertIn("function modeQuery()", HTML)
+        self.assertIn("runtime.inviteUrl('/room/' + roomId + modeQuery())", HTML)
+        # The callee's name is a label written with textContent, never markup.
+        self.assertIn("$('callName').textContent = calleeName", HTML)
+        self.assertNotIn("callName').innerHTML", HTML)
+
+    def test_voice_and_chat_hide_the_video_without_silencing_the_call(self):
+        # Peer audio arrives on #remoteVideo (pc.ontrack sets its srcObject), so
+        # a rule that removes that element removes the other person's voice.
+        # Every mode rule for it must move or shrink it instead.
+        self.assertNotIn("#remoteVideo{display:none", HTML)
+        rules = re.findall(r"([^{}]*#remoteVideo[^{}]*)\{([^}]*)\}", HTML)
+        self.assertTrue(rules, "the stylesheet still names #remoteVideo")
+        for selector, body in rules:
+            self.assertNotIn("display:none", body.replace(" ", ""),
+                             "a rule removes #remoteVideo: " + selector.strip())
+        hidden = next(body for selector, body in rules
+                      if 'body[data-mode="voice"] #remoteVideo' in selector)
+        self.assertIn("opacity:0", hidden)
+        self.assertIn("width:1px", hidden)
+        # The controls may go — they are buttons, not the audio sink. Camera is
+        # hidden in both modes, and chat hides the microphone and voice too.
+        hidden_controls = next(selector for selector, body in
+                               re.findall(r"([^{}]*#camBtn[^{}]*)\{([^}]*)\}", HTML)
+                               if "display:none" in body)
+        for selector in ['body[data-mode="voice"] #camBtn', 'body[data-mode="chat"] #camBtn',
+                         'body[data-mode="voice"] #micBtn', 'body[data-mode="chat"] #micBtn',
+                         'body[data-mode="chat"] #voiceBtn']:
+            self.assertIn(selector, hidden_controls)
+
+    def test_call_shell_proxies_the_controls_that_already_exist(self):
+        self.assertIn('id="callShell"', HTML)
+        for element in ["callName", "callState", "callTimer", "callMute", "callSound",
+                        "callEnd", "captionsToggle", "declineBtn"]:
+            self.assertIn('id="%s"' % element, HTML)
+        # One owner per behaviour: the shell clicks the real buttons rather than
+        # opening its own microphone or closing its own socket.
+        self.assertIn("$('callMute').onclick = () => $('micBtn').click()", HTML)
+        self.assertIn("$('callEnd').onclick = () => $('leaveBtn').click()", HTML)
+        self.assertEqual(HTML.count("new RTCPeerConnection"), 1)
+        self.assertEqual(HTML.count("navigator.mediaDevices.getUserMedia"), 2)
+        # Sound off is a second reason to mute the same element, applied through
+        # the single owner rather than beside it.
+        mute_start = HTML.index("function setNaturalAudioMuted")
+        mute_end = HTML.index("\n}", mute_start)
+        self.assertIn("muted || remoteMuted", HTML[mute_start:mute_end])
+        self.assertIn("setNaturalAudioMuted(asrPaused)", HTML)
+
+    def test_ringback_is_synthesised_and_ships_no_audio_asset(self):
+        self.assertIn("new OscillatorNode(ringContext, {frequency})", HTML)
+        self.assertIn("[440, 480]", HTML)
+        self.assertIn("new GainNode(ringContext", HTML)
+        self.assertIn("function stopRingback", HTML)
+        self.assertNotIn("<audio src=", HTML)
+        # Every path out of a ringing call stops the tone.
+        for caller in ["function connectCall", "function endCall"]:
+            start = HTML.index(caller)
+            self.assertIn("stopRingback()", HTML[start:HTML.index("\n}", start)])
+
+    def test_answering_is_a_signal_on_the_relay_the_room_already_has(self):
+        self.assertIn("send({type: 'signal', to: peer.id, data: {call: 'accept'}})", HTML)
+        self.assertIn("data.call === 'accept'", HTML)
+        signal_start = HTML.index("async function onSignal")
+        signal_end = HTML.index("\n}", signal_start)
+        self.assertIn("connectCall()", HTML[signal_start:signal_end])
+        # Declining never joins, so it never opens a socket or a microphone.
+        decline_start = HTML.index("$('declineBtn').onclick")
+        decline_end = HTML.index("\n};", decline_start)
+        decline = HTML[decline_start:decline_end]
+        self.assertIn("window.close()", decline)
+        self.assertNotIn("connect()", decline)
+        self.assertNotIn("getUserMedia", decline)
+        # A late third arrival is not a second answer.
+        timer_start = HTML.index("function startCallTimer")
+        self.assertIn("if (callTimerStart) return",
+                      HTML[timer_start:HTML.index("\n}", timer_start)])
+
+    def test_typed_chat_renders_optimistically_and_sends_only_a_draft_counter(self):
+        self.assertIn("const CHAT_SEQ_BASE = 1000000", HTML)
+        send_start = HTML.index("function sendChat()")
+        send_end = HTML.index("\n}", send_start)
+        send_body = HTML[send_start:send_end]
+        # The bubble is drawn before the round trip, at the sequence the server
+        # will confirm, so the sender never waits for the GPU to see their words.
+        self.assertIn("send({type: 'chat', text, cid})", send_body)
+        self.assertIn("renderCaption({speaker: myId", send_body)
+        self.assertIn("seq: CHAT_SEQ_BASE + cid", send_body)
+        self.assertIn("final: false", send_body)
+        # An empty send is nothing at all, and a dead socket says so.
+        self.assertIn("if (!text) return", send_body)
+        self.assertIn("setStatus('chat.failed', null, true)", send_body)
+        self.assertIn('"chat.failed": "Message could not be sent."', RUNTIME)
+        # One renderer: the server's copy lands on the same key, not beside it.
+        self.assertIn("renderCaption({...m, final: m.final !== false})", HTML)
+        self.assertEqual(HTML.count("function renderCaption"), 1)
+
+    def test_chat_bar_is_a_form_bounded_at_200_and_only_shown_where_it_belongs(self):
+        self.assertIn('id="chatBar"', HTML)
+        self.assertIn('id="chatInput"', HTML)
+        self.assertIn('id="chatSend"', HTML)
+        self.assertIn('maxlength="200"', HTML)
+        # Enter sends because the input is inside a form; the button submits the
+        # same event rather than duplicating the path.
+        self.assertIn("$('chatBar').onsubmit", HTML)
+        self.assertIn("event.preventDefault(); sendChat()", HTML)
+        self.assertIn('type="submit"', HTML)
+        # Typing is possible exactly while a socket exists.
+        self.assertIn('id="chatInput" type="text" maxlength="200"', HTML)
+        self.assertIn("aria-label=\"Message\" disabled", HTML)
+        self.assertIn("setChatEnabled(true)", HTML)
+        self.assertIn("setChatEnabled(false)", HTML)
+        disconnect_start = HTML.index("function disconnectRoom")
+        self.assertIn("setChatEnabled(false)",
+                      HTML[disconnect_start:HTML.index("\n}", disconnect_start)])
+        # Voice mode is a phone call: the texting bar is not part of it.
+        rules = re.findall(r"([^{}]*#chatBar[^{}]*)\{([^}]*)\}", HTML)
+        hidden = [selector.strip().splitlines()[-1] for selector, body in rules
+                  if "display:none" in body.replace(" ", "")]
+        self.assertEqual(hidden, ["#chatBar"])
+        shown = [selector for selector, body in rules if "display:flex" in body]
+        self.assertEqual(len(shown), 1)
+        self.assertIn('body[data-mode="chat"] #chatBar', shown[0])
+        self.assertIn('body[data-mode="video"] #chatBar', shown[0])
+        self.assertNotIn('data-mode="voice"] #chatBar', shown[0])
+        # 44px minimum tap target survives the compact video-mode variant.
+        self.assertIn("#chatSend{width:44px;height:44px;min-height:44px", HTML)
 
     def test_live_acceptance_uses_real_browser_audio_and_server_results(self):
         source = LIVE_CHECK_PATH.read_text(encoding="utf-8")

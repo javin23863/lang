@@ -6,7 +6,7 @@ const root = new URL("../www/", import.meta.url);
 
 test("prepared mobile web bundle contains the app, runtime, and local worklet", async () => {
   for (const path of [
-    "index.html", "room.html", "app-runtime.js", "mobile-bridge.js",
+    "index.html", "room.html", "app-runtime.js", "mobile-bridge.js", "qr.js",
     "privacy.html", "terms.html", "support.html", "static/pcm-worklet.js"
   ]) await access(new URL(path, root));
 

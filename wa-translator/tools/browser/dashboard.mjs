@@ -1,6 +1,7 @@
 // The host's screen: pick a language, create a room, copy the link, watch the
 // live participant count, close the room. All against the real backend.
 import { open } from "./cdp.mjs";
+import { sessionToken } from "./session.mjs";
 
 const ORIGIN = process.env.LINGUA_ORIGIN || "http://127.0.0.1:8788";
 const SHOTS = new URL("./shots/", import.meta.url).pathname.replace(/^\//, "");
@@ -20,7 +21,44 @@ try {
   await page.send("Browser.grantPermissions", {
     origin: ORIGIN, permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"],
   });
+  const session = await sessionToken();
+  if (session) {
+    await page.send("Network.setCookie",
+                    { name: "lr_s", value: session, url: ORIGIN, path: "/" });
+  } else {
+    console.log("[dashboard] no ROOM_SIGNING_KEY and no LINGUA_SESSION — "
+                + "POST /api/rooms will 401 and the tiles stay hidden");
+  }
+  if (session && !process.env.LINGUA_SESSION) {
+    // A minted session is all POST /api/rooms asks for, but GET /api/me also
+    // needs a UserDirectory profile, and only a real OAuth callback writes one.
+    // So a locally minted session reads as signed-out and the tiles never
+    // appear. Stub that ONE response in the page — the room this check creates,
+    // polls and closes is still made by the real worker against the real
+    // cookie. Set LINGUA_SESSION to a session from a real sign-in and no stub
+    // is injected at all.
+    console.log("[dashboard] dev session minted locally — GET /api/me is stubbed in-page; "
+                + "everything else is the real worker");
+    await page.send("Page.addScriptToEvaluateOnNewDocument", {
+      source: `(() => {
+        const original = window.fetch;
+        window.fetch = (input, init) => {
+          const url = String(input && input.url ? input.url : input);
+          if (!url.includes("/api/me")) return original(input, init);
+          return Promise.resolve(new Response(JSON.stringify({
+            signed_in: true, providers: ["google"],
+            user: {name: "Local Dev Host", email: "dev@example.test", provider: "google"},
+            credits: {balance: 0},
+            totals: {call_minutes: 0, chat_messages: 0, tts_phrases: 0},
+            recent: []
+          }), {status: 200, headers: {"Content-Type": "application/json"}}));
+        };
+      })()`,
+    });
+  }
   await page.goto(`${ORIGIN}/`);
+  const auth = await page.eval("document.body.dataset.auth");
+  check("the dashboard reports a signed-in host", auth === "in", auth);
 
   console.log(`[dashboard] switch the interface to "${language}"`);
   const options = await page.eval(`document.getElementById('appLocaleSel').options.length`);
@@ -36,8 +74,12 @@ try {
       dir: document.documentElement.dir,
       state: el('roomState').textContent,
       create: el('createBtn').textContent,
+      tiles: [...document.querySelectorAll('.modes .tile')]
+        .map(b => ({id: b.id, text: b.textContent,
+                    h: Math.round(b.getBoundingClientRect().height)})),
       picker: el('appLocaleSel').options[el('appLocaleSel').selectedIndex].textContent,
       legal: [...document.querySelectorAll('.legal a')].map(a => a.textContent),
+      panelShown: !el('roomPanel').hidden,
       createFits: fits(el('createBtn')),
       stateFits: fits(el('roomState')),
       docScrollW: document.documentElement.scrollWidth,
@@ -50,6 +92,13 @@ try {
         `${home.docScrollW} <= ${home.viewportW}`);
   check("create button fits", home.createFits);
   check("state line fits", home.stateFits);
+  check("three call tiles are offered", home.tiles.length === 3,
+        home.tiles.map(t => t.id).join(", "));
+  for (const tile of home.tiles) {
+    check(`tile "${tile.id}" is translated`, !/^[a-z]+\.[a-zA-Z.]+$/.test(tile.text), tile.text);
+    check(`tile "${tile.id}" is tappable`, tile.h >= 64, `h=${tile.h}`);
+  }
+  check("no room panel before a room exists", home.panelShown === false);
   check("no raw keys on screen", !/^[a-z]+\.[a-zA-Z.]+$/.test(home.state)
         && !home.legal.some(l => /^[a-z]+\.[a-zA-Z.]+$/.test(l)), JSON.stringify(home.legal));
   await page.shot(`${SHOTS}/dash-${language}.png`);
@@ -73,10 +122,13 @@ try {
     };
   })()`);
   console.log("   ", JSON.stringify(made, null, 2));
-  check("room panel appeared", made.panelShown === true);
+  // The tiles are permanent labels now, so the proof that a room exists is the
+  // room card appearing — not the create button changing its wording.
+  check("room panel became visible after create",
+        home.panelShown === false && made.panelShown === true,
+        `${home.panelShown} → ${made.panelShown}`);
   check("a signed link is shown", /\/room\/[\w-]+\.\d+\./.test(made.link), made.link.slice(0, 46));
-  check("create button switched to the 'another room' wording",
-        made.create !== home.create, `${home.create} → ${made.create}`);
+  check("the video tile keeps its label", made.create === home.create, made.create);
   for (const button of made.buttons) {
     check(`action "${button.text}" fits`, button.fits, `h=${button.h}`);
     check(`action "${button.text}" is tappable`, button.h >= 40, `h=${button.h}`);

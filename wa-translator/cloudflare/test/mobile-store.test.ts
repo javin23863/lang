@@ -1,5 +1,6 @@
 import { exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
+import { hostSessionCookie } from "./session";
 
 const PUBLIC_ORIGIN = "https://room.test";
 const NATIVE_ORIGIN = "https://localhost";
@@ -34,7 +35,7 @@ describe("mobile store interface", () => {
       protocol: 1,
       minimum_client_build: 1,
       public_origin: PUBLIC_ORIGIN,
-      account_mode: "none",
+      account_mode: "session",
       call_lifecycle: "foreground",
       room_ttl_seconds: 86400,
       max_room_participants: 4,
@@ -68,7 +69,7 @@ describe("mobile store interface", () => {
     );
 
     const created = await exports.default.fetch(`${PUBLIC_ORIGIN}/api/v1/rooms`, {
-      method: "POST", headers: { Origin: NATIVE_ORIGIN }
+      method: "POST", headers: { Origin: NATIVE_ORIGIN, Cookie: await hostSessionCookie() }
     });
     expect(created.status).toBe(201);
     expect(created.headers.get("Access-Control-Allow-Origin")).toBe(NATIVE_ORIGIN);

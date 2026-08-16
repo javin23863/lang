@@ -35,6 +35,8 @@ from typing import Any
 import numpy as np
 import websockets
 
+import probe_session
+
 
 PUBLIC_BASE = os.environ.get(
     "ROOM_BASE",
@@ -163,9 +165,15 @@ def assert_warm_voice_targets(records: list[dict[str, Any]]) -> None:
 
 
 def _room() -> tuple[str, str]:
+    headers = {"Origin": PUBLIC_BASE, "User-Agent": PROBE_USER_AGENT}
+    cookie = probe_session.session_cookie()
+    if cookie:
+        headers["Cookie"] = cookie
+    else:
+        print("set LINGUA_SESSION (or ROOM_SIGNING_KEY for a local worker) — "
+              "room creation will 401 without it")
     request = urllib.request.Request(
-        f"{PUBLIC_BASE}/api/rooms", method="POST", data=b"",
-        headers={"Origin": PUBLIC_BASE, "User-Agent": PROBE_USER_AGENT})
+        f"{PUBLIC_BASE}/api/rooms", method="POST", data=b"", headers=headers)
     with urllib.request.urlopen(request, timeout=15) as response:
         path = json.load(response)["path"]
     token = path.rsplit("/", 1)[-1]

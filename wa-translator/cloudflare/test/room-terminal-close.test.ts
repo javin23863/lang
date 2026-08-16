@@ -1,12 +1,13 @@
 import { exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
+import { hostSessionCookie } from "./session";
 
 const ORIGIN = "https://room.test";
 
 describe("participant terminal-close client", () => {
   it("recognizes host room closure before its socket close can schedule a reconnect", async () => {
     const created = await exports.default.fetch(`${ORIGIN}/api/rooms`, {
-      method: "POST", headers: { Origin: ORIGIN }
+      method: "POST", headers: { Origin: ORIGIN, Cookie: await hostSessionCookie() }
     });
     const { path } = await created.json<{ path: string }>();
     const page = await exports.default.fetch(`${ORIGIN}${path}`);

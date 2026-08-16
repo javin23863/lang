@@ -3,52 +3,120 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#111b21">
+<meta name="theme-color" content="#000000">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <script src="/app-runtime.js"></script>
+<script src="/qr.js" defer></script>
 <title>Lingua Relay · Private room</title>
 <style>
-*{margin:0;padding:0;box-sizing:border-box}:root{color-scheme:dark;--ink:#eef3f5;--muted:#aab8c1;--canvas:#09141e;--panel:#10212e;--panel-2:#172d3b;--line:#294455;--accent:#67e0bc;--accent-ink:#06251e;--danger:#df6572;--focus:#a9ecff;--shadow:0 18px 48px #0008}html,body{height:100%}body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:radial-gradient(circle at top right,#17445b 0,#09141e 37rem);color:var(--ink);display:flex;flex-direction:column;overflow:hidden;letter-spacing:.005em}button,select,input{font:inherit}button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+/* A call is a dark surface on iOS in both appearances — the room keeps its own
+   dark chrome all day, and only the message bubbles follow the system tint. */
+*{margin:0;padding:0;box-sizing:border-box}:root{color-scheme:dark;--font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;--bg:#000;--card:#1C1C1E;--card-2:#2C2C2E;--separator:#38383A;--label:#FFF;--label-2:#8E8E93;--accent:#007AFF;--destructive:#FF3B30;--confirm:#34C759;--bubble-mine:#007AFF;--bubble-mine-ink:#FFF;--bubble-mine-sub:#DCEBFF;--bubble-other:#E9E9EB;--bubble-other-ink:#000;--bubble-other-sub:#6C6C70;--focus:#0A84FF;--shadow:0 18px 48px #000A}
+@media (prefers-color-scheme: dark){:root{--bubble-other:#3A3A3C;--bubble-other-ink:#FFF;--bubble-other-sub:#AEAEB2}}
+html,body{height:100%}body{font-family:var(--font);background:var(--bg);color:var(--label);display:flex;flex-direction:column;overflow:hidden;-webkit-font-smoothing:antialiased}button,select,input{font:inherit}button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
 
 /* ── video ───────────────────────────────────────────────── */
-#stage{position:relative;background:#000;flex:0 0 auto;height:34vh;min-height:180px;border-bottom:1px solid var(--line)}
+#stage{position:relative;background:#000;flex:0 0 auto;height:34vh;min-height:180px}
 #remoteVideo{width:100%;height:100%;object-fit:cover;background:#000}
 #selfWrap{position:absolute;right:10px;bottom:10px;width:27%;max-width:130px;
-          aspect-ratio:3/4;border-radius:10px;overflow:hidden;
-          border:2px solid rgba(255,255,255,.25);background:#111b21;
-          box-shadow:0 3px 12px rgba(0,0,0,.5)}
+          aspect-ratio:3/4;border-radius:12px;overflow:hidden;
+          border:1px solid rgba(255,255,255,.18);background:#1C1C1E;
+          box-shadow:0 6px 20px rgba(0,0,0,.55)}
 #selfVideo{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
-#videoNote{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:16px;padding-inline-end:calc(min(27vw,130px) + 30px);font-size:13px;color:var(--muted);background:linear-gradient(135deg,#09141e,#102b3a)}
+#videoNote{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:16px;padding-inline-end:calc(min(27vw,130px) + 30px);font-size:15px;line-height:1.4;color:var(--label-2);background:#000}
 #videoNote.hidden{display:none}
 
 /* ── captions ────────────────────────────────────────────── */
-#captions{flex:1;overflow-y:auto;padding:14px clamp(12px,3vw,28px) 10px;display:flex;flex-direction:column;gap:9px;background:linear-gradient(#09141e88,#09141e)}#captionEmpty{margin:auto;text-align:center;color:var(--muted);max-width:31rem;line-height:1.55;font-size:14px}.msg{padding:10px 13px;border-radius:13px;max-width:88%;word-wrap:break-word;border:1px solid var(--line);
+#captions{flex:1;overflow-y:auto;padding:14px clamp(12px,3vw,28px) 10px;display:flex;flex-direction:column;gap:6px;background:var(--bg)}#captionEmpty{margin:auto;text-align:center;color:var(--label-2);max-width:31rem;line-height:1.5;font-size:15px}.msg{padding:9px 14px;max-width:82%;word-wrap:break-word;
      animation:fade .12s ease-out}
 @keyframes fade{from{opacity:.4}to{opacity:1}}
-.msg.mine{background:#115646;align-self:flex-end;border-radius:13px 3px 13px 13px}.msg.theirs{background:var(--panel);align-self:flex-start;border-radius:3px 13px 13px 13px}.msg .who{font-size:10px;color:var(--muted);margin-bottom:4px;letter-spacing:.07em;text-transform:uppercase}.msg .lead{font-size:17px;line-height:1.4}.msg .sub{font-size:13px;line-height:1.4;color:var(--muted);margin-top:4px}
-.msg.live{opacity:.75}
-.msg.live .lead::after{content:'▌';animation:blink 1s steps(2) infinite;color:#53bdeb}
+.msg.mine{background:var(--bubble-mine);color:var(--bubble-mine-ink);align-self:flex-end;border-radius:18px 18px 4px 18px}.msg.theirs{background:var(--bubble-other);color:var(--bubble-other-ink);align-self:flex-start;border-radius:18px 18px 18px 4px}.msg .who{font-size:11px;opacity:.75;margin-bottom:3px;letter-spacing:.01em}.msg.mine .who{color:var(--bubble-mine-sub)}.msg.theirs .who{color:var(--bubble-other-sub)}.msg .lead{font-size:17px;line-height:1.35;letter-spacing:-.01em}.msg .sub{font-size:13px;line-height:1.35;margin-top:3px}.msg.mine .sub{color:var(--bubble-mine-sub)}.msg.theirs .sub{color:var(--bubble-other-sub)}
+.msg.live{opacity:.8}
+.msg.live .lead::after{content:'▌';animation:blink 1s steps(2) infinite;color:currentColor}
 @keyframes blink{50%{opacity:0}}
 
 /* ── controls ────────────────────────────────────────────── */
-#bar{flex:0 0 auto;background:#0b1924ee;backdrop-filter:blur(16px);padding:10px clamp(9px,2vw,20px) calc(10px + env(safe-area-inset-bottom));display:grid;grid-template-columns:minmax(110px,1fr) repeat(4,42px);gap:8px;align-items:center;border-top:1px solid var(--line)}button{border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;padding:10px 12px;min-height:42px;color:var(--ink)}#micBtn{background:var(--accent);color:var(--accent-ink);min-width:0;padding:0;display:flex;align-items:center;justify-content:center;gap:9px}#micBtn svg{width:23px;height:23px;display:block;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}#micBtn.on{background:var(--danger);color:#fff}
+#bar{flex:0 0 auto;background:#1C1C1EF2;backdrop-filter:blur(20px);padding:10px clamp(8px,2vw,20px) calc(10px + env(safe-area-inset-bottom));display:grid;grid-template-columns:minmax(88px,1fr) repeat(5,44px);gap:8px;align-items:center;border-top:.5px solid var(--separator)}button{border:none;border-radius:12px;font-size:17px;font-weight:600;cursor:pointer;padding:10px 12px;min-height:44px;color:var(--label);background:var(--card-2);letter-spacing:-.01em}#micBtn{background:var(--accent);color:#FFF;min-width:0;padding:0;border-radius:22px;display:flex;align-items:center;justify-content:center;gap:9px}#micBtn svg{width:23px;height:23px;display:block;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}#micBtn.on{background:var(--destructive);color:#fff}
 #micBtn .dot{display:block;width:9px;height:9px;border-radius:50%;
              background:currentColor;animation:blink 1s infinite}
-#settingsBtn{font-size:12px}.icon{background:var(--panel-2);color:var(--ink);padding:0;width:42px;display:grid;place-items:center}.icon svg{width:21px;height:21px;display:block;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}.icon.off{background:transparent;color:var(--muted);border-color:var(--line)}.icon:disabled{opacity:.45}#settings{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:9px;border-top:1px solid var(--line);padding-top:10px}.setting{display:flex;flex-direction:column;gap:4px;min-width:0;color:var(--muted);font-size:11px;text-align:left}.setting select,.setting input{width:100%;min-width:0;background:var(--panel-2);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:9px 8px;font-size:13px}.setting input{padding:8px}.capability{font-size:11px;color:var(--muted);line-height:1.35;padding:8px 10px;border-radius:9px;background:#0a2930;border:1px solid #286457}.capability.warning{background:#352928;border-color:#795848;color:#f3d0bc}#capabilityNote,#reportBtn{grid-column:1/-1}#reportBtn{background:transparent;border-color:#87515a;color:#f1c7cb}.termsAgree{display:flex;align-items:center;gap:8px;margin:12px 0;color:var(--muted);font-size:12px}.termsAgree input{width:18px;height:18px;accent-color:var(--accent)}.termsAgree a{color:var(--ink)}
-#status{position:absolute;top:9px;left:50%;transform:translateX(-50%);padding:5px 10px;text-align:center;font-size:11px;color:var(--ink);background:#061019b8;border:1px solid #ffffff22;border-radius:999px;z-index:5;max-width:calc(100% - 32px)}#participantCount{position:absolute;top:9px;left:9px;padding:5px 8px;border-radius:999px;font-size:11px;color:var(--ink);background:#061019b8;border:1px solid #ffffff22;z-index:5;direction:ltr;unicode-bidi:plaintext}
-#roleGate{position:fixed;inset:0;z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:18px;overflow-y:auto;background:rgba(4,13,20,.94);backdrop-filter:blur(14px)}
+.icon{background:var(--card-2);color:var(--label);padding:0;width:44px;height:44px;border-radius:50%;display:grid;place-items:center}.icon svg{width:22px;height:22px;display:block;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}.icon.off{background:#FFFFFF1A;color:var(--label-2)}.icon:disabled{opacity:.4}#menuBtn svg{fill:currentColor;stroke:none}#settings{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:9px;border-top:.5px solid var(--separator);padding-top:10px}#roomMenu{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;border-top:.5px solid var(--separator);padding-top:10px}#roomMenu[hidden]{display:none}#roomMenu .setting,#qrBox{grid-column:1/-1}.shareApp{min-width:0;font-size:15px;color:var(--accent);padding:10px 6px;line-height:1.2;overflow-wrap:anywhere}
+/* A camera reads dark modules on a light field, and this room is dark all day:
+   the code carries its own paper rather than inheriting the call's chrome. */
+#qrBox{display:grid;place-items:center;margin:0;padding:12px;border-radius:12px;background:#FFF;color:#000}#qrBox[hidden]{display:none}#qrBox svg{display:block;width:min(228px,58vw);height:auto}.setting{display:flex;flex-direction:column;gap:4px;min-width:0;color:var(--label-2);font-size:13px;text-align:left}.setting select{width:100%;min-width:0;min-height:44px;background:var(--card-2);color:var(--label);border:none;border-radius:10px;padding:10px 9px;font-size:15px}.capability{font-size:13px;color:var(--label-2);line-height:1.35;padding:9px 11px;border-radius:10px;background:var(--card-2)}.capability.warning{background:#3A2A18;color:#FFB340}#capabilityNote,#reportBtn{grid-column:1/-1}#reportBtn{background:transparent;color:var(--destructive);font-size:17px;font-weight:400;border-radius:10px;width:100%}.termsAgree{display:flex;align-items:center;gap:9px;margin:14px 0;color:var(--label-2);font-size:15px}.termsAgree input{width:22px;height:22px;accent-color:var(--accent)}.termsAgree a{color:var(--accent);text-decoration:none}
+#status{position:absolute;top:10px;left:50%;transform:translateX(-50%);padding:6px 12px;text-align:center;font-size:13px;color:var(--label);background:#000000A6;backdrop-filter:blur(12px);border-radius:999px;z-index:5;max-width:calc(100% - 32px)}#participantCount{position:absolute;top:10px;left:9px;padding:6px 10px;border-radius:999px;font-size:13px;color:var(--label);background:#000000A6;backdrop-filter:blur(12px);z-index:5;direction:ltr;unicode-bidi:plaintext}
+#roleGate{position:fixed;inset:0;z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:18px;overflow-y:auto;background:#000000BF;backdrop-filter:blur(18px)}
 #roleGate[hidden]{display:none}
-.roleCard{width:min(100%,520px);max-height:calc(100dvh - 36px);margin:auto;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:clamp(18px,5vw,28px);box-shadow:var(--shadow)}.brand{font-weight:800;font-size:12px;letter-spacing:.13em;text-transform:uppercase;color:var(--accent);margin-bottom:10px}.roleCard h1{font-size:clamp(23px,6vw,31px);line-height:1.13;margin-bottom:16px}.roleLocale{display:grid;gap:6px;color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.03em}.roleLocale select{width:100%;min-width:0;min-height:44px;background:var(--panel-2);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:9px 8px;font-size:14px}.roleCard .capability{margin:10px 0}.roleJoin{width:100%;background:var(--accent);color:var(--accent-ink)}
-html[dir=rtl] #selfWrap{left:10px;right:auto}html[dir=rtl] #participantCount{right:9px;left:auto}html[dir=rtl] .msg.mine{align-self:flex-start;border-radius:3px 13px 13px 13px}html[dir=rtl] .msg.theirs{align-self:flex-end;border-radius:13px 3px 13px 13px}
+.roleCard{width:min(100%,400px);max-height:calc(100dvh - 36px);margin:auto;overflow-y:auto;background:var(--card);border-radius:14px;padding:clamp(20px,5vw,26px);box-shadow:var(--shadow)}.brand{font-size:13px;font-weight:600;letter-spacing:.02em;color:var(--label-2);margin-bottom:6px}.roleCard h1{font-size:clamp(24px,6vw,28px);font-weight:700;letter-spacing:-.02em;line-height:1.15;margin-bottom:18px}.roleLocale{display:grid;gap:6px;color:var(--label-2);font-size:13px}.roleLocale select{width:100%;min-width:0;min-height:44px;background:var(--card-2);color:var(--label);border:none;border-radius:10px;padding:10px 9px;font-size:17px}.roleCard .capability{margin:10px 0}.roleJoin{width:100%;min-height:50px;background:var(--accent);color:#FFF;border-radius:12px}.roleJoin:disabled{opacity:.4}
+html[dir=rtl] #selfWrap{left:10px;right:auto}html[dir=rtl] #participantCount{right:9px;left:auto}html[dir=rtl] .msg.mine{align-self:flex-start;border-radius:18px 18px 18px 4px}html[dir=rtl] .msg.theirs{align-self:flex-end;border-radius:18px 18px 4px 18px}
 @media(max-width:380px){
   #stage{height:31vh;min-height:160px}
   #captions{padding:8px 10px 6px}
-  #bar{padding-left:7px;padding-right:7px;gap:5px;grid-template-columns:repeat(4,minmax(0,1fr))}
+  #bar{padding-left:7px;padding-right:7px;gap:5px;grid-template-columns:repeat(5,minmax(0,1fr))}
   #micBtn{grid-column:1/-1}
-  .icon{width:100%;min-width:0;padding:0}.setting select{font-size:11px;padding:7px 3px}
-  .roleCard{padding:16px}
+  .icon{width:100%;min-width:0;padding:0}.setting select{font-size:13px;padding:9px 5px}
+  .roleCard{padding:18px}
 }
+
+/* ── modes ────────────────────────────────────────────────
+   One room, three arrangements of the same DOM. #remoteVideo carries the other
+   person's AUDIO, so a voice call may not remove it: `display:none` on that
+   element — or on #stage around it — is a silent call. Everything here moves
+   or shrinks it instead, and #stage keeps the height its status pill needs. */
+body[data-mode="voice"] #stage,body[data-mode="chat"] #stage{height:46px;min-height:0;overflow:hidden}
+body[data-mode="voice"] #remoteVideo,body[data-mode="chat"] #remoteVideo,
+body[data-mode="voice"] #selfWrap,body[data-mode="chat"] #selfWrap{position:absolute;top:0;width:1px;height:1px;aspect-ratio:auto;opacity:0;border:none;box-shadow:none;pointer-events:none}
+body[data-mode="voice"] #videoNote,body[data-mode="chat"] #videoNote{display:none}
+body[data-mode="voice"] #bar,body[data-mode="chat"] #bar{grid-template-columns:repeat(3,minmax(0,1fr))}
+body[data-mode="voice"] #micBtn,body[data-mode="voice"] #camBtn,body[data-mode="voice"] #leaveBtn,
+body[data-mode="chat"] #micBtn,body[data-mode="chat"] #camBtn,body[data-mode="chat"] #voiceBtn{display:none}
+
+/* ── phone-call shell (voice mode) ────────────────────────
+   The iOS Phone screen, built from the room's own dark tokens: who, what the
+   call is doing, and four labelled circles that drive the controls already in
+   the bar. It is a flex child rather than an overlay, so ⋯ (report, language,
+   voice) stays reachable during a call in every mode. */
+#callShell{flex:1;display:none;flex-direction:column;justify-content:space-between;align-items:center;gap:16px;padding:clamp(18px,6vh,54px) 18px 16px;background:var(--bg);text-align:center}
+body[data-mode="voice"] #callShell:not([hidden]){display:flex}
+/* A phone call is not a settings screen, and neither is a thread: in both
+   modes the language and voice selects fold into ⋯ beside the report control,
+   which is what keeps all three reachable. `hidden` alone cannot do it —
+   #settings sits before #roomMenu in the bar — so the ⋯ button's own expanded
+   state opens both. */
+body[data-mode="voice"] #settings,body[data-mode="chat"] #settings{display:none}
+body[data-mode="voice"] #menuBtn[aria-expanded="true"]~#settings,
+body[data-mode="chat"] #menuBtn[aria-expanded="true"]~#settings{display:grid}
+body[data-mode="voice"] #captions{display:none}
+body[data-mode="voice"][data-captions="on"] #captions{display:flex}
+body[data-mode="voice"][data-captions="on"] #callShell{flex:0 0 auto;padding-top:12px;gap:12px}
+.callWho{display:grid;gap:6px;max-width:100%}
+#callName{font-size:clamp(26px,8vw,34px);font-weight:600;letter-spacing:-.022em;line-height:1.15;overflow-wrap:anywhere}
+#callName[hidden]{display:none}
+#callState{font-size:17px;color:var(--label-2)}
+#callTimer{font-size:17px;color:var(--label-2);font-variant-numeric:tabular-nums}
+#callTimer[hidden]{display:none}
+.callControls{display:grid;grid-template-columns:repeat(3,minmax(0,86px));gap:14px 22px;justify-content:center;justify-items:center}
+.callControls button{display:grid;place-items:center;width:72px;height:72px;min-height:72px;padding:6px;border-radius:50%;background:var(--card-2);color:var(--label);font-size:13px;font-weight:400;line-height:1.15;overflow-wrap:anywhere}
+.callControls button.on{background:#FFF;color:#000}
+#callEnd{grid-column:2;background:var(--destructive);color:#FFF}
+
+/* ── chat bar (chat and video modes) ──────────────────────
+   Texting rides above the existing bar instead of replacing it: the same
+   controls stay in the DOM in every mode. In chat mode #captions is already
+   the whole viewport (the stage is a 46px status strip), so this is the only
+   furniture the thread needs. */
+#chatBar{flex:0 0 auto;display:none;gap:8px;align-items:center;padding:8px clamp(8px,2vw,20px);background:#1C1C1EF2;backdrop-filter:blur(20px);border-top:.5px solid var(--separator)}
+body[data-mode="chat"] #chatBar,body[data-mode="video"] #chatBar{display:flex}
+/* Secondary in a video call: same 44px targets, less of the screen. */
+body[data-mode="video"] #chatBar{padding-top:6px;padding-bottom:6px;background:transparent;border-top:none}
+#chatInput{flex:1;min-width:0;min-height:44px;padding:10px 16px;border:none;border-radius:22px;background:var(--card-2);color:var(--label);font-size:17px}
+#chatInput::placeholder{color:var(--label-2)}
+#chatInput:disabled{opacity:.5}
+#chatSend{width:44px;height:44px;min-height:44px;flex:0 0 auto;padding:0;border-radius:50%;background:var(--accent);color:#FFF;display:grid;place-items:center}
+#chatSend svg{width:22px;height:22px;display:block;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#chatSend:disabled{opacity:.4}
+.roleJoin.accept{background:var(--confirm)}
+#declineBtn{width:100%;min-height:50px;margin-top:10px;background:transparent;color:var(--destructive);border-radius:12px}
 </style>
 </head>
 <body>
@@ -62,6 +130,7 @@ html[dir=rtl] #selfWrap{left:10px;right:auto}html[dir=rtl] #participantCount{rig
     <p id="roleCapability" class="capability" role="status" aria-live="polite" data-i18n="gate.loading">Loading…</p>
     <label class="termsAgree"><input id="termsAgree" type="checkbox" checked><span data-i18n="gate.agreeBefore">I agree to the </span><a id="termsLink" href="/terms" data-i18n="legal.terms">Terms</a><span data-i18n="gate.agreeAfter"></span></label>
     <button id="joinBtn" class="roleJoin" type="button" disabled data-i18n="gate.join">Join room</button>
+    <button id="declineBtn" type="button" hidden data-i18n="call.decline">Decline</button>
   </div>
 </div>
 
@@ -75,17 +144,43 @@ html[dir=rtl] #selfWrap{left:10px;right:auto}html[dir=rtl] #participantCount{rig
 
 <div id="captions"><p id="captionEmpty" data-i18n="captions.heading">Captions</p></div>
 
+<div id="callShell" hidden>
+  <div class="callWho">
+    <p id="callName" hidden></p>
+    <p id="callState" role="status" aria-live="polite"></p>
+    <p id="callTimer" hidden>0:00</p>
+  </div>
+  <div class="callControls">
+    <button id="callMute" type="button"></button>
+    <button id="callSound" type="button"></button>
+    <button id="captionsToggle" type="button"></button>
+    <button id="callEnd" type="button"></button>
+  </div>
+</div>
+
+<form id="chatBar" autocomplete="off">
+  <input id="chatInput" type="text" maxlength="200" enterkeyhint="send" autocomplete="off" placeholder="Message" aria-label="Message" disabled>
+  <button id="chatSend" type="submit" data-i18n-title="chat.send" data-i18n-label="chat.send" title="Send" aria-label="Send" disabled><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
+</form>
+
 <div id="bar">
   <button id="micBtn" data-i18n-title="bar.startMic" data-i18n-label="bar.startMic" title="Start microphone" aria-label="Start microphone"></button>
   <button id="shareBtn" class="icon" data-i18n-title="bar.shareTitle" data-i18n-label="bar.shareTitle" title="Share this private room" aria-label="Share this private room"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="18" cy="5.5" r="2.8"/><circle cx="6" cy="12" r="2.8"/><circle cx="18" cy="18.5" r="2.8"/><path d="M8.5 10.6 15.5 6.9M8.5 13.4l7 3.7"/></svg></button>
   <button id="camBtn" class="icon off" data-i18n-title="bar.cameraTitle" data-i18n-label="bar.camera" title="Turn camera on or off" aria-label="Camera"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="2.5" y="6.5" width="12.5" height="11" rx="2.5"/><path d="m15 12 6-3.6v7.2z"/></svg></button>
   <button id="voiceBtn" class="icon off" title="Turn translated voice on or off" aria-label="Translated voice"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 9.5h3.2L12 5.5v13L7.2 14.5H4z"/><path d="M16 9.4a3.7 3.7 0 0 1 0 5.2M18.8 6.8a7.4 7.4 0 0 1 0 10.4"/></svg></button>
+  <button id="menuBtn" class="icon" type="button" aria-expanded="false" aria-controls="roomMenu" data-i18n-title="bar.moreTitle" data-i18n-label="bar.moreTitle" title="More options" aria-label="More options"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="19" cy="12" r="1.9"/></svg></button>
   <button id="leaveBtn" class="icon" data-i18n-title="bar.leaveTitle" data-i18n-label="bar.leaveTitle" title="Leave this room" aria-label="Leave room"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14.5 4.5h3a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-3"/><path d="M10 8.2 6 12l4 3.8M6.4 12H15"/></svg></button>
   <div id="settings">
     <label class="setting"><span data-i18n="settings.language">Language</span><select id="localeSel" aria-describedby="capabilityNote"></select></label>
     <label class="setting"><span data-i18n="settings.voice">Voice</span><select id="publishVoiceSel"></select></label>
-    <label class="setting"><span data-i18n="settings.reportReason">Report reason</span><select id="reportCategory"><option value="harassment" data-i18n="report.harassment">Harassment</option><option value="threat" data-i18n="report.threat">Threats</option><option value="sexual" data-i18n="report.sexual">Sexual content</option><option value="hate" data-i18n="report.hate">Hate</option><option value="scam" data-i18n="report.scam">Scam</option><option value="other" data-i18n="report.other">Other</option></select></label>
     <p id="capabilityNote" class="capability" role="status" data-i18n="gate.loading">Loading…</p>
+  </div>
+  <div id="roomMenu" hidden>
+    <button id="waBtn" class="shareApp" type="button">WhatsApp</button>
+    <button id="lineBtn" class="shareApp" type="button">LINE</button>
+    <button id="qrBtn" class="shareApp" type="button" aria-expanded="false" aria-controls="qrBox" data-i18n="share.qr">QR code</button>
+    <figure id="qrBox" hidden></figure>
+    <label class="setting"><span data-i18n="settings.reportReason">Report reason</span><select id="reportCategory"><option value="harassment" data-i18n="report.harassment">Harassment</option><option value="threat" data-i18n="report.threat">Threats</option><option value="sexual" data-i18n="report.sexual">Sexual content</option><option value="hate" data-i18n="report.hate">Hate</option><option value="scam" data-i18n="report.scam">Scam</option><option value="other" data-i18n="report.other">Other</option></select></label>
     <button id="reportBtn" type="button" data-i18n="report.button">Report &amp; block this room</button>
   </div>
 </div>
@@ -96,6 +191,25 @@ const runtime = window.LinguaRuntime;
 const roomId = runtime.roomToken();
 const termsKey = 'lingua-relay.terms.2026-08-14';
 const blockedRoomKey = 'lingua-relay.blocked-room.' + roomId;
+
+// ── Mode ──────────────────────────────────────────────────
+// One page, three arrangements. `?m=` is furniture and nothing else: the room
+// token is what is signed, the server matches on pathname only, and a
+// participant who edits the parameter rearranges their own screen and no one
+// else's. An absent or unknown value is a video call, so every link made
+// before modes existed still opens exactly as it did.
+// ponytail: blast radius is this page. The day a mode has to bind everyone —
+// billing, or a guest who must not see video — store it on the Room durable
+// object at creation and echo it in `welcome`, then read it from there.
+const MODES = new Set(['voice', 'chat', 'video']);
+const roomParams = new URLSearchParams(location.search);
+const requestedMode = roomParams.get('m');
+const roomMode = MODES.has(requestedMode) ? requestedMode : 'video';
+// A name typed by the host, carried in the link and written with textContent:
+// it is a label on this screen, never markup and never sent to the server.
+const calleeName = (roomParams.get('n') || '').trim().slice(0, 40);
+document.body.dataset.mode = roomMode;
+function modeQuery() { return roomMode === 'video' ? '' : '?m=' + roomMode; }
 
 let ws, myId = null, ttsToken = null, myLang = null, myLocale = null;
 let myVoiceProfileId = null, myVoiceChoice = null, catalog = null, catalogRevision = null;
@@ -354,6 +468,7 @@ function chooseLocale(localeId) {
   $('roleGate').hidden = true;
   setStatus('status.joiningAs', {language: spokenLocaleName(myLocale)}, true);
   connect();
+  enterCall();
 }
 async function loadCapabilities() {
   try {
@@ -541,6 +656,7 @@ function disconnectRoom(notifyServer, preserveServerClose = false) {
   stopPresenceHeartbeat();
   clearTimeout(turnRefreshTimer);
   setMicEnabled(false);
+  setChatEnabled(false);
   if (notifyServer) send({type: 'leave'});
   if (!preserveServerClose && ws && ws.readyState === WebSocket.OPEN) {
     ws.close(1000, notifyServer ? 'left room' : 'page suspended');
@@ -568,6 +684,7 @@ function closeByHost() {
   disconnectRoom(false, true);
   setStatus('status.roomClosed', null, true);
   showVideoNote('note.closedByHost');
+  endCall('call.ended');
 }
 
 function leaveRoom() {
@@ -575,6 +692,7 @@ function leaveRoom() {
   disconnectRoom(true);
   setStatus('status.youLeft', null, true);
   showVideoNote('note.youLeft');
+  endCall('call.ended');
 }
 
 async function reportAndBlockRoom() {
@@ -642,13 +760,31 @@ async function handle(m) {
       return;
     }
     startPresenceHeartbeat(m.heartbeat_interval_ms);
+    // Typing is possible exactly while there is a socket to type into.
+    setChatEnabled(true);
+    if (roomMode === 'chat') $('chatInput').focus();
     // myId decides who is polite, so no peer may be built before it is known.
     for (const peer of m.peers) startPeer(peer);
     updateParticipantCount(m.participant_count);
+    // Answering a call is one signal on the relay the room already has. It
+    // goes to everyone already inside rather than to a guessed caller: in a
+    // two-person call that is the caller, and in a bigger one everybody sees
+    // the same "Connected" instead of one screen still ringing.
+    if (roomMode === 'voice' && !isHost && m.peers.length) {
+      for (const peer of m.peers) send({type: 'signal', to: peer.id, data: {call: 'accept'}});
+      connectCall();
+    }
   } else if (m.type === 'peer_join') {
     setStatus('status.speakerJoined', {language: spokenLocaleName(m.locale)});
     startPeer(m);
     updateParticipantCount(m.participant_count);
+    // Someone is in the room but has not answered yet — a third person
+    // arriving mid-call, or a peer whose accept is still in flight.
+    if (roomMode === 'voice' && isHost && !callTimerStart) {
+      setCallState('call.ringing');
+      startRingback();
+      updateCallButtons();
+    }
   } else if (m.type === 'peer_update') {
     const p = peers.get(m.id);
     if (p) { p.lang = m.lang; p.locale = m.locale; p.voiceProfileId = m.voice_profile || null; }
@@ -659,6 +795,7 @@ async function handle(m) {
     failVoice('voice.naturalAudioRestored');
     if (peers.size === 0) {
       showVideoNote('note.otherLeft');
+      endCall('call.ended');
     }
   } else if (m.type === 'presence') {
     updateParticipantCount(m.participant_count);
@@ -666,6 +803,11 @@ async function handle(m) {
     await onSignal(m.from, m.data);
   } else if (m.type === 'caption') {
     renderCaption(m);
+  } else if (m.type === 'chat') {
+    // The same renderer and the same "speaker:seq" key, so the server's copy
+    // lands on top of the sender's optimistic bubble instead of beside it. A
+    // delivered message is never a partial, so it is final unless it says not.
+    renderCaption({...m, final: m.final !== false});
   } else if (m.type === 'caption_status' && m.status === 'capacity' && m.scope === 'global') {
     const retry = Number.isInteger(m.retry_after_ms) ? Math.ceil(m.retry_after_ms / 1000) : 1;
     setStatus('status.captionsBusy', {seconds: retry}, true);
@@ -698,6 +840,7 @@ function renderCaption(m) {
     el = document.createElement('div');
     el.className = 'msg ' + (mine ? 'mine' : 'theirs');
     el.innerHTML = '<div class="who"></div><div class="lead"></div><div class="sub"></div>';
+    $('captionEmpty')?.remove();
     $('captions').appendChild(el);
     bubbles.set(key, el);
   }
@@ -723,17 +866,60 @@ function renderCaption(m) {
   if (m.final && !mine && translated) speak(translated, myLocale, myVoiceProfileId);
 }
 
+// ── Typed chat ────────────────────────────────────────────
+// A message is a caption bubble that was typed: same renderer, same
+// "speaker:seq" key. The client owns only its own draft counter — who said it
+// and where it sits in the thread are the server's, and the server's final
+// broadcast rewrites this bubble in place, so there is nothing to reconcile.
+const CHAT_SEQ_BASE = 1000000;
+let chatCid = 0;
+
+function setChatEnabled(enabled) {
+  $('chatInput').disabled = !enabled;
+  $('chatSend').disabled = !enabled;
+}
+
+function renderChatStrings() {
+  $('chatInput').placeholder = t('chat.placeholder');
+  const empty = $('captionEmpty');
+  if (roomMode === 'chat' && empty) {
+    empty.dataset.i18n = 'chat.empty';
+    empty.textContent = t('chat.empty');
+  }
+}
+
+function sendChat() {
+  const text = $('chatInput').value.trim();
+  if (!text) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    setStatus('chat.failed', null, true);
+    return;
+  }
+  const cid = chatCid++;
+  send({type: 'chat', text, cid});
+  $('chatInput').value = '';
+  renderCaption({speaker: myId, speaker_lang: myLang, seq: CHAT_SEQ_BASE + cid,
+                 final: false, original: text, translations: {}});
+}
+
+// Enter sends: the input is in a form, so the browser's own submit is the key
+// handler, and the send button is that same one event.
+$('chatBar').onsubmit = (event) => { event.preventDefault(); sendChat(); };
+
 // ── Spoken translation ────────────────────────────────────
 // Captions-only is the safe default. Device voices stay on this device; included
 // voices use the room's authenticated TTS route.
-let voiceOn = false, speaking = false, asrPaused = false;
+let voiceOn = false, speaking = false, asrPaused = false, remoteMuted = false;
 let speechGeneration = 0, ttsRequestId = 0, activeSpeech = null;
 const fallbackAudio = new Audio();
 let fallbackUrl = null;
 const speakQueue = [];
 
+// The one owner of the remote element's sound. Two reasons can silence it — a
+// translation is speaking, or the call's Sound button is off — and both go
+// through here, so neither can quietly undo the other.
 function setNaturalAudioMuted(muted) {
-  $('remoteVideo').muted = muted;
+  $('remoteVideo').muted = muted || remoteMuted;
 }
 
 function updateVoiceButton() {
@@ -1008,11 +1194,23 @@ $('publishVoiceSel').onchange = () => {
 
 updateVoiceButton();
 
+// An invitation says which surface it opens, so the link and the sentence that
+// carries it always agree.
+const SHARE_TEXT = {voice: 'share.textVoice', chat: 'share.textChat', video: 'share.textVideo'};
+function inviteLink() { return runtime.inviteUrl('/room/' + roomId + modeQuery()); }
+function shareMessage() { return t(SHARE_TEXT[roomMode]) + ' ' + inviteLink(); }
+
+function openShareApp(url) {
+  const opened = window.open(url, '_blank', 'noopener');
+  if (opened) opened.opener = null;
+  else setStatus('status.shareFailed', null, true);
+}
+
 $('shareBtn').onclick = async () => {
   const invite = {
-    title: 'Private translated video call',
-    text: 'Join my private translated video call.',
-    url: runtime.inviteUrl('/room/' + roomId)
+    title: t('share.title'),
+    text: t(SHARE_TEXT[roomMode]),
+    url: inviteLink()
   };
   if (await runtime.share(invite)) {
     setStatus('status.invitationShared');
@@ -1033,6 +1231,29 @@ $('shareBtn').onclick = async () => {
     setStatus('status.shareFailed', null, true);
   }
 };
+
+$('waBtn').onclick = () =>
+  openShareApp('https://wa.me/?text=' + encodeURIComponent(shareMessage()));
+// The /R/share form carries the sentence and the link together; the
+// social-plugins form takes a url only and drops everything that explains it.
+$('lineBtn').onclick = () =>
+  openShareApp('https://line.me/R/share?text=' + encodeURIComponent(shareMessage()));
+// The invite link is a bearer token, so its code is drawn when someone asks
+// for it and leaves the DOM again when they dismiss it — never on load.
+$('qrBtn').onclick = () => {
+  const box = $('qrBox');
+  const showing = box.hidden;
+  box.replaceChildren();
+  if (showing) box.appendChild(window.LinguaQR.svg(inviteLink()));
+  box.hidden = !showing;
+  $('qrBtn').setAttribute('aria-expanded', String(showing));
+};
+// In a native shell window.open navigates the call away, and the system share
+// sheet already lists both apps. The QR stays: it is the only WeChat path.
+if (runtime.isNative) {
+  $('waBtn').hidden = true;
+  $('lineBtn').hidden = true;
+}
 
 // ── Media ─────────────────────────────────────────────────
 // Cache the promise, not the resolved stream. startPeer, the mic button and the
@@ -1113,6 +1334,7 @@ function setMicEnabled(on) {
   if (workletNode) workletNode.port.postMessage({on: on && !asrPaused});
   $('micBtn').className = on ? 'on' : '';
   setMicButtonLabel();
+  updateCallButtons();
 }
 
 // A picture, not a phrase. Every language renders a microphone the same width,
@@ -1211,6 +1433,177 @@ $('localeSel').onchange = () => {
   setStatus('status.languageChanged', {language: spokenLocaleName(myLocale)});
 };
 
+// ── Phone-call shell (voice mode) ─────────────────────────
+// The controls are proxies, not a second implementation: mute clicks the mic
+// button, end clicks leave. There is one owner of each behaviour, and the
+// buttons the shell hides are still in the DOM doing the work.
+let isHost = false, callTimerStart = 0, callTimerHandle = null;
+let callStateKey = 'call.calling';
+let ringContext = null, ringGain = null, ringOscillators = null, ringTimer = null;
+
+function setCallState(key) {
+  callStateKey = key;
+  $('callState').textContent = t(key);
+}
+
+function renderCallName() {
+  $('callName').textContent = calleeName;
+  $('callName').hidden = !calleeName;
+}
+
+function renderCallTimer() {
+  if (!callTimerStart) return;
+  const seconds = Math.floor((Date.now() - callTimerStart) / 1000);
+  $('callTimer').textContent =
+    Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
+}
+
+function startCallTimer() {
+  // A third person arriving is not a second answer: the clock started when the
+  // call was answered and keeps running.
+  if (callTimerStart) return;
+  callTimerStart = Date.now();
+  $('callTimer').hidden = false;
+  renderCallTimer();
+  callTimerHandle = setInterval(renderCallTimer, 1000);
+}
+
+// Ringback is two tones through a gain node, not an audio file: nothing to
+// ship, nothing to authorize, and no <audio src> to leak a bearer into. The
+// Call or Accept tap is the gesture that unlocks this context.
+function startRingback() {
+  if (ringContext) return;
+  try {
+    ringContext = new (window.AudioContext || window.webkitAudioContext)();
+    ringGain = new GainNode(ringContext, {gain: 0});
+    ringGain.connect(ringContext.destination);
+    ringOscillators = [440, 480].map(frequency => {
+      const oscillator = new OscillatorNode(ringContext, {frequency});
+      oscillator.connect(ringGain);
+      oscillator.start();
+      return oscillator;
+    });
+    const cycle = () => {
+      // Two seconds of tone, four of silence.
+      ringGain.gain.setValueAtTime(0.05, ringContext.currentTime);
+      ringGain.gain.setValueAtTime(0, ringContext.currentTime + 2);
+    };
+    cycle();
+    ringTimer = setInterval(cycle, 6000);
+  } catch (_) {
+    stopRingback();   // no ringback is a quiet call, never a broken one
+  }
+}
+
+function stopRingback() {
+  clearInterval(ringTimer);
+  ringTimer = null;
+  for (const oscillator of ringOscillators || []) {
+    try { oscillator.stop(); } catch (_) {}
+  }
+  ringOscillators = null;
+  ringGain = null;
+  if (ringContext) ringContext.close().catch(() => {});
+  ringContext = null;
+}
+
+function updateCallButtons() {
+  if (roomMode !== 'voice') return;
+  $('callMute').textContent = t(micOn ? 'call.mute' : 'call.unmute');
+  $('callMute').classList.toggle('on', !micOn);
+  $('callSound').textContent = t(remoteMuted ? 'call.soundOff' : 'call.soundOn');
+  $('callSound').classList.toggle('on', remoteMuted);
+  $('captionsToggle').textContent =
+    t(document.body.dataset.captions === 'on' ? 'call.captionsHide' : 'call.captionsShow');
+  $('callEnd').textContent = t('call.end');
+  $('callState').textContent = t(callStateKey);
+}
+
+// The gate is the same card in every mode. In a voice room it reads as a phone
+// call: the caller taps Call, the person invited answers or declines. The key
+// stays on the element, so a language change repaints it for free.
+function applyCallSkin() {
+  if (roomMode !== 'voice') return;
+  const title = isHost ? 'call.call' : 'call.incoming';
+  const join = isHost ? 'call.call' : 'call.accept';
+  $('roleTitle').dataset.i18n = title;
+  $('roleTitle').textContent = t(title);
+  $('joinBtn').dataset.i18n = join;
+  $('joinBtn').textContent = t(join);
+  $('joinBtn').classList.toggle('accept', !isHost);
+  $('declineBtn').hidden = isHost;
+  renderCallName();
+}
+
+// Who is calling whom is decided by which device made the room, not by the
+// link: only the host's own device holds that room's record.
+async function detectHostRole() {
+  try {
+    const saved = JSON.parse(await runtime.loadHostRoom() || 'null');
+    isHost = Boolean(saved && typeof saved.path === 'string'
+                     && saved.path.split('/').pop() === roomId);
+  } catch (_) {
+    isHost = false;
+  }
+  applyCallSkin();
+}
+
+function enterCall() {
+  if (roomMode !== 'voice') return;
+  $('callShell').hidden = false;
+  document.body.dataset.captions = 'off';
+  renderCallName();
+  setCallState('call.calling');
+  // The tap that started or answered the call is the gesture that authorizes
+  // the microphone and unlocks the audio context; nothing was captured, and
+  // nothing made a sound, before it.
+  if (!micOn) $('micBtn').click();
+  // The caller hears ringback for the whole wait, as on a phone. It cannot
+  // start at `peer_join`: someone reading the Accept card has not joined
+  // anything yet, so joining and answering arrive together and there would be
+  // no audible ring at all.
+  if (isHost) startRingback();
+  updateCallButtons();
+}
+
+function connectCall() {
+  if (roomMode !== 'voice') return;
+  stopRingback();
+  setCallState('call.connected');
+  startCallTimer();
+  updateCallButtons();
+}
+
+function endCall(key) {
+  if (roomMode !== 'voice') return;
+  stopRingback();
+  clearInterval(callTimerHandle);
+  callTimerHandle = null;
+  setCallState(key);
+  updateCallButtons();
+}
+
+$('callMute').onclick = () => $('micBtn').click();
+$('callEnd').onclick = () => $('leaveBtn').click();
+$('callSound').onclick = () => {
+  remoteMuted = !remoteMuted;
+  // Re-apply through the single owner so the translation currently speaking
+  // and this button cannot disagree about the element.
+  setNaturalAudioMuted(asrPaused);
+  updateCallButtons();
+};
+$('captionsToggle').onclick = () => {
+  document.body.dataset.captions =
+    document.body.dataset.captions === 'on' ? 'off' : 'on';
+  updateCallButtons();
+};
+$('declineBtn').onclick = () => {
+  // Declining never opens a socket and never asked for a microphone, so there
+  // is nothing to leave and nothing to stop.
+  window.close();
+  location.href = '/';
+};
+
 // ── WebRTC (perfect negotiation; lower id is polite) ──────
 function showVideoNote(key, params) {
   noteKey = key || '';
@@ -1254,8 +1647,13 @@ function startPeer(peer) {
                  voiceProfileId: peer?.voice_profile || null};
   peers.set(peerId, state);
 
-  // Joining never asks for camera or microphone permission. Start/Camera adds
-  // tracks later and negotiationneeded drives the offer from that user action.
+  // Joining never asks for camera or microphone permission: addTracks publishes
+  // only what an earlier Start/Camera tap already captured, and does nothing
+  // when there is no stream. Without it a microphone opened BEFORE the other
+  // person arrived is never published to them — the caller taps Call, the mic
+  // starts in an empty room, and the guest hears silence for the whole call.
+  // negotiationneeded drives the offer either way.
+  addTracks(pc);
 
   pc.ontrack = (e) => {
     $('remoteVideo').srcObject = e.streams[0];
@@ -1309,6 +1707,10 @@ async function onSignal(from, data) {
   } else if (data.candidate) {
     try { await pc.addIceCandidate(data.candidate); }
     catch (e) { if (!state.ignoreOffer) throw e; }
+  } else if (data.call === 'accept') {
+    // The other side answered. Same relay as ICE — the server only checks that
+    // `to` names a participant and that `data` is an object.
+    connectCall();
   }
 }
 
@@ -1341,6 +1743,8 @@ runtime.i18n.onChange(() => {
   updateVoiceButton();
   updateCapabilityNote();
   setMicButtonLabel();
+  updateCallButtons();
+  renderChatStrings();
 });
 
 $('roleLocaleSel').onchange = previewRoleLocale;
@@ -1350,6 +1754,16 @@ $('termsLink').href = runtime.contentUrl('terms');
 $('termsAgree').onchange = updateRoleGate;
 $('joinBtn').onclick = () => chooseLocale($('roleLocaleSel').value);
 $('reportBtn').onclick = reportAndBlockRoom;
+// Reporting and blocking stay one tap away, without a harassment control
+// sitting on screen for the whole of an ordinary call.
+$('menuBtn').onclick = () => {
+  const opening = $('roomMenu').hidden;
+  $('roomMenu').hidden = !opening;
+  $('menuBtn').setAttribute('aria-expanded', String(opening));
+};
+detectHostRole();
+updateCallButtons();
+renderChatStrings();
 if ('speechSynthesis' in window) {
   refreshDeviceVoices();
   speechSynthesis.addEventListener('voiceschanged', refreshDeviceVoices);

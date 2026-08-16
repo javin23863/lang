@@ -14,6 +14,8 @@ from typing import Any
 
 import websockets
 
+import probe_session
+
 
 PUBLIC_BASE = "https://spoken-translation-room.spoken-translation-cloudflare.workers.dev"
 FIXTURES = {
@@ -64,9 +66,15 @@ def measurement_schedule(
 
 
 def _room(base: str) -> tuple[str, str]:
+    headers = {"Origin": base, "User-Agent": USER_AGENT}
+    cookie = probe_session.session_cookie()
+    if cookie:
+        headers["Cookie"] = cookie
+    else:
+        print("set LINGUA_SESSION (or ROOM_SIGNING_KEY for a local worker) — "
+              "room creation will 401 without it")
     request = urllib.request.Request(
-        f"{base}/api/rooms", method="POST", data=b"",
-        headers={"Origin": base, "User-Agent": USER_AGENT})
+        f"{base}/api/rooms", method="POST", data=b"", headers=headers)
     with urllib.request.urlopen(request, timeout=15) as response:
         path = json.load(response)["path"]
     return path.rsplit("/", 1)[-1], path

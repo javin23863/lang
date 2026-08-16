@@ -2,6 +2,7 @@
 // backend for real: room signing, the WebSocket, presence, peer join, and the
 // host-control API the dashboard polls.
 import { open } from "./cdp.mjs";
+import { sessionToken } from "./session.mjs";
 
 const ORIGIN = process.env.LINGUA_ORIGIN || "http://127.0.0.1:8788";
 const SHOTS = new URL("./shots/", import.meta.url).pathname.replace(/^\//, "");
@@ -21,8 +22,14 @@ async function joinAs(page, path, locale) {
 }
 
 console.log("[backend] create a room");
+// Room creation is session-gated: mint (or take from LINGUA_SESSION) the same
+// cookie the dashboard check uses. Joining below stays cookie-free on purpose.
+const session = await sessionToken();
+if (!session) console.log("  set ROOM_SIGNING_KEY or LINGUA_SESSION — creation will 401 without it");
 const created = await fetch(`${ORIGIN}/api/rooms`, {
-  method: "POST", headers: { Origin: ORIGIN, Accept: "application/json" },
+  method: "POST",
+  headers: { Origin: ORIGIN, Accept: "application/json",
+             ...(session ? { Cookie: `lr_s=${session}` } : {}) },
 });
 check("room created", created.status === 201, `HTTP ${created.status}`);
 const room = await created.json();

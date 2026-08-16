@@ -10,14 +10,30 @@ import {
 const TOKEN = "Abcdefghijklmnopqrstuvwx.1786750205.ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq";
 
 test("deep links accept only exact signed public room URLs", () => {
-  assert.equal(
-    parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}`), TOKEN
+  assert.deepEqual(
+    parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}`), {token: TOKEN, mode: "video"}
   );
   assert.equal(parseRoomLink(`https://attacker.test/room/${TOKEN}`), null);
   assert.equal(parseRoomLink(`${PUBLIC_ORIGIN}.attacker.test/room/${TOKEN}`), null);
   assert.equal(parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?copy=1`), null);
   assert.equal(parseRoomLink(`${PUBLIC_ORIGIN}/rooms/${TOKEN}`), null);
   assert.equal(parseRoomLink("not a url"), null);
+});
+
+test("a deep link carries the mode it was shared in, and nothing else", () => {
+  assert.deepEqual(
+    parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?m=voice`), {token: TOKEN, mode: "voice"}
+  );
+  assert.deepEqual(
+    parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?m=chat`), {token: TOKEN, mode: "chat"}
+  );
+  // An unknown shell name is furniture this build does not have, not a reason
+  // to drop an otherwise valid invitation.
+  assert.deepEqual(
+    parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?m=hologram`), {token: TOKEN, mode: "video"}
+  );
+  assert.equal(parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?m=voice&copy=1`), null);
+  assert.equal(parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?m=voice&m=chat`), null);
 });
 
 test("native traffic stays on the versioned backend seam", () => {
@@ -29,17 +45,24 @@ test("native traffic stays on the versioned backend seam", () => {
   assert.equal(websocketPath(TOKEN, true), `/ws/v1/${TOKEN}`);
   assert.equal(websocketPath(TOKEN, false), `/ws/${TOKEN}`);
   assert.equal(roomPageUrl(TOKEN), `room.html?room=${encodeURIComponent(TOKEN)}`);
+  assert.equal(roomPageUrl(TOKEN, "voice"), `room.html?room=${encodeURIComponent(TOKEN)}&m=voice`);
+  // Video is the shell an older link already opens, so it stays off the URL.
+  assert.equal(roomPageUrl(TOKEN, "video"), roomPageUrl(TOKEN));
+  assert.equal(roomPageUrl(TOKEN, "hologram"), roomPageUrl(TOKEN));
 });
 
 test("installed clients fail closed on incompatible backend bootstrap", () => {
   const valid = {
     protocol: MOBILE_PROTOCOL, minimum_client_build: MOBILE_BUILD,
-    public_origin: PUBLIC_ORIGIN, account_mode: "none", call_lifecycle: "foreground",
+    public_origin: PUBLIC_ORIGIN, account_mode: "session", call_lifecycle: "foreground",
   };
   assert.equal(validateBootstrap(valid, MOBILE_BUILD), true);
   assert.equal(validateBootstrap({...valid, protocol: 2}, MOBILE_BUILD), false);
   assert.equal(validateBootstrap({...valid, minimum_client_build: MOBILE_BUILD + 1}, MOBILE_BUILD), false);
   assert.equal(validateBootstrap({...valid, public_origin: "https://attacker.test"}, MOBILE_BUILD), false);
+  // Starting a call needs an account now. A backend still answering "none" is
+  // an older deployment this build must refuse rather than half-work against.
+  assert.equal(validateBootstrap({...valid, account_mode: "none"}, MOBILE_BUILD), false);
 });
 
 test("host room control state round-trips only through the secure adapter", async () => {

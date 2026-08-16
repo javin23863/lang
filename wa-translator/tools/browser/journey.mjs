@@ -1,6 +1,7 @@
 // A real user journey: open the room, pick a language, join, turn on the mic
 // and camera, open settings, and look at what is actually on the screen.
 import { open } from "./cdp.mjs";
+import { sessionToken } from "./session.mjs";
 
 const ORIGIN = process.env.LINGUA_ORIGIN || "http://127.0.0.1:8788";
 const SHOTS = new URL("./shots/", import.meta.url).pathname.replace(/^\//, "");
@@ -9,8 +10,14 @@ const tag = process.argv[3] || locale.toLowerCase();
 const port = Number(process.argv[4] || 9333);
 const width = Number(process.argv[5] || 390);
 
+// Room creation is session-gated: mint (or take from LINGUA_SESSION) the same
+// cookie the dashboard check uses. The journey itself joins as a guest.
+const session = await sessionToken();
+if (!session) console.log("  set ROOM_SIGNING_KEY or LINGUA_SESSION — creation will 401 without it");
 const room = await fetch(`${ORIGIN}/api/rooms`, {
-  method: "POST", headers: { Origin: ORIGIN, Accept: "application/json" },
+  method: "POST",
+  headers: { Origin: ORIGIN, Accept: "application/json",
+             ...(session ? { Cookie: `lr_s=${session}` } : {}) },
 }).then(r => r.json());
 
 const { page, close } = await open({ origin: ORIGIN, port });
@@ -73,7 +80,7 @@ try {
   const bar = await page.eval(`(() => {
     const bar = document.getElementById('bar');
     const barBox = bar.getBoundingClientRect();
-    const rows = [...bar.children].filter(el => el.id !== 'settings').map(el => {
+    const rows = [...bar.children].filter(el => el.id !== 'settings' && el.id !== 'roomMenu').map(el => {
       const r = el.getBoundingClientRect();
       return {id: el.id, x: Math.round(r.left), right: Math.round(r.right),
               w: Math.round(r.width), h: Math.round(r.height),
@@ -126,6 +133,15 @@ try {
   await page.shot(`${SHOTS}/room-live-${tag}.png`);
 
   console.log("\n[settings]");
+  // The report row lives in the ⋯ menu now. Measuring it while the panel is
+  // still hidden measures nothing and passes vacuously.
+  await page.tap("#menuBtn");
+  const menu = await page.eval(`({
+    hidden: document.getElementById('roomMenu').hidden,
+    expanded: document.getElementById('menuBtn').getAttribute('aria-expanded')
+  })`);
+  check("overflow menu opens", menu.hidden === false, JSON.stringify(menu));
+  check("overflow menu reports its state", menu.expanded === "true", menu.expanded);
   const settings = await page.eval(`(() => {
     const rows = [...document.querySelectorAll('#settings .setting')].map(el => ({
       label: el.querySelector('span').textContent,

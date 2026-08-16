@@ -72,7 +72,13 @@ test("store listing and operator declarations are source controlled", async () =
     assert.match(text, /camera and microphone/i);
     assert.doesNotMatch(text, /100 spoken languages|unlimited|guaranteed/i);
   }
-  assert.match(declarations, /No account required/);
+  assert.match(declarations, /Account required to START a call/);
+  assert.match(declarations, /No account is required to JOIN one/);
+  assert.match(declarations, /No password is ever created, collected, or stored/);
+  // A live-looking dead purchase button is a store review finding. The
+  // declaration has to say the control is disabled and collects nothing.
+  assert.match(declarations, /Buy credits\s*\n?\s*control is DISABLED and collects nothing/);
+  assert.match(declarations, /Account deletion: available in the app/);
   assert.match(declarations, /No advertising/);
   assert.match(declarations, /No transcript history/);
   assert.match(declarations, /Foreground only/);
