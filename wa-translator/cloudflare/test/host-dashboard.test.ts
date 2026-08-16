@@ -47,6 +47,17 @@ describe("installed host dashboard client", () => {
     // account is decided by hiding elements one at a time.
     expect(html).toContain("[data-auth=");
     expect(html).toContain('document.body.dataset.auth = account.signed_in ? "in" : "out"');
+    // An id selector carrying `display` outranks that one attribute, and the
+    // element it names can then never be hidden: the account chip shipped
+    // visible over the sign-in card because of exactly this. Every id rule for
+    // an auth-gated section must leave `display` to the state selectors.
+    // Bare id rules only: a state-scoped `body… #id{}` is the mechanism, not
+    // the defect, so the lookbehind skips anything preceded by a descendant
+    // combinator.
+    for (const rule of html.match(/(?<=[\n;}])#(authPanel|accountChip|creditsPanel|roomPanel)\{[^}]*\}/g) ?? []) {
+      expect(rule).not.toContain("display:");
+    }
+    expect(html).toContain('body[data-auth="in"] #accountChip{display:flex}');
     // Sign-in is a link to the provider. This app never holds a credential.
     expect(html).toContain('/auth/" + provider + "/start');
     expect(html).not.toContain("password");

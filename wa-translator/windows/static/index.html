@@ -39,12 +39,17 @@ button:disabled{cursor:wait;opacity:.4}
    shown: a signed-in host must never see a sign-in button flash by. */
 body:not([data-auth="in"]) .authed{display:none}
 body:not([data-auth="out"]) #authPanel{display:none}
-#authPanel{display:grid;gap:12px;padding:16px}
+body[data-auth="out"] #authPanel{display:grid}
+#authPanel{gap:12px;padding:16px}
 .prompt{margin:0;color:var(--label-2);font-size:15px;line-height:1.4}
 .signIn{display:flex;align-items:center;justify-content:center;min-height:50px;border-radius:12px;background:var(--accent);color:#FFF;font:600 17px var(--font);text-decoration:none;padding:10px 12px;text-align:center}
 .signIn~.signIn{background:var(--fill);color:var(--accent)}
 #authStatus{margin:0;color:var(--destructive);font-size:13px;min-height:0}
-#accountChip{display:flex;align-items:center;gap:12px;padding:8px 16px}
+/* An id carrying `display` outranks the `.authed` rule above and the card can
+   never be hidden, so the account surfaces state their layout only for the
+   state that shows them — same shape as #authPanel's hide rule. */
+body[data-auth="in"] #accountChip{display:flex}
+#accountChip{align-items:center;gap:12px;padding:8px 16px}
 #accountName{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #signOutBtn{background:transparent;min-height:44px}
 .modes{display:grid;gap:12px}
