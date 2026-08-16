@@ -405,12 +405,12 @@
     }
   }
 
-  // `mode` rearranges the room's own furniture and nothing else, so the native
-  // shell takes the token alone until it has a screen per mode of its own.
+  // `mode` rearranges the room's own furniture and nothing else, so a shell
+  // built before modes existed still opens the right room from one argument.
   function openRoom(room, mode) {
     const token = String((typeof room === "string" ? room : room?.path) || "")
       .split("/").filter(Boolean).pop();
-    if (native) return window.LinguaNative.openRoom(token);
+    if (native) return window.LinguaNative.openRoom(token, mode);
     const opened = window.open("about:blank", "_blank");
     if (!opened) return false;
     opened.opener = null;

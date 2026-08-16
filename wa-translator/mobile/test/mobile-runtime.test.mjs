@@ -10,14 +10,30 @@ import {
 const TOKEN = "Abcdefghijklmnopqrstuvwx.1786750205.ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq";
 
 test("deep links accept only exact signed public room URLs", () => {
-  assert.equal(
-    parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}`), TOKEN
+  assert.deepEqual(
+    parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}`), {token: TOKEN, mode: "video"}
   );
   assert.equal(parseRoomLink(`https://attacker.test/room/${TOKEN}`), null);
   assert.equal(parseRoomLink(`${PUBLIC_ORIGIN}.attacker.test/room/${TOKEN}`), null);
   assert.equal(parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?copy=1`), null);
   assert.equal(parseRoomLink(`${PUBLIC_ORIGIN}/rooms/${TOKEN}`), null);
   assert.equal(parseRoomLink("not a url"), null);
+});
+
+test("a deep link carries the mode it was shared in, and nothing else", () => {
+  assert.deepEqual(
+    parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?m=voice`), {token: TOKEN, mode: "voice"}
+  );
+  assert.deepEqual(
+    parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?m=chat`), {token: TOKEN, mode: "chat"}
+  );
+  // An unknown shell name is furniture this build does not have, not a reason
+  // to drop an otherwise valid invitation.
+  assert.deepEqual(
+    parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?m=hologram`), {token: TOKEN, mode: "video"}
+  );
+  assert.equal(parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?m=voice&copy=1`), null);
+  assert.equal(parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?m=voice&m=chat`), null);
 });
 
 test("native traffic stays on the versioned backend seam", () => {
@@ -29,6 +45,10 @@ test("native traffic stays on the versioned backend seam", () => {
   assert.equal(websocketPath(TOKEN, true), `/ws/v1/${TOKEN}`);
   assert.equal(websocketPath(TOKEN, false), `/ws/${TOKEN}`);
   assert.equal(roomPageUrl(TOKEN), `room.html?room=${encodeURIComponent(TOKEN)}`);
+  assert.equal(roomPageUrl(TOKEN, "voice"), `room.html?room=${encodeURIComponent(TOKEN)}&m=voice`);
+  // Video is the shell an older link already opens, so it stays off the URL.
+  assert.equal(roomPageUrl(TOKEN, "video"), roomPageUrl(TOKEN));
+  assert.equal(roomPageUrl(TOKEN, "hologram"), roomPageUrl(TOKEN));
 });
 
 test("installed clients fail closed on incompatible backend bootstrap", () => {
