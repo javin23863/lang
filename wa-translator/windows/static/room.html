@@ -74,12 +74,14 @@ body[data-mode="chat"] #micBtn,body[data-mode="chat"] #camBtn,body[data-mode="ch
    voice) stays reachable during a call in every mode. */
 #callShell{flex:1;display:none;flex-direction:column;justify-content:space-between;align-items:center;gap:16px;padding:clamp(18px,6vh,54px) 18px 16px;background:var(--bg);text-align:center}
 body[data-mode="voice"] #callShell:not([hidden]){display:flex}
-/* A phone call is not a settings screen: the language and voice selects fold
-   into ⋯ beside the report control, which is what keeps all three reachable
-   during a call. `hidden` alone cannot do it — #settings sits before #roomMenu
-   in the bar — so the ⋯ button's own expanded state opens both. */
-body[data-mode="voice"] #settings{display:none}
-body[data-mode="voice"] #menuBtn[aria-expanded="true"]~#settings{display:grid}
+/* A phone call is not a settings screen, and neither is a thread: in both
+   modes the language and voice selects fold into ⋯ beside the report control,
+   which is what keeps all three reachable. `hidden` alone cannot do it —
+   #settings sits before #roomMenu in the bar — so the ⋯ button's own expanded
+   state opens both. */
+body[data-mode="voice"] #settings,body[data-mode="chat"] #settings{display:none}
+body[data-mode="voice"] #menuBtn[aria-expanded="true"]~#settings,
+body[data-mode="chat"] #menuBtn[aria-expanded="true"]~#settings{display:grid}
 body[data-mode="voice"] #captions{display:none}
 body[data-mode="voice"][data-captions="on"] #captions{display:flex}
 body[data-mode="voice"][data-captions="on"] #callShell{flex:0 0 auto;padding-top:12px;gap:12px}
@@ -93,6 +95,22 @@ body[data-mode="voice"][data-captions="on"] #callShell{flex:0 0 auto;padding-top
 .callControls button{display:grid;place-items:center;width:72px;height:72px;min-height:72px;padding:6px;border-radius:50%;background:var(--card-2);color:var(--label);font-size:13px;font-weight:400;line-height:1.15;overflow-wrap:anywhere}
 .callControls button.on{background:#FFF;color:#000}
 #callEnd{grid-column:2;background:var(--destructive);color:#FFF}
+
+/* ── chat bar (chat and video modes) ──────────────────────
+   Texting rides above the existing bar instead of replacing it: the same
+   controls stay in the DOM in every mode. In chat mode #captions is already
+   the whole viewport (the stage is a 46px status strip), so this is the only
+   furniture the thread needs. */
+#chatBar{flex:0 0 auto;display:none;gap:8px;align-items:center;padding:8px clamp(8px,2vw,20px);background:#1C1C1EF2;backdrop-filter:blur(20px);border-top:.5px solid var(--separator)}
+body[data-mode="chat"] #chatBar,body[data-mode="video"] #chatBar{display:flex}
+/* Secondary in a video call: same 44px targets, less of the screen. */
+body[data-mode="video"] #chatBar{padding-top:6px;padding-bottom:6px;background:transparent;border-top:none}
+#chatInput{flex:1;min-width:0;min-height:44px;padding:10px 16px;border:none;border-radius:22px;background:var(--card-2);color:var(--label);font-size:17px}
+#chatInput::placeholder{color:var(--label-2)}
+#chatInput:disabled{opacity:.5}
+#chatSend{width:44px;height:44px;min-height:44px;flex:0 0 auto;padding:0;border-radius:50%;background:var(--accent);color:#FFF;display:grid;place-items:center}
+#chatSend svg{width:22px;height:22px;display:block;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#chatSend:disabled{opacity:.4}
 .roleJoin.accept{background:var(--confirm)}
 #declineBtn{width:100%;min-height:50px;margin-top:10px;background:transparent;color:var(--destructive);border-radius:12px}
 </style>
@@ -135,6 +153,11 @@ body[data-mode="voice"][data-captions="on"] #callShell{flex:0 0 auto;padding-top
     <button id="callEnd" type="button"></button>
   </div>
 </div>
+
+<form id="chatBar" autocomplete="off">
+  <input id="chatInput" type="text" maxlength="200" enterkeyhint="send" autocomplete="off" placeholder="Message" aria-label="Message" disabled>
+  <button id="chatSend" type="submit" data-i18n-title="chat.send" data-i18n-label="chat.send" title="Send" aria-label="Send" disabled><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
+</form>
 
 <div id="bar">
   <button id="micBtn" data-i18n-title="bar.startMic" data-i18n-label="bar.startMic" title="Start microphone" aria-label="Start microphone"></button>
@@ -625,6 +648,7 @@ function disconnectRoom(notifyServer, preserveServerClose = false) {
   stopPresenceHeartbeat();
   clearTimeout(turnRefreshTimer);
   setMicEnabled(false);
+  setChatEnabled(false);
   if (notifyServer) send({type: 'leave'});
   if (!preserveServerClose && ws && ws.readyState === WebSocket.OPEN) {
     ws.close(1000, notifyServer ? 'left room' : 'page suspended');
@@ -728,6 +752,9 @@ async function handle(m) {
       return;
     }
     startPresenceHeartbeat(m.heartbeat_interval_ms);
+    // Typing is possible exactly while there is a socket to type into.
+    setChatEnabled(true);
+    if (roomMode === 'chat') $('chatInput').focus();
     // myId decides who is polite, so no peer may be built before it is known.
     for (const peer of m.peers) startPeer(peer);
     updateParticipantCount(m.participant_count);
@@ -768,6 +795,11 @@ async function handle(m) {
     await onSignal(m.from, m.data);
   } else if (m.type === 'caption') {
     renderCaption(m);
+  } else if (m.type === 'chat') {
+    // The same renderer and the same "speaker:seq" key, so the server's copy
+    // lands on top of the sender's optimistic bubble instead of beside it. A
+    // delivered message is never a partial, so it is final unless it says not.
+    renderCaption({...m, final: m.final !== false});
   } else if (m.type === 'caption_status' && m.status === 'capacity' && m.scope === 'global') {
     const retry = Number.isInteger(m.retry_after_ms) ? Math.ceil(m.retry_after_ms / 1000) : 1;
     setStatus('status.captionsBusy', {seconds: retry}, true);
@@ -825,6 +857,46 @@ function renderCaption(m) {
   // this is the one event per utterance worth saying out loud.
   if (m.final && !mine && translated) speak(translated, myLocale, myVoiceProfileId);
 }
+
+// ── Typed chat ────────────────────────────────────────────
+// A message is a caption bubble that was typed: same renderer, same
+// "speaker:seq" key. The client owns only its own draft counter — who said it
+// and where it sits in the thread are the server's, and the server's final
+// broadcast rewrites this bubble in place, so there is nothing to reconcile.
+const CHAT_SEQ_BASE = 1000000;
+let chatCid = 0;
+
+function setChatEnabled(enabled) {
+  $('chatInput').disabled = !enabled;
+  $('chatSend').disabled = !enabled;
+}
+
+function renderChatStrings() {
+  $('chatInput').placeholder = t('chat.placeholder');
+  const empty = $('captionEmpty');
+  if (roomMode === 'chat' && empty) {
+    empty.dataset.i18n = 'chat.empty';
+    empty.textContent = t('chat.empty');
+  }
+}
+
+function sendChat() {
+  const text = $('chatInput').value.trim();
+  if (!text) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    setStatus('chat.failed', null, true);
+    return;
+  }
+  const cid = chatCid++;
+  send({type: 'chat', text, cid});
+  $('chatInput').value = '';
+  renderCaption({speaker: myId, speaker_lang: myLang, seq: CHAT_SEQ_BASE + cid,
+                 final: false, original: text, translations: {}});
+}
+
+// Enter sends: the input is in a form, so the browser's own submit is the key
+// handler, and the send button is that same one event.
+$('chatBar').onsubmit = (event) => { event.preventDefault(); sendChat(); };
 
 // ── Spoken translation ────────────────────────────────────
 // Captions-only is the safe default. Device voices stay on this device; included
@@ -1629,6 +1701,7 @@ runtime.i18n.onChange(() => {
   updateCapabilityNote();
   setMicButtonLabel();
   updateCallButtons();
+  renderChatStrings();
 });
 
 $('roleLocaleSel').onchange = previewRoleLocale;
@@ -1647,6 +1720,7 @@ $('menuBtn').onclick = () => {
 };
 detectHostRole();
 updateCallButtons();
+renderChatStrings();
 if ('speechSynthesis' in window) {
   refreshDeviceVoices();
   speechSynthesis.addEventListener('voiceschanged', refreshDeviceVoices);

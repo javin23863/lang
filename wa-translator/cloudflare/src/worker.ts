@@ -55,6 +55,13 @@ const COMPUTE_BACKOFF_MAX_MS = 8000;
 const MAX_TTS_BODY_BYTES = 2048;
 const MAX_TTS_AUDIO_BYTES = 4 * 1024 * 1024;
 const MAX_TTS_CHARS = 300;
+const MAX_CHAT_CHARS = 200;
+// Typed messages are numbered off a base no caption sequence can reach, so a
+// chat bubble and a caption bubble never collide on one "speaker:seq" key.
+const CHAT_SEQ_BASE = 1_000_000;
+const CHAT_WINDOW_MS = 60_000;
+const CHAT_MESSAGES_PER_WINDOW = 60;
+const CHAT_TRANSLATE_TIMEOUT_MS = 8000;
 const TURN_TTL_MAX_SECONDS = 48 * 60 * 60;
 const MAX_PARTICIPANTS = 4;
 const MAX_PENDING_SOCKETS = 8;
@@ -477,6 +484,7 @@ async function createRoomResponse(
       headers: { "X-Room-Expires": String(expiresAt), "X-User-ID": userId }
     })
   ).catch(() => { /* metering is never worth failing a room on */ }));
+  ctx.waitUntil(warmCompute(env));
   return Response.json({ path, host_control: hostControl, expires_at: expiresAt }, {
     status: 201, headers: privateHeaders()
   });
@@ -493,9 +501,15 @@ async function createRoomRedirect(
   return new Response(null, { status: 303, headers });
 }
 
-async function roomPage(request: Request, env: Env, token: string): Promise<Response> {
+async function roomPage(
+  request: Request, env: Env, token: string, ctx: ExecutionContext
+): Promise<Response> {
   const room = await verifyRoom(token, env.ROOM_SIGNING_KEY);
   if (!room || !await roomIsAvailable(room, env)) return deniedRoom();
+  // The guest opening the invite is the second and last prewarm point. The
+  // host dashboard's 15-second status poll is deliberately not one: it would
+  // hold the GPU up for as long as a tab stays open.
+  ctx.waitUntil(warmCompute(env));
   const headers = privateHeaders();
   headers.set("Content-Type", "text/html; charset=utf-8");
   return new Response(roomHtml, { headers });
@@ -583,6 +597,34 @@ async function closeHostRoom(request: Request, env: Env): Promise<Response> {
   return new Response(response.body, {
     status: response.status, headers: privateHeaders(response.headers)
   });
+}
+
+// One Modal origin serves /tts, /translate and /health. Deriving the sibling
+// paths from the configured TTS URL keeps them impossible to point apart.
+function modalEndpoint(env: Env, path: string): URL | null {
+  const url = httpsEndpoint(env.MODAL_TTS_URL);
+  if (!url) return null;
+  url.pathname = path;
+  url.search = "";
+  return url;
+}
+
+// GET /health starts the model preload on the GPU container. Calling it when a
+// room is created or opened pays the cold start inside the share-and-join gap
+// instead of on the first sentence somebody speaks.
+async function warmCompute(env: Env): Promise<void> {
+  const endpoint = modalEndpoint(env, "/health");
+  if (!env.MODAL_SHARED_SECRET || !endpoint) return;
+  const request = new Request(endpoint.toString(), {
+    headers: { Authorization: `Bearer ${env.MODAL_SHARED_SECRET}` }
+  });
+  try {
+    const response = env.MODAL_TEST
+      ? await env.MODAL_TEST.fetch(request) : await fetch(request);
+    await response.body?.cancel();
+  } catch {
+    // A prewarm that fails costs the next speaker a cold start, nothing else.
+  }
 }
 
 function httpsEndpoint(value: string): URL | null {
@@ -1663,6 +1705,78 @@ export class Room extends DurableObject<Env> {
     return this.env.MODAL_TEST ? this.env.MODAL_TEST.fetch(request) : fetch(request);
   }
 
+  // Typed chat is the caption path without the microphone: one bounded POST
+  // per message, and never a reason for a message not to arrive.
+  private async translateChat(
+    text: string, route: ComputeRoute,
+  ): Promise<Record<string, string>> {
+    const endpoint = modalEndpoint(this.env, "/translate");
+    if (!this.env.MODAL_SHARED_SECRET || !endpoint) return {};
+    try {
+      const response = await this.computeFetch(new Request(endpoint.toString(), {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.env.MODAL_SHARED_SECRET}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          text, source_lang: route.sourceLanguage, target_langs: route.targetLanguages
+        }),
+        signal: AbortSignal.timeout(CHAT_TRANSLATE_TIMEOUT_MS)
+      }));
+      if (!response.ok) return {};
+      const body = await response.json<{ translations?: Record<string, unknown> }>();
+      const translations: Record<string, string> = {};
+      for (const lang of route.targetLanguages) {
+        const value = body.translations?.[lang];
+        if (typeof value === "string" && value.length <= MAX_CAPTION_CHARS) {
+          translations[lang] = value;
+        }
+      }
+      return translations;
+    } catch {
+      // Fail open: a slow or broken GPU costs the translation, not the message.
+      return {};
+    }
+  }
+
+  private async relayChat(
+    socket: WebSocket, meta: ParticipantAttachment, data: Record<string, unknown>,
+  ): Promise<void> {
+    if (typeof data.text !== "string" || data.text.length > MAX_CHAT_CHARS
+        || !Number.isSafeInteger(data.cid) || (data.cid as number) < 0
+        || (data.cid as number) >= CHAT_SEQ_BASE) {
+      return this.policyClose(socket, "invalid chat message");
+    }
+    const text = data.text.trim();
+    if (!text) return;
+    const quota = await this.consumeStoredQuota(
+      "chatQuota", CHAT_MESSAGES_PER_WINDOW, CHAT_WINDOW_MS
+    );
+    // Same answer the speech path gives a flooding socket: the connection is
+    // closed rather than the room being asked to absorb it.
+    if (!quota.allowed) return this.policyClose(socket, "chat rate exceeded");
+    const started = Date.now();
+    const route = this.computeRoute(meta);
+    // A single-language room has nothing to translate into, so it costs the
+    // GPU nothing at all.
+    const translations = route.targetLanguages.length
+      ? await this.translateChat(text, route) : {};
+    this.broadcast({
+      type: "chat",
+      // Attribution and thread position are the server's, exactly as they are
+      // for a caption: the client owns only its own draft counter.
+      speaker: meta.id,
+      speaker_lang: meta.lang,
+      seq: CHAT_SEQ_BASE + (data.cid as number),
+      final: true,
+      original: text,
+      translations,
+      t_ms: Date.now() - started
+    });
+    await this.bumpUsage("chat", 1);
+  }
+
   private onComputeMessage(
     participantId: string, state: ComputeState, generation: number,
     socket: WebSocket, raw: unknown,
@@ -2076,11 +2190,10 @@ export class Room extends DurableObject<Env> {
       });
       return;
     }
-    // P8's typed-chat handler lands here, above this close: it validates the
-    // message, translates it, broadcasts a server-authored {type:"chat"}, and
-    // calls bumpUsage("chat", 1) for each delivered message. Until it exists
-    // the chat counter stays zero and flushUsage skips that kind entirely.
-    //
+    if (data.type === "chat") {
+      await this.relayChat(socket, meta, data);
+      return;
+    }
     // Captions are server-authored Modal output. Closing a browser that tries
     // to author one makes the privilege boundary explicit and fail-closed.
     this.policyClose(socket, "unsupported control message");
@@ -2396,7 +2509,7 @@ async function routeRequest(
     }
     const roomMatch = url.pathname.match(/^\/room\/([^/]+)$/);
     if (request.method === "GET" && roomMatch) {
-      return roomPage(request, env, roomMatch[1]);
+      return roomPage(request, env, roomMatch[1], ctx);
     }
     const socketMatch = url.pathname.match(/^\/ws\/([^/]+)$/);
     if (socketMatch) {

@@ -306,6 +306,56 @@ class CloudClientContractTests(unittest.TestCase):
         self.assertIn("if (callTimerStart) return",
                       HTML[timer_start:HTML.index("\n}", timer_start)])
 
+    def test_typed_chat_renders_optimistically_and_sends_only_a_draft_counter(self):
+        self.assertIn("const CHAT_SEQ_BASE = 1000000", HTML)
+        send_start = HTML.index("function sendChat()")
+        send_end = HTML.index("\n}", send_start)
+        send_body = HTML[send_start:send_end]
+        # The bubble is drawn before the round trip, at the sequence the server
+        # will confirm, so the sender never waits for the GPU to see their words.
+        self.assertIn("send({type: 'chat', text, cid})", send_body)
+        self.assertIn("renderCaption({speaker: myId", send_body)
+        self.assertIn("seq: CHAT_SEQ_BASE + cid", send_body)
+        self.assertIn("final: false", send_body)
+        # An empty send is nothing at all, and a dead socket says so.
+        self.assertIn("if (!text) return", send_body)
+        self.assertIn("setStatus('chat.failed', null, true)", send_body)
+        self.assertIn('"chat.failed": "Message could not be sent."', RUNTIME)
+        # One renderer: the server's copy lands on the same key, not beside it.
+        self.assertIn("renderCaption({...m, final: m.final !== false})", HTML)
+        self.assertEqual(HTML.count("function renderCaption"), 1)
+
+    def test_chat_bar_is_a_form_bounded_at_200_and_only_shown_where_it_belongs(self):
+        self.assertIn('id="chatBar"', HTML)
+        self.assertIn('id="chatInput"', HTML)
+        self.assertIn('id="chatSend"', HTML)
+        self.assertIn('maxlength="200"', HTML)
+        # Enter sends because the input is inside a form; the button submits the
+        # same event rather than duplicating the path.
+        self.assertIn("$('chatBar').onsubmit", HTML)
+        self.assertIn("event.preventDefault(); sendChat()", HTML)
+        self.assertIn('type="submit"', HTML)
+        # Typing is possible exactly while a socket exists.
+        self.assertIn('id="chatInput" type="text" maxlength="200"', HTML)
+        self.assertIn("aria-label=\"Message\" disabled", HTML)
+        self.assertIn("setChatEnabled(true)", HTML)
+        self.assertIn("setChatEnabled(false)", HTML)
+        disconnect_start = HTML.index("function disconnectRoom")
+        self.assertIn("setChatEnabled(false)",
+                      HTML[disconnect_start:HTML.index("\n}", disconnect_start)])
+        # Voice mode is a phone call: the texting bar is not part of it.
+        rules = re.findall(r"([^{}]*#chatBar[^{}]*)\{([^}]*)\}", HTML)
+        hidden = [selector.strip().splitlines()[-1] for selector, body in rules
+                  if "display:none" in body.replace(" ", "")]
+        self.assertEqual(hidden, ["#chatBar"])
+        shown = [selector for selector, body in rules if "display:flex" in body]
+        self.assertEqual(len(shown), 1)
+        self.assertIn('body[data-mode="chat"] #chatBar', shown[0])
+        self.assertIn('body[data-mode="video"] #chatBar', shown[0])
+        self.assertNotIn('data-mode="voice"] #chatBar', shown[0])
+        # 44px minimum tap target survives the compact video-mode variant.
+        self.assertIn("#chatSend{width:44px;height:44px;min-height:44px", HTML)
+
     def test_live_acceptance_uses_real_browser_audio_and_server_results(self):
         source = LIVE_CHECK_PATH.read_text(encoding="utf-8")
         self.assertIn("--use-file-for-fake-audio-capture", source)

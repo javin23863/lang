@@ -42,6 +42,15 @@ bounded Durable Object inbox retains category-only abuse reports for 30 days.
   remains in Git and Modal deployment history for rollback, but must not be
   deployed alongside the AP function because each Function owns its own
   container ceiling.
+- Authenticated `GET /health` now starts the model preload, and the Worker
+  calls it once when a room is created and once when a participant opens the
+  invite link, so the cold start is paid inside the share-and-join gap. Two
+  consequences: an external uptime prober pointed at `/health` with the shared
+  secret will spin the L4 container on every probe, and a prewarm that fails is
+  silent by design — it costs the next speaker a cold start and nothing else.
+  Deliberately not prewarmed: the host dashboard's 15-second room-control poll
+  and every other room-control route, which would hold the GPU up for as long
+  as a tab stays open.
 - A participant link is a deliberately replayable HMAC bearer for exactly 24 hours.
   Creation separately returns a domain-separated, room-bound host
   bearer to the same-origin dashboard. It is stored only on that host device;

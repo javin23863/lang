@@ -1,9 +1,39 @@
+// Prewarm and typed-chat counters. Module scope lives as long as the stub
+// worker, which is one test file, so a suite can assert "this many warm calls"
+// without another suite's rooms leaking into the number.
+let warmCalls = 0;
+let translateCalls = 0;
+
 export default {
   async fetch(request) {
     if (request.headers.get("Authorization") !== "Bearer test-only-modal-secret") {
       return new Response("Unauthorized", { status: 401 });
     }
     const url = new URL(request.url);
+    if (url.pathname === "/counters") {
+      return Response.json({ warm: warmCalls, translate: translateCalls });
+    }
+    if (url.pathname === "/health") {
+      warmCalls += 1;
+      return Response.json({ status: "ok", preload: "started" });
+    }
+    if (url.pathname === "/translate") {
+      translateCalls += 1;
+      const body = await request.json();
+      if (request.method !== "POST" || typeof body.text !== "string"
+          || !body.text.trim() || body.text.length > 200
+          || typeof body.source_lang !== "string"
+          || !Array.isArray(body.target_langs) || !body.target_langs.length) {
+        return new Response("invalid", { status: 422 });
+      }
+      if (body.text === "fixture-translate-down") {
+        return new Response("translation unavailable", { status: 503 });
+      }
+      return Response.json({
+        translations: Object.fromEntries(body.target_langs.map(target =>
+          [target, `${target}:${body.text}`]))
+      });
+    }
     if (url.pathname === "/tts") {
       const body = await request.json();
       const voiceProfiles = {
