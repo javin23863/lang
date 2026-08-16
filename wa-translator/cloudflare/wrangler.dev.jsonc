@@ -40,6 +40,10 @@
       {
         "name": "REPORTS",
         "class_name": "ReportInbox"
+      },
+      {
+        "name": "USERS",
+        "class_name": "UserDirectory"
       }
     ]
   },
@@ -55,6 +59,12 @@
       "new_sqlite_classes": [
         "AbuseGate",
         "ReportInbox"
+      ]
+    },
+    {
+      "tag": "v3",
+      "new_sqlite_classes": [
+        "UserDirectory"
       ]
     }
   ],

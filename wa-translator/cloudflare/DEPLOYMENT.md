@@ -2,8 +2,10 @@
 
 This is the production shape described in `CLOUD-ARCHITECTURE.md`: Cloudflare
 owns the room and Modal supplies independent authenticated compute. A
-`workers.dev` URL is the intended beta endpoint. There is no account or
-conversation-history database and no custom domain. The Android and iPhone
+`workers.dev` URL is the intended beta endpoint. Accounts are OAuth-only (no
+password custody) in a `UserDirectory` Durable Object holding one record per
+signed-in host: profile, credit balance, usage totals, and capped usage rows.
+There is no conversation-history database and no custom domain. The Android and iPhone
 products are a thin Capacitor wrapper over the same bundled room client. A
 bounded Durable Object inbox retains category-only abuse reports for 30 days.
 
@@ -123,10 +125,21 @@ No secret value belongs in git, a URL, browser code or logs. Before deployment:
    Cloudflare as `MODAL_WS_URL` and `MODAL_TTS_URL` secrets.
    `MODAL_WS_URL` is deliberately HTTPS: the Worker performs an HTTP fetch with
    `Upgrade: websocket`; a `wss://` request URL is rejected as configuration.
-5. From `wa-translator/cloudflare`, run `npm ci`, `npm run check`, then
-   `npx wrangler deploy`. If a canonical origin is configured, set
-   `PUBLIC_ORIGIN` to the exact `https://...workers.dev` origin; never use a
-   wildcard. Record the deployment ID and URL printed by each CLI.
+5. Provision sign-in. `PUBLIC_ORIGIN` is a `vars` entry in `wrangler.jsonc` and
+   must equal the deployed origin exactly — `/auth/*/start` 503s without it,
+   because the OAuth `redirect_uri` is pinned to it. Then, per provider,
+   `npx wrangler secret put` the pair the provider console issues and register
+   `<PUBLIC_ORIGIN>/auth/<provider>/callback` there:
+   - Google (day one): `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`.
+   - Facebook (later): `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET`.
+   - Apple (later; blocks iOS submission under Guideline 4.8):
+     `APPLE_CLIENT_ID` (Services ID), `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY` (the
+     `.p8` contents, newlines included). The JWT issuer reuses the existing
+     `MOBILE_APPLE_TEAM_ID`.
+   A provider with no secrets is simply absent: its `/auth/<p>/start` 404s and
+   `/api/me` never offers its button. Nothing else degrades.
+6. From `wa-translator/cloudflare`, run `npm ci`, `npm run check`, then
+   `npx wrangler deploy`. Record the deployment ID and URL printed by each CLI.
 
 The commands above require operator grants and may incur external charges.
 They are reproducible instructions. The current authenticated deployment and

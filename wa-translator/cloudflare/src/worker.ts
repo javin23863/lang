@@ -14,6 +14,7 @@ export interface Env {
   ROOMS: DurableObjectNamespace<Room>;
   ABUSE: DurableObjectNamespace<AbuseGate>;
   REPORTS: DurableObjectNamespace<ReportInbox>;
+  USERS: DurableObjectNamespace<UserDirectory>;
   REPORTS_TEST?: Fetcher;
   PUBLIC_ORIGIN?: string;
   ROOM_SIGNING_KEY: string;
@@ -28,6 +29,14 @@ export interface Env {
   MOBILE_ANDROID_CERT_SHA256?: string;
   MOBILE_APPLE_TEAM_ID?: string;
   MOBILE_REPORT_ADMIN_TOKEN?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  FACEBOOK_APP_ID?: string;
+  FACEBOOK_APP_SECRET?: string;
+  APPLE_CLIENT_ID?: string;
+  APPLE_KEY_ID?: string;
+  APPLE_PRIVATE_KEY?: string;
+  OAUTH_TEST?: Fetcher;
 }
 
 const ROOM_ID_BYTES = 18;
@@ -70,6 +79,19 @@ const TURN_IP_WINDOW_MS = 60 * 60 * 1000;
 const TURN_IP_LIMIT = 48;
 const TURN_ROOM_WINDOW_MS = 60 * 60 * 1000;
 const TURN_ROOM_LIMIT = 12;
+const SESSION_COOKIE = "lr_s";
+const SESSION_PREFIX = "s1";
+const SESSION_PURPOSE = "session.v1";
+const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
+const OAUTH_STATE_COOKIE = "lr_oauth";
+const OAUTH_STATE_TTL_SECONDS = 600;
+const OAUTH_CALLBACK_BODY_BYTES = 8192;
+const USER_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
+const USAGE_MAX_RECORDS = 200;
+const USAGE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+const USAGE_TOTALS = new Map([
+  ["call", "call_minutes"], ["chat", "chat_messages"], ["tts", "tts_phrases"],
+]);
 const REPORT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const REPORT_MAX_RECORDS = 500;
 const REPORT_ROOM_LIMIT = 8;
@@ -130,6 +152,10 @@ type LocaleVoiceSelection =
   | { reason: "unsupported locale" | "unsupported voice profile" };
 
 type PcmBudget = { tokens: number; updatedAt: number };
+
+type RoomUsage = { callMs: number; chat: number; tts: number };
+
+const EMPTY_USAGE: RoomUsage = { callMs: 0, chat: 0, tts: 0 };
 
 function base64url(bytes: ArrayBuffer | Uint8Array): string {
   const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
@@ -234,6 +260,70 @@ async function verifyHostControl(token: string, secret: string): Promise<Verifie
   return valid ? { id, expiresAt } : null;
 }
 
+// Sessions are the third token family off the one room signing key. Same
+// construction as the two above: a signed payload, no server-side session
+// table, and nothing in the cookie that is not already public to its holder.
+async function signSession(userId: string, expiresAt: number, secret: string): Promise<string> {
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    await signingKey(secret, ["sign"]),
+    new TextEncoder().encode(`${SESSION_PURPOSE}.${userId}.${expiresAt}`)
+  );
+  return `${SESSION_PREFIX}.${userId}.${expiresAt}.${base64url(signature)}`;
+}
+
+async function verifySession(token: string, secret: string): Promise<string | null> {
+  if (!signingSecretIsValid(secret)) return null;
+  const parts = token.split(".");
+  if (parts.length !== 4) return null;
+  const [prefix, userId, expiresRaw, signature] = parts;
+  if (prefix !== SESSION_PREFIX || !USER_ID_PATTERN.test(userId)
+      || !/^\d{10}$/.test(expiresRaw) || !SIGNATURE_PATTERN.test(signature)) return null;
+  const signatureBytes = canonicalBase64url(signature);
+  if (!signatureBytes) return null;
+  const expiresAt = Number(expiresRaw);
+  if (!Number.isSafeInteger(expiresAt) || expiresAt <= Math.floor(Date.now() / 1000)) return null;
+  const valid = await crypto.subtle.verify(
+    "HMAC",
+    await signingKey(secret, ["verify"]),
+    signatureBytes.buffer as ArrayBuffer,
+    new TextEncoder().encode(`${SESSION_PURPOSE}.${userId}.${expiresRaw}`)
+  );
+  return valid ? userId : null;
+}
+
+function sessionCookie(token: string): string {
+  return `${SESSION_COOKIE}=${token}; HttpOnly; Secure; SameSite=Lax; Path=/;`
+    + ` Max-Age=${SESSION_TTL_SECONDS}`;
+}
+
+function clearSessionCookie(): string {
+  return `${SESSION_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`;
+}
+
+function readCookie(request: Request, name: string): string | null {
+  for (const pair of (request.headers.get("Cookie") || "").split(";")) {
+    const separator = pair.indexOf("=");
+    if (separator > 0 && pair.slice(0, separator).trim() === name) {
+      return pair.slice(separator + 1).trim();
+    }
+  }
+  return null;
+}
+
+async function sessionUser(request: Request, env: Env): Promise<string | null> {
+  const token = readCookie(request, SESSION_COOKIE);
+  return token ? verifySession(token, env.ROOM_SIGNING_KEY) : null;
+}
+
+// One opaque, irreversible reference for everything that must be storable but
+// never re-identifying: report room refs, submission ids, user ids, usage rows.
+async function opaqueDigest(value: string, length: number): Promise<string> {
+  return base64url(await crypto.subtle.digest(
+    "SHA-256", new TextEncoder().encode(value)
+  )).slice(0, length);
+}
+
 function expectedOrigin(request: Request, env: Env): string {
   return env.PUBLIC_ORIGIN || new URL(request.url).origin;
 }
@@ -288,7 +378,7 @@ function mobileBootstrap(request: Request, env: Env): Response {
     protocol: MOBILE_PROTOCOL,
     minimum_client_build: MOBILE_MINIMUM_BUILD,
     public_origin: expectedOrigin(request, env),
-    account_mode: "none",
+    account_mode: "session",
     call_lifecycle: "foreground",
     room_ttl_seconds: ROOM_TOKEN_TTL_SECONDS,
     max_room_participants: MAX_PARTICIPANTS,
@@ -354,10 +444,20 @@ function deniedRoom(): Response {
   });
 }
 
-async function createRoomResponse(request: Request, env: Env): Promise<Response> {
+async function createRoomResponse(
+  request: Request, env: Env, ctx: ExecutionContext
+): Promise<Response> {
+  // Order is load-bearing: a cross-origin caller is refused before it can learn
+  // whether it is signed in, and neither state costs an abuse-quota token.
+  // capacitor://localhost is client-controlled, so native creation gets no
+  // exemption here — it 401s until a native token exchange exists.
   if (!sameOrigin(request, env)) return new Response("Forbidden", { status: 403 });
   if (!signingSecretIsValid(env.ROOM_SIGNING_KEY)) {
     return new Response("Room service is unavailable", { status: 503 });
+  }
+  const userId = await sessionUser(request, env);
+  if (!userId) {
+    return new Response("Sign in required", { status: 401, headers: privateHeaders() });
   }
   const limited = await consumeIpQuota(
     request, env, "room-create", ROOM_CREATION_LIMIT, ROOM_CREATION_WINDOW_MS
@@ -369,13 +469,23 @@ async function createRoomResponse(request: Request, env: Env): Promise<Response>
   const token = await signRoom(roomId, expiresAt, env.ROOM_SIGNING_KEY);
   const path = `/room/${token}`;
   const hostControl = await signHostControl(roomId, expiresAt, env.ROOM_SIGNING_KEY);
+  // The first page view wakes this object anyway (roomIsAvailable), so naming
+  // its owner now adds no new cost class and keeps the caller's 201 immediate.
+  ctx.waitUntil(env.ROOMS.get(env.ROOMS.idFromName(roomId)).fetch(
+    new Request("https://room.internal/owner", {
+      method: "POST",
+      headers: { "X-Room-Expires": String(expiresAt), "X-User-ID": userId }
+    })
+  ).catch(() => { /* metering is never worth failing a room on */ }));
   return Response.json({ path, host_control: hostControl, expires_at: expiresAt }, {
     status: 201, headers: privateHeaders()
   });
 }
 
-async function createRoomRedirect(request: Request, env: Env): Promise<Response> {
-  const created = await createRoomResponse(request, env);
+async function createRoomRedirect(
+  request: Request, env: Env, ctx: ExecutionContext
+): Promise<Response> {
+  const created = await createRoomResponse(request, env, ctx);
   if (!created.ok) return created;
   const { path } = await created.json<{ path: string }>();
   const headers = privateHeaders();
@@ -701,12 +811,8 @@ async function abuseReport(request: Request, env: Env): Promise<Response> {
     await rollbackReservation();
     return ipLimited;
   }
-  const roomRef = base64url(await crypto.subtle.digest(
-    "SHA-256", new TextEncoder().encode(room.id)
-  )).slice(0, 16);
-  const submissionId = base64url(await crypto.subtle.digest(
-    "SHA-256", new TextEncoder().encode(`${room.id}:${participantId}`)
-  )).slice(0, 22);
+  const roomRef = await opaqueDigest(room.id, 16);
+  const submissionId = await opaqueDigest(`${room.id}:${participantId}`, 22);
   let stored: Response | null = null;
   try {
     const reportRequest = new Request("https://reports.internal/", {
@@ -862,6 +968,319 @@ async function translatedVoice(request: Request, env: Env): Promise<Response> {
   return new Response(audio, { headers });
 }
 
+type OAuthProvider = {
+  id: string;
+  authorize: string;
+  token: string;
+  clientId: string;
+  scope: string;
+  authorizeParams: Record<string, string>;
+  // An OIDC provider answers with an id_token; Facebook answers with an access
+  // token that only its Graph profile endpoint can turn into an identity.
+  issuers: string[] | null;
+  profile: string | null;
+  secret: (env: Env) => Promise<string>;
+};
+
+type OAuthIdentity = { sub: string; name: string; email: string };
+
+function pkcs8Bytes(pem: string): Uint8Array {
+  const body = pem.replace(/-----[A-Z ]+-----/g, "").replace(/\s+/g, "");
+  const binary = atob(body);
+  return Uint8Array.from(binary, character => character.charCodeAt(0));
+}
+
+async function appleClientSecret(env: Env): Promise<string> {
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const header = base64url(new TextEncoder().encode(JSON.stringify({
+    alg: "ES256", kid: env.APPLE_KEY_ID, typ: "JWT"
+  })));
+  const payload = base64url(new TextEncoder().encode(JSON.stringify({
+    iss: env.MOBILE_APPLE_TEAM_ID, iat: issuedAt, exp: issuedAt + OAUTH_STATE_TTL_SECONDS,
+    aud: "https://appleid.apple.com", sub: env.APPLE_CLIENT_ID
+  })));
+  const key = await crypto.subtle.importKey(
+    "pkcs8", pkcs8Bytes(env.APPLE_PRIVATE_KEY || "").buffer as ArrayBuffer,
+    { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]
+  );
+  // WebCrypto returns ECDSA signatures as raw r‖s, which is exactly the JWS
+  // ES256 encoding. Nothing here needs to unwrap DER; doing so would break it.
+  const signature = await crypto.subtle.sign(
+    { name: "ECDSA", hash: "SHA-256" }, key,
+    new TextEncoder().encode(`${header}.${payload}`)
+  );
+  return `${header}.${payload}.${base64url(signature)}`;
+}
+
+// A provider exists only when its credentials do. An unprovisioned button is
+// worse than a missing one, so /auth/<p>/start 404s until the operator sets it.
+function oauthProviders(env: Env): Map<string, OAuthProvider> {
+  const providers = new Map<string, OAuthProvider>();
+  if (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) {
+    providers.set("google", {
+      id: "google",
+      authorize: "https://accounts.google.com/o/oauth2/v2/auth",
+      token: "https://oauth2.googleapis.com/token",
+      clientId: env.GOOGLE_CLIENT_ID,
+      scope: "openid email profile",
+      authorizeParams: { prompt: "select_account" },
+      issuers: ["https://accounts.google.com", "accounts.google.com"],
+      profile: null,
+      secret: async () => env.GOOGLE_CLIENT_SECRET || "",
+    });
+  }
+  if (env.FACEBOOK_APP_ID && env.FACEBOOK_APP_SECRET) {
+    providers.set("facebook", {
+      id: "facebook",
+      authorize: "https://www.facebook.com/v21.0/dialog/oauth",
+      token: "https://graph.facebook.com/v21.0/oauth/access_token",
+      clientId: env.FACEBOOK_APP_ID,
+      scope: "email",
+      authorizeParams: {},
+      issuers: null,
+      profile: "https://graph.facebook.com/v21.0/me?fields=id,name,email",
+      secret: async () => env.FACEBOOK_APP_SECRET || "",
+    });
+  }
+  if (env.APPLE_CLIENT_ID && env.APPLE_KEY_ID && env.APPLE_PRIVATE_KEY
+      && env.MOBILE_APPLE_TEAM_ID) {
+    providers.set("apple", {
+      id: "apple",
+      authorize: "https://appleid.apple.com/auth/authorize",
+      token: "https://appleid.apple.com/auth/token",
+      clientId: env.APPLE_CLIENT_ID,
+      scope: "name email",
+      // "name email" is only granted with form_post, which is a cross-site POST.
+      authorizeParams: { response_mode: "form_post" },
+      issuers: ["https://appleid.apple.com"],
+      profile: null,
+      secret: appleClientSecret,
+    });
+  }
+  return providers;
+}
+
+async function providerFetch(env: Env, request: Request): Promise<Response> {
+  return env.OAUTH_TEST ? env.OAUTH_TEST.fetch(request) : fetch(request);
+}
+
+function oauthRedirectUri(env: Env, providerId: string): string {
+  return `${env.PUBLIC_ORIGIN}/auth/${providerId}/callback`;
+}
+
+function clearStateCookie(): string {
+  return `${OAUTH_STATE_COOKIE}=; HttpOnly; Secure; SameSite=None; Path=/auth; Max-Age=0`;
+}
+
+// Every failure - forged state, dead provider, malformed token - lands here.
+// The browser learns that sign-in failed and nothing else.
+function authFailed(): Response {
+  const headers = privateHeaders();
+  headers.set("Location", "/?auth=failed");
+  headers.append("Set-Cookie", clearStateCookie());
+  return new Response(null, { status: 302, headers });
+}
+
+function authStart(request: Request, env: Env, providerId: string): Response {
+  if (request.method !== "GET") return new Response("Method Not Allowed", { status: 405 });
+  // redirect_uri must be pinned to one origin the provider console knows.
+  if (!env.PUBLIC_ORIGIN) {
+    return new Response("Sign-in is not configured", {
+      status: 503, headers: privateHeaders()
+    });
+  }
+  const provider = oauthProviders(env).get(providerId);
+  if (!provider) return new Response("Unknown sign-in provider", {
+    status: 404, headers: privateHeaders()
+  });
+  const state = base64url(crypto.getRandomValues(new Uint8Array(18)));
+  const url = new URL(provider.authorize);
+  url.searchParams.set("client_id", provider.clientId);
+  url.searchParams.set("redirect_uri", oauthRedirectUri(env, providerId));
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("scope", provider.scope);
+  url.searchParams.set("state", state);
+  for (const [key, value] of Object.entries(provider.authorizeParams)) {
+    url.searchParams.set(key, value);
+  }
+  const headers = privateHeaders();
+  headers.set("Location", url.toString());
+  // SameSite=None, not Lax: Apple's form_post callback is a cross-site POST and
+  // a Lax cookie is not sent with it, which would fail every Apple sign-in as
+  // "state mismatch". Secure is mandatory alongside None. The session cookie
+  // itself stays Lax - only this 10-minute, single-purpose cookie is None.
+  headers.append("Set-Cookie", `${OAUTH_STATE_COOKIE}=${providerId}.${state};`
+    + ` HttpOnly; Secure; SameSite=None; Path=/auth; Max-Age=${OAUTH_STATE_TTL_SECONDS}`);
+  return new Response(null, { status: 302, headers });
+}
+
+function oauthIdentity(claims: Record<string, unknown>, provider: OAuthProvider): OAuthIdentity | null {
+  // The id_token came back on our own TLS call to the provider's token
+  // endpoint, so its signature is redundant here (OIDC Core 3.1.3.7). Issuer,
+  // audience and expiry are not: they are what makes a token from another
+  // client or another provider unusable.
+  // ponytail: the day an id_token reaches this worker any other way - a native
+  // client posting one, an implicit flow, a token relayed by the app - this
+  // shortcut is void and JWKS signature verification becomes mandatory.
+  if (typeof claims.iss !== "string" || !provider.issuers?.includes(claims.iss)) return null;
+  if (claims.aud !== provider.clientId) return null;
+  const expires = Number(claims.exp);
+  if (!Number.isFinite(expires) || expires <= Math.floor(Date.now() / 1000)) return null;
+  if (typeof claims.sub !== "string" || !claims.sub) return null;
+  const email = typeof claims.email === "string" ? claims.email : "";
+  return { sub: claims.sub, name: typeof claims.name === "string" ? claims.name : email, email };
+}
+
+function decodeIdToken(idToken: unknown, provider: OAuthProvider): OAuthIdentity | null {
+  if (typeof idToken !== "string") return null;
+  const parts = idToken.split(".");
+  if (parts.length !== 3) return null;
+  try {
+    const claims = JSON.parse(new TextDecoder().decode(fromBase64url(parts[1]))) as unknown;
+    if (!claims || typeof claims !== "object" || Array.isArray(claims)) return null;
+    return oauthIdentity(claims as Record<string, unknown>, provider);
+  } catch {
+    return null;
+  }
+}
+
+async function graphIdentity(
+  env: Env, provider: OAuthProvider, accessToken: unknown
+): Promise<OAuthIdentity | null> {
+  if (typeof accessToken !== "string" || !accessToken || !provider.profile) return null;
+  const response = await providerFetch(env, new Request(provider.profile, {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  }));
+  if (!response.ok) return null;
+  const data = await response.json<Record<string, unknown>>();
+  if (typeof data.id !== "string" || !data.id) return null;
+  const email = typeof data.email === "string" ? data.email : "";
+  return { sub: data.id, name: typeof data.name === "string" ? data.name : email, email };
+}
+
+async function authCallback(
+  request: Request, env: Env, providerId: string
+): Promise<Response> {
+  const provider = oauthProviders(env).get(providerId);
+  if (!provider || !env.PUBLIC_ORIGIN
+      || !signingSecretIsValid(env.ROOM_SIGNING_KEY)) return authFailed();
+  const formPost = provider.authorizeParams.response_mode === "form_post";
+  if (request.method !== "GET" && !(request.method === "POST" && formPost)) {
+    return new Response("Method Not Allowed", { status: 405 });
+  }
+  let code = "";
+  let state = "";
+  if (request.method === "POST") {
+    if (contentLengthTooLarge(request, OAUTH_CALLBACK_BODY_BYTES)) return authFailed();
+    const raw = await readLimited(request.body, OAUTH_CALLBACK_BODY_BYTES);
+    if (!raw) return authFailed();
+    const form = new URLSearchParams(new TextDecoder().decode(raw));
+    code = form.get("code") || "";
+    state = form.get("state") || "";
+  } else {
+    const url = new URL(request.url);
+    code = url.searchParams.get("code") || "";
+    state = url.searchParams.get("state") || "";
+  }
+  // The state cookie names its provider too: a state minted for one provider
+  // cannot be spent on another's callback.
+  const presented = readCookie(request, OAUTH_STATE_COOKIE) || "";
+  if (!code || !state || !secretEquals(presented, `${providerId}.${state}`)) return authFailed();
+
+  try {
+    const exchange = await providerFetch(env, new Request(provider.token, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: oauthRedirectUri(env, providerId),
+        client_id: provider.clientId,
+        client_secret: await provider.secret(env),
+      }).toString()
+    }));
+    if (!exchange.ok) return authFailed();
+    const tokens = await exchange.json<Record<string, unknown>>();
+    const identity = provider.issuers
+      ? decodeIdToken(tokens.id_token, provider)
+      : await graphIdentity(env, provider, tokens.access_token);
+    if (!identity) return authFailed();
+    // The provider's subject is hashed away immediately: what the account is
+    // keyed by is derived from it and cannot be turned back into it.
+    const userId = await opaqueDigest(`${providerId}:${identity.sub}`, 22);
+    const stored = await env.USERS.get(env.USERS.idFromName(userId)).fetch(
+      new Request("https://users.internal/", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: userId, provider: providerId,
+          name: identity.name, email: identity.email
+        })
+      })
+    );
+    if (!stored.ok) return authFailed();
+    const session = await signSession(
+      userId, Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS, env.ROOM_SIGNING_KEY
+    );
+    const headers = privateHeaders();
+    headers.set("Location", "/");
+    headers.append("Set-Cookie", sessionCookie(session));
+    headers.append("Set-Cookie", clearStateCookie());
+    return new Response(null, { status: 302, headers });
+  } catch {
+    return authFailed();
+  }
+}
+
+function authLogout(request: Request, env: Env): Response {
+  if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
+  if (!sameOrigin(request, env)) return new Response("Forbidden", { status: 403 });
+  const headers = privateHeaders();
+  headers.append("Set-Cookie", clearSessionCookie());
+  return new Response(null, { status: 204, headers });
+}
+
+async function accountSnapshot(request: Request, env: Env): Promise<Response> {
+  if (request.method !== "GET") return new Response("Method Not Allowed", { status: 405 });
+  // The signed-out answer still lists providers: the page renders its sign-in
+  // buttons from exactly what this worker has credentials for.
+  const providers = [...oauthProviders(env).keys()];
+  const userId = await sessionUser(request, env);
+  const snapshot = userId ? await env.USERS.get(env.USERS.idFromName(userId)).fetch(
+    new Request("https://users.internal/")
+  ) : null;
+  if (!snapshot?.ok) {
+    const headers = privateHeaders();
+    // A session whose account is gone is a session that should stop existing.
+    if (userId) headers.append("Set-Cookie", clearSessionCookie());
+    return Response.json({ signed_in: false, providers }, { headers });
+  }
+  const account = await snapshot.json<Record<string, unknown>>();
+  return Response.json({ signed_in: true, providers, ...account }, {
+    headers: privateHeaders()
+  });
+}
+
+async function accountDelete(request: Request, env: Env): Promise<Response> {
+  if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
+  if (!sameOrigin(request, env)) return new Response("Forbidden", { status: 403 });
+  const userId = await sessionUser(request, env);
+  if (!userId) return new Response("Sign in required", {
+    status: 401, headers: privateHeaders()
+  });
+  const deleted = await env.USERS.get(env.USERS.idFromName(userId)).fetch(
+    new Request("https://users.internal/", { method: "DELETE" })
+  );
+  if (!deleted.ok) return new Response("Account service unavailable", {
+    status: 503, headers: privateHeaders()
+  });
+  const headers = privateHeaders();
+  headers.append("Set-Cookie", clearSessionCookie());
+  return new Response(null, { status: 204, headers });
+}
+
 export class Room extends DurableObject<Env> {
   // Ordinary memory is deliberately disposable. An active outbound Modal
   // socket keeps this object awake; after hibernation or process replacement,
@@ -995,6 +1414,9 @@ export class Room extends DurableObject<Env> {
       participant_limit: MAX_PARTICIPANTS
     }, socket);
     this.refreshComputeRoutes();
+    // Last participant out banks the call. waitUntil keeps the leave broadcast
+    // off the storage round trip; the object stays alive until it settles.
+    if (!this.participants().length) this.ctx.waitUntil(this.flushUsage());
     if (closeSocket) {
       try { socket.close(1000, reason.slice(0, 120)); } catch { /* already closed */ }
     }
@@ -1032,6 +1454,7 @@ export class Room extends DurableObject<Env> {
       try { socket.close(1000, "presence lease expired"); } catch { /* already closed */ }
     }
     this.refreshComputeRoutes();
+    if (!participantCount) this.ctx.waitUntil(this.flushUsage());
   }
 
   private leasedSocketCount(now: number): number {
@@ -1188,6 +1611,52 @@ export class Room extends DurableObject<Env> {
     current.count += 1;
     await this.ctx.storage.put(key, current);
     return {allowed: true, retryAfter: 0};
+  }
+
+  // Metering accumulates here and leaves once, at the end of the call. A
+  // per-event DO-to-DO write would put another hop on the live audio path.
+  private async bumpUsage(kind: "call" | "chat" | "tts", units: number): Promise<void> {
+    if (units <= 0) return;
+    const usage = await this.ctx.storage.get<RoomUsage>("usage") || {...EMPTY_USAGE};
+    if (kind === "call") usage.callMs += units; else usage[kind] += units;
+    await this.ctx.storage.put("usage", usage);
+  }
+
+  // Wall-clock room-active time: the meter starts when the room stops being
+  // empty and banks when it is empty again.
+  private async settleCall(): Promise<void> {
+    if (this.participants().length) return;
+    const activeSince = await this.ctx.storage.get<number>("activeSince");
+    if (activeSince === undefined) return;
+    await this.ctx.storage.delete("activeSince");
+    await this.bumpUsage("call", Math.max(0, Date.now() - activeSince));
+  }
+
+  private async flushUsage(): Promise<void> {
+    await this.settleCall();
+    const owner = await this.ctx.storage.get<string>("owner");
+    const usage = await this.ctx.storage.get<RoomUsage>("usage");
+    if (!owner || !usage) return;
+    await this.ctx.storage.put("usage", {...EMPTY_USAGE});
+    // The room's own id never leaves: the account sees a one-way digest of it,
+    // so a usage row can be counted but never turned back into an invite.
+    const roomRef = await opaqueDigest(this.ctx.id.name || "", 16);
+    const stub = this.env.USERS.get(this.env.USERS.idFromName(owner));
+    const counted: [string, number][] = [
+      // Part minutes round up, the way a call is billed.
+      ["call", usage.callMs > 0 ? Math.ceil(usage.callMs / 60_000) : 0],
+      ["chat", usage.chat],
+      ["tts", usage.tts],
+    ];
+    for (const [kind, units] of counted) {
+      if (units <= 0) continue;
+      // A 404 here is a deleted account. The write is dropped, never retried:
+      // metering must not resurrect a profile its owner erased.
+      await stub.fetch(new Request("https://users.internal/usage", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind, units, room_ref: roomRef })
+      })).catch(() => { /* usage is best-effort; the call already happened */ });
+    }
   }
 
   private async computeFetch(request: Request): Promise<Response> {
@@ -1370,6 +1839,7 @@ export class Room extends DurableObject<Env> {
       if (closedAt === undefined) {
         await this.ctx.storage.put("closedAt", Date.now());
         this.closeRoom();
+        await this.flushUsage();
       }
       return Response.json({
         state: "closed", participant_count: 0, participant_limit: MAX_PARTICIPANTS
@@ -1380,12 +1850,27 @@ export class Room extends DurableObject<Env> {
       this.sweepExpiredSockets(Date.now());
       return new Response(null, { status: 204 });
     }
+    if (request.method === "POST" && url.pathname === "/owner") {
+      const userId = request.headers.get("X-User-ID") || "";
+      if (!USER_ID_PATTERN.test(userId)) return new Response("Invalid owner", { status: 400 });
+      // Write-once. The account that created the room is the only account its
+      // usage can ever be billed to, whatever arrives later.
+      if (await this.ctx.storage.get<string>("owner") === undefined) {
+        await this.ctx.storage.put("owner", userId);
+      }
+      return new Response(null, { status: 204 });
+    }
     if (request.method === "POST" && url.pathname === "/tts-quota") {
       const participantId = request.headers.get("X-Participant-ID") || "";
       const locale = request.headers.get("X-Target-Locale") || "";
       const voiceProfileId = request.headers.get("X-Voice-Profile") || "";
       const result = this.consumeTts(participantId, locale, voiceProfileId);
-      if (result.allowed) return new Response(null, { status: 204 });
+      if (result.allowed) {
+        // consumeTts's allowed branch is the one place a translated-voice
+        // phrase is authorized, so it is the one place the meter moves.
+        await this.bumpUsage("tts", 1);
+        return new Response(null, { status: 204 });
+      }
       if (!result.retryAfter) return new Response("Forbidden", { status: 403 });
       return new Response("Rate limit reached", {
         status: 429, headers: { "Retry-After": String(result.retryAfter) }
@@ -1514,6 +1999,9 @@ export class Room extends DurableObject<Env> {
         meta.ttsCount = participants[0].meta.ttsCount || 0;
       }
       socket.serializeAttachment(meta);
+      // 0 -> 1 starts the call clock. Later joins ride the same segment: the
+      // room is metered while it is occupied, not per participant.
+      if (!participants.length) await this.ctx.storage.put("activeSince", Date.now());
       this.send(socket, {
         type: "welcome",
         id: meta.id,
@@ -1588,6 +2076,11 @@ export class Room extends DurableObject<Env> {
       });
       return;
     }
+    // P8's typed-chat handler lands here, above this close: it validates the
+    // message, translates it, broadcasts a server-authored {type:"chat"}, and
+    // calls bumpUsage("chat", 1) for each delivered message. Until it exists
+    // the chat counter stays zero and flushUsage skips that kind entirely.
+    //
     // Captions are server-authored Modal output. Closing a browser that tries
     // to author one makes the privilege boundary explicit and fail-closed.
     this.policyClose(socket, "unsupported control message");
@@ -1612,10 +2105,18 @@ export class Room extends DurableObject<Env> {
   async alarm(): Promise<void> {
     for (const socket of this.ctx.getWebSockets("browser")) {
       const meta = this.attachment(socket);
-      if (meta) this.closeCompute(meta.id);
+      if (meta) {
+        // Mark first: the expired room is empty for metering purposes before
+        // the meter is read, so the final call segment banks exactly once.
+        meta.joined = false;
+        socket.serializeAttachment(meta);
+        this.closeCompute(meta.id);
+      }
       try { socket.close(1008, "room expired"); } catch { /* already closed */ }
     }
     this.pcmBudgets.clear();
+    // Expiry is the last chance to bank a room that nobody closed by hand.
+    await this.flushUsage();
     await this.ctx.storage.deleteAll();
   }
 }
@@ -1739,7 +2240,119 @@ export class ReportInbox extends DurableObject<Env> {
   }
 }
 
-async function routeRequest(request: Request, env: Env): Promise<Response> {
+type UserProfile = {
+  user_id: string; provider: string; name: string; email: string; created_at: string;
+};
+type UserTotals = { call_minutes: number; chat_messages: number; tts_phrases: number };
+type UsageRecord = { at: string; kind: string; units: number; room_ref: string };
+
+const EMPTY_TOTALS: UserTotals = { call_minutes: 0, chat_messages: 0, tts_phrases: 0 };
+
+// One object per account: profile, credit balance, lifetime totals, and a
+// capped window of usage rows. Nothing here identifies a room or a peer.
+export class UserDirectory extends DurableObject<Env> {
+  private async retained(): Promise<Map<string, UsageRecord>> {
+    const rows = await this.ctx.storage.list<UsageRecord>({ prefix: "usage:" });
+    const cutoff = Date.now() - USAGE_RETENTION_MS;
+    const expired = [...rows].filter(([, value]) => Date.parse(value.at) < cutoff);
+    if (expired.length) await this.ctx.storage.delete(expired.map(([key]) => key));
+    for (const [key] of expired) rows.delete(key);
+    if (rows.size > USAGE_MAX_RECORDS) {
+      const oldest = [...rows.keys()].sort().slice(0, rows.size - USAGE_MAX_RECORDS);
+      await this.ctx.storage.delete(oldest);
+      for (const key of oldest) rows.delete(key);
+    }
+    if (rows.size) {
+      const earliestExpiry = Math.min(...[...rows.values()].map(
+        row => Date.parse(row.at) + USAGE_RETENTION_MS
+      ));
+      await this.ctx.storage.setAlarm(Math.max(Date.now() + 1000, earliestExpiry));
+    } else {
+      await this.ctx.storage.deleteAlarm();
+    }
+    return rows;
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname === "/") {
+      const profile = await this.ctx.storage.get<UserProfile>("profile");
+      if (!profile) return new Response("Not found", { status: 404 });
+      const rows = await this.retained();
+      return Response.json({
+        user: { name: profile.name, email: profile.email, provider: profile.provider },
+        credits: await this.ctx.storage.get<{ balance: number }>("credits") || { balance: 0 },
+        totals: await this.ctx.storage.get<UserTotals>("totals") || { ...EMPTY_TOTALS },
+        recent: [...rows.entries()].sort((left, right) => right[0].localeCompare(left[0]))
+          .slice(0, 20).map(([, row]) => row),
+      }, { headers: { "Cache-Control": "no-store" } });
+    }
+    if (request.method === "DELETE" && url.pathname === "/") {
+      await this.ctx.storage.deleteAll();
+      await this.ctx.storage.deleteAlarm();
+      return new Response(null, { status: 204 });
+    }
+    if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
+    let data: Record<string, unknown>;
+    try {
+      const parsed = await request.json<unknown>();
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+      data = parsed as Record<string, unknown>;
+    } catch {
+      return new Response("Invalid request", { status: 400 });
+    }
+    if (url.pathname === "/") {
+      if (typeof data.user_id !== "string" || !USER_ID_PATTERN.test(data.user_id)
+          || typeof data.provider !== "string" || !/^[a-z]{1,20}$/.test(data.provider)
+          || typeof data.name !== "string" || typeof data.email !== "string") {
+        return new Response("Invalid profile", { status: 400 });
+      }
+      const existing = await this.ctx.storage.get<UserProfile>("profile");
+      await this.ctx.storage.put("profile", {
+        user_id: data.user_id, provider: data.provider,
+        name: data.name.slice(0, 80), email: data.email.slice(0, 160),
+        created_at: existing?.created_at || new Date().toISOString(),
+      });
+      if (!existing) {
+        // Purchase is stubbed, so a new account starts at zero and stays there
+        // until a real purchase path exists. Metering is real regardless.
+        await this.ctx.storage.put("credits", { balance: 0 });
+        await this.ctx.storage.put("totals", { ...EMPTY_TOTALS });
+      }
+      return Response.json({ status: "stored" }, { status: existing ? 200 : 201 });
+    }
+    if (url.pathname !== "/usage") return new Response("Not found", { status: 404 });
+    const total = typeof data.kind === "string" ? USAGE_TOTALS.get(data.kind) : undefined;
+    if (!total || typeof data.units !== "number" || !Number.isSafeInteger(data.units)
+        || data.units < 1 || data.units > 100_000
+        || typeof data.room_ref !== "string" || !/^[A-Za-z0-9_-]{16}$/.test(data.room_ref)) {
+      return new Response("Invalid usage", { status: 400 });
+    }
+    // No profile means the account was deleted while a room was still open.
+    // The caller drops the write on this 404: deletion must not resurrect.
+    if (!await this.ctx.storage.get<UserProfile>("profile")) {
+      return new Response("Not found", { status: 404 });
+    }
+    const totals = await this.ctx.storage.get<UserTotals>("totals") || { ...EMPTY_TOTALS };
+    totals[total as keyof UserTotals] += data.units;
+    const suffix = base64url(crypto.getRandomValues(new Uint8Array(3)));
+    await this.ctx.storage.put(`usage:${Date.now()}-${suffix}`, {
+      at: new Date().toISOString(), kind: data.kind as string,
+      units: data.units, room_ref: data.room_ref,
+    });
+    await this.ctx.storage.put("totals", totals);
+    await this.retained();
+    return new Response(null, { status: 204 });
+  }
+
+  async alarm(): Promise<void> {
+    await this.retained();
+  }
+}
+
+async function routeRequest(
+  request: Request, env: Env, ctx: ExecutionContext
+): Promise<Response> {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/health") {
       return Response.json({ status: "ok" }, {
@@ -1766,11 +2379,20 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
     if (url.pathname === "/tts") return translatedVoice(request, env);
     if (url.pathname === "/api/room-control") return hostRoomStatus(request, env);
     if (url.pathname === "/api/room-control/close") return closeHostRoom(request, env);
+    if (url.pathname === "/api/me") return accountSnapshot(request, env);
+    if (url.pathname === "/api/account/delete") return accountDelete(request, env);
+    if (url.pathname === "/auth/logout") return authLogout(request, env);
+    const authMatch = url.pathname.match(/^\/auth\/([a-z]{1,20})\/(start|callback)$/);
+    if (authMatch) {
+      return authMatch[2] === "start"
+        ? authStart(request, env, authMatch[1])
+        : authCallback(request, env, authMatch[1]);
+    }
     if (request.method === "POST" && url.pathname === "/api/rooms") {
-      return createRoomResponse(request, env);
+      return createRoomResponse(request, env, ctx);
     }
     if (request.method === "POST" && url.pathname === "/rooms") {
-      return createRoomRedirect(request, env);
+      return createRoomRedirect(request, env, ctx);
     }
     const roomMatch = url.pathname.match(/^\/room\/([^/]+)$/);
     if (request.method === "GET" && roomMatch) {
@@ -1849,7 +2471,7 @@ async function consumeIpQuota(
 }
 
 export default {
-  async fetch(request, env): Promise<Response> {
+  async fetch(request, env, ctx): Promise<Response> {
     // An unhandled throw here is served as the runtime's own error page, which
     // is neither no-store nor ours. One boundary at the entry point keeps every
     // unexpected failure a plain 500 that no cache will keep.
@@ -1868,14 +2490,14 @@ export default {
       if (url.pathname.startsWith("/api/v1/")) {
         if (!alias) return mobileCors(request, new Response("Not Found", { status: 404 }));
         url.pathname = alias;
-        return mobileCors(request, await routeRequest(new Request(url, request), env));
+        return mobileCors(request, await routeRequest(new Request(url, request), env, ctx));
       }
       const socket = url.pathname.match(/^\/ws\/v1\/(.+)$/);
       if (socket) {
         url.pathname = `/ws/${socket[1]}`;
-        return await routeRequest(new Request(url, request), env);
+        return await routeRequest(new Request(url, request), env, ctx);
       }
-      return await routeRequest(request, env);
+      return await routeRequest(request, env, ctx);
     } catch {
       return new Response("Service unavailable", {
         status: 500, headers: {"Cache-Control": "no-store"}

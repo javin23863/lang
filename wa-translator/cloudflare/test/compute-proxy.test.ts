@@ -1,6 +1,7 @@
 import { env, exports } from "cloudflare:workers";
 import { runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
+import { hostSessionCookie } from "./session";
 
 const ORIGIN = "https://room.test";
 
@@ -13,7 +14,7 @@ type Client = {
 
 async function createRoom(): Promise<string> {
   const response = await exports.default.fetch(`${ORIGIN}/api/rooms`, {
-    method: "POST", headers: { Origin: ORIGIN }
+    method: "POST", headers: { Origin: ORIGIN, Cookie: await hostSessionCookie() }
   });
   return (await response.json<{ path: string }>()).path;
 }

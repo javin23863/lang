@@ -1,11 +1,12 @@
 import { env, exports } from "cloudflare:workers";
 import { runDurableObjectAlarm, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it, vi } from "vitest";
+import { hostSessionCookie } from "./session";
 
 const ORIGIN = "https://room.test";
 
 async function createRoom(ip?: string): Promise<string> {
-  const headers: Record<string, string> = { Origin: ORIGIN };
+  const headers: Record<string, string> = { Origin: ORIGIN, Cookie: await hostSessionCookie() };
   if (ip) headers["CF-Connecting-IP"] = ip;
   const response = await exports.default.fetch(`${ORIGIN}/api/rooms`, {
     method: "POST", headers
@@ -34,7 +35,8 @@ describe("free-tier abuse controls and private reports", () => {
     const ip = "203.0.113.51";
     for (let index = 0; index < 12; index++) await createRoom(ip);
     const limited = await exports.default.fetch(`${ORIGIN}/api/rooms`, {
-      method: "POST", headers: {Origin: ORIGIN, "CF-Connecting-IP": ip}
+      method: "POST",
+      headers: {Origin: ORIGIN, "CF-Connecting-IP": ip, Cookie: await hostSessionCookie()}
     });
     expect(limited.status).toBe(429);
     expect(Number(limited.headers.get("Retry-After"))).toBeGreaterThan(0);

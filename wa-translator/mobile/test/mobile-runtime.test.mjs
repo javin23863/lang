@@ -34,12 +34,15 @@ test("native traffic stays on the versioned backend seam", () => {
 test("installed clients fail closed on incompatible backend bootstrap", () => {
   const valid = {
     protocol: MOBILE_PROTOCOL, minimum_client_build: MOBILE_BUILD,
-    public_origin: PUBLIC_ORIGIN, account_mode: "none", call_lifecycle: "foreground",
+    public_origin: PUBLIC_ORIGIN, account_mode: "session", call_lifecycle: "foreground",
   };
   assert.equal(validateBootstrap(valid, MOBILE_BUILD), true);
   assert.equal(validateBootstrap({...valid, protocol: 2}, MOBILE_BUILD), false);
   assert.equal(validateBootstrap({...valid, minimum_client_build: MOBILE_BUILD + 1}, MOBILE_BUILD), false);
   assert.equal(validateBootstrap({...valid, public_origin: "https://attacker.test"}, MOBILE_BUILD), false);
+  // Starting a call needs an account now. A backend still answering "none" is
+  // an older deployment this build must refuse rather than half-work against.
+  assert.equal(validateBootstrap({...valid, account_mode: "none"}, MOBILE_BUILD), false);
 });
 
 test("host room control state round-trips only through the secure adapter", async () => {

@@ -4,7 +4,23 @@ Use these answers when creating the Play Console and App Store Connect records.
 They describe version 1.0 and must be reviewed again whenever SDKs or product
 behavior change.
 
-- No account required.
+- Account required to START a call: the person who creates a room signs in with
+  Google, Apple, or Facebook. No account is required to JOIN one — an invited
+  participant opens the link and talks, with no sign-in and no account.
+- No password is ever created, collected, or stored. Sign-in is delegated to the
+  provider; the app receives an account identifier, an email address, and a
+  display name, and stores no provider credential.
+- Data collected: email address, an account user ID, and usage counts (call
+  minutes, chat messages, translated-voice phrases). All three are linked to the
+  account and used for App Functionality only — never for tracking, advertising,
+  or third-party sharing. Usage rows carry an opaque room reference, never a
+  room link, and no message, caption, audio, or video content.
+- Account deletion: available in the app (Delete account, on the main menu) and
+  on the web at the same signed-in menu on the site. Deletion removes the
+  account record, balance, totals, and usage rows immediately.
+- Credits: a balance is displayed and metered honestly, but the Buy credits
+  control is DISABLED and collects nothing. There is no purchase, no payment
+  method, no price, and no in-app purchase product in this version.
 - No advertising, advertising identifier, or cross-app tracking.
 - No analytics SDK.
 - No transcript history or call recording.
@@ -13,7 +29,10 @@ behavior change.
   translated captions and optional synthesized audio are returned in real time.
 - Cloud processing: Cloudflare carries room/signalling traffic; Modal performs
   speech recognition, translation, and optional voice synthesis.
-- Retention: the product does not intentionally persist media or captions. A
+- Retention: the account record (email, user ID, display name, balance, totals)
+  lasts until the account is deleted; usage rows keep 90 days or 200 rows,
+  whichever is smaller. The product does not intentionally persist media or
+  captions. A
   private abuse report contains only category, platform, time, and an opaque
   public room reference. An internal non-invite room routing ID is retained only
   so a moderator can close the active reported room. Both expire after 30 days.

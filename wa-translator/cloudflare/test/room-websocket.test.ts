@@ -1,13 +1,14 @@
 import { env, exports } from "cloudflare:workers";
 import { runDurableObjectAlarm, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it, vi } from "vitest";
+import { hostSessionCookie } from "./session";
 
 const ORIGIN = "https://room.test";
 
 async function createRoom(): Promise<string> {
   const response = await exports.default.fetch(`${ORIGIN}/api/rooms`, {
     method: "POST",
-    headers: { Origin: ORIGIN }
+    headers: { Origin: ORIGIN, Cookie: await hostSessionCookie() }
   });
   expect(response.status).toBe(201);
   return (await response.json<{ path: string }>()).path;
@@ -140,7 +141,12 @@ describe("public room WebSocket interface", () => {
       expect.objectContaining({ id: a1Welcome.id, joined: true, voiceProfileId: "en-us-af-heart" }),
       expect.objectContaining({ id: a2Welcome.id, joined: true, voiceProfileId: "es-em-alex" })
     ]));
-    expect([...state.storage.keys()]).toEqual(["expiresAt"]);
+    // Expiry, the owning account id, and the call clock. Nothing else survives
+    // in a room: no transcript, no caption, no participant identity, and
+    // nothing that names a person - the owner is already a one-way digest.
+    expect([...state.storage.keys()].sort()).toEqual(["activeSince", "expiresAt", "owner"]);
+    expect(state.storage.get("owner")).toMatch(/^[A-Za-z0-9_-]{22}$/);
+    expect(state.storage.get("activeSince")).toBeGreaterThan(0);
 
     a1.socket.close(1000, "done");
     a2.socket.close(1000, "done");

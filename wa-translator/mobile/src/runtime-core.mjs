@@ -81,6 +81,6 @@ export function validateBootstrap(value, build) {
     && Number.isSafeInteger(bootstrap.minimum_client_build)
     && Number(bootstrap.minimum_client_build) <= build
     && bootstrap.public_origin === PUBLIC_ORIGIN
-    && bootstrap.account_mode === "none"
+    && bootstrap.account_mode === "session"
     && bootstrap.call_lifecycle === "foreground";
 }
