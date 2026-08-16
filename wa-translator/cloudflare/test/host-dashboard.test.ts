@@ -17,7 +17,10 @@ describe("installed host dashboard client", () => {
       "authPanel", "accountChip", "signOutBtn", "creditsPanel", "creditsBalance",
       "buyCreditsBtn", "usageList", "deleteAccountBtn",
       // The three call surfaces. createBtn above is the video tile, unchanged.
-      "createVoiceBtn", "createChatBtn"
+      "createVoiceBtn", "createChatBtn",
+      // Sharing the invite: two apps by URL scheme, and a code for the ones
+      // that have none.
+      "waBtn", "lineBtn", "qrBtn", "qrBox"
     ]) expect(html).toContain(`id="${id}"`);
     // The provider buttons are rendered from what /api/me reports, so their ids
     // are in the source as the strings the page assigns rather than as markup.
@@ -29,6 +32,15 @@ describe("installed host dashboard client", () => {
     expect(html).toContain("data-stub");
     expect(html).toContain('aria-live="polite"');
     expect(html).toContain('<script src="/app-runtime.js"></script>');
+    expect(html).toContain('<script src="/qr.js" defer></script>');
+    expect(html).toContain("https://wa.me/?text=");
+    // The /R/share form carries the sentence with the link; the social-plugins
+    // form takes a url alone and drops it.
+    expect(html).toContain("https://line.me/R/share?text=");
+    expect(html).not.toContain("social-plugins.line.me");
+    // The link inside the code is the bearer token that opens the room, so it
+    // is drawn on the tap that asks for it and nowhere else.
+    expect(html).toContain("window.LinguaQR.svg(roomUrl(currentRoom))");
     expect(html).toContain('fetch(runtime.apiUrl("/api/rooms")');
     expect(html).toContain('fetch(runtime.apiUrl("/api/me")');
     // Signed-in and signed-out are one attribute on <body>; nothing about the

@@ -7,6 +7,7 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <script src="/app-runtime.js"></script>
+<script src="/qr.js" defer></script>
 <title>Lingua Relay · Private rooms</title>
 <style>
 *{box-sizing:border-box}:root{color-scheme:light dark;--font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;--bg:#F2F2F7;--card:#FFFFFF;--fill:#F2F2F7;--separator:#C6C6C8;--label:#000;--label-2:#8E8E93;--accent:#007AFF;--destructive:#FF3B30;--confirm:#34C759;--focus:#007AFF}
@@ -26,6 +27,12 @@ button.primary{background:var(--accent);color:#FFF;min-height:50px}
 button.danger{background:transparent;color:var(--destructive)}
 button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
 button:disabled{cursor:wait;opacity:.4}
+.share{grid-template-columns:repeat(3,minmax(0,1fr))}
+/* A camera reads dark modules on a light field: the code carries its own paper
+   rather than inheriting a dark-appearance card. */
+#qrBox{display:grid;place-items:center;margin:0;padding:12px;border-radius:12px;background:#FFF;color:#000}
+#qrBox[hidden]{display:none}
+#qrBox svg{display:block;width:min(228px,58vw);height:auto}
 .notice{min-height:20px;margin:-6px 4px 0;color:var(--label-2);font-size:13px}
 .roomLabel{font-size:13px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;margin:0;color:var(--label-2)}
 /* Until /api/me answers, neither the sign-in card nor the account surfaces are
@@ -87,6 +94,12 @@ body:not([data-auth="out"]) #authPanel{display:none}
       <button id="openBtn" type="button" data-i18n="home.openRoom">Open room</button>
       <button id="closeBtn" class="danger" type="button" data-i18n="home.closeRoom">Close room</button>
     </div>
+    <div class="actions share">
+      <button id="waBtn" type="button">WhatsApp</button>
+      <button id="lineBtn" type="button">LINE</button>
+      <button id="qrBtn" type="button" aria-expanded="false" aria-controls="qrBox" data-i18n="share.qr">QR code</button>
+    </div>
+    <figure id="qrBox" hidden></figure>
   </section>
   <p id="roomNotice" class="notice" role="status" aria-live="polite"></p>
   <section class="modes authed" aria-label="Start a call">
@@ -206,7 +219,8 @@ function renderRoom(state, participantCount) {
 function setBusy(value) {
   busy = value;
   for (const id of ["createVoiceBtn", "createChatBtn", "createBtn",
-                    "copyBtn", "shareBtn", "openBtn", "closeBtn"]) {
+                    "copyBtn", "shareBtn", "openBtn", "closeBtn",
+                    "waBtn", "lineBtn", "qrBtn"]) {
     $(id).disabled = value;
   }
 }
@@ -299,10 +313,19 @@ function stopPolling() {
   statusTimer = null;
 }
 
+// The invite link is a bearer token: its code lives only as long as the room it
+// opens, so a room that changed or ended leaves no scannable copy behind.
+function hideQr() {
+  $("qrBox").replaceChildren();
+  $("qrBox").hidden = true;
+  $("qrBtn").setAttribute("aria-expanded", "false");
+}
+
 async function clearCurrentRoom(state, key) {
   await forgetRoom();
   currentRoom = null;
   stopPolling();
+  hideQr();
   $("roomPanel").hidden = true;
   setState(state, key);
 }
@@ -362,6 +385,7 @@ async function createRoom(mode) {
     if (room.mode === "voice" && callee) room.callee = callee;
     if (!await saveRoom(room)) throw new Error("storage unavailable");
     currentRoom = room;
+    hideQr();
     renderRoom("ready", 0);
     startPolling();
     setNotice("home.linkReady");
@@ -391,6 +415,16 @@ async function copyLink() {
 }
 
 const SHARE_TEXT = {voice: "share.textVoice", chat: "share.textChat", video: "share.textVideo"};
+
+function shareMessage() {
+  return t(SHARE_TEXT[roomMode(currentRoom)]) + " " + roomUrl(currentRoom);
+}
+
+function openShareApp(url) {
+  const opened = window.open(url, "_blank", "noopener");
+  if (opened) opened.opener = null;
+  else setNotice("home.openBlocked");
+}
 
 async function shareLink() {
   if (!currentRoom || busy) return;
@@ -446,6 +480,32 @@ $("copyBtn").onclick = copyLink;
 $("shareBtn").onclick = shareLink;
 $("openBtn").onclick = openRoom;
 $("closeBtn").onclick = () => closeRoom(true);
+$("waBtn").onclick = () => {
+  if (currentRoom && !busy) openShareApp("https://wa.me/?text=" + encodeURIComponent(shareMessage()));
+};
+// The /R/share form carries the sentence and the link together; the
+// social-plugins form takes a url only and drops everything that explains it.
+$("lineBtn").onclick = () => {
+  if (currentRoom && !busy) openShareApp("https://line.me/R/share?text=" + encodeURIComponent(shareMessage()));
+};
+// Drawn on the tap that asks for it, never on load: the link inside is the
+// bearer token that opens the room.
+$("qrBtn").onclick = () => {
+  if (!currentRoom || busy) return;
+  if (!$("qrBox").hidden) {
+    hideQr();
+    return;
+  }
+  $("qrBox").replaceChildren(window.LinguaQR.svg(roomUrl(currentRoom)));
+  $("qrBox").hidden = false;
+  $("qrBtn").setAttribute("aria-expanded", "true");
+};
+// In a native shell window.open navigates the dashboard away, and the system
+// share sheet already lists both apps. The QR stays: it is the WeChat path.
+if (runtime.isNative) {
+  $("waBtn").hidden = true;
+  $("lineBtn").hidden = true;
+}
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") refreshStatus();
 });

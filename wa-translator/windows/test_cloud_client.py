@@ -97,6 +97,41 @@ class CloudClientContractTests(unittest.TestCase):
         self.assertIn("$('menuBtn').onclick", HTML)
         self.assertIn("$('menuBtn').setAttribute('aria-expanded', String(opening))", HTML)
 
+    def test_share_row_opens_the_apps_and_draws_its_code_only_on_tap(self):
+        self.assertIn('<script src="/qr.js" defer></script>', HTML)
+        menu_start = HTML.index('<div id="roomMenu"')
+        menu_end = HTML.index("</div>", menu_start)
+        menu = HTML[menu_start:menu_end]
+        for marker in ('id="waBtn"', 'id="lineBtn"', 'id="qrBtn"', 'id="qrBox"',
+                       'data-i18n="share.qr"'):
+            self.assertIn(marker, menu)
+        self.assertIn("https://wa.me/?text=", HTML)
+        # The /R/share form carries the sentence with the link; the
+        # social-plugins form takes a url alone and drops it.
+        self.assertIn("https://line.me/R/share?text=", HTML)
+        self.assertNotIn("social-plugins.line.me", HTML)
+        # The link inside the code is the bearer token that opens the room, so
+        # the drawing happens inside the tap handler and nowhere else — never
+        # at load, and never left behind when the panel closes.
+        qr_start = HTML.index("$('qrBtn').onclick")
+        qr_end = HTML.index("\n};", qr_start)
+        handler = HTML[qr_start:qr_end]
+        self.assertIn("window.LinguaQR.svg(inviteLink())", handler)
+        self.assertIn("box.replaceChildren()", handler)
+        self.assertEqual(HTML.count("LinguaQR.svg("), 1)
+        self.assertIn("#qrBox[hidden]{display:none}", HTML)
+        # A native shell has a share sheet, and window.open there navigates the
+        # call away. The code stays: it is the only WeChat path.
+        self.assertIn("$('waBtn').hidden = true", HTML)
+        self.assertIn("$('lineBtn').hidden = true", HTML)
+        self.assertNotIn("$('qrBtn').hidden = true", HTML)
+
+    def test_share_sentence_names_the_surface_the_link_opens(self):
+        self.assertIn("SHARE_TEXT = {voice: 'share.textVoice', chat: 'share.textChat', "
+                      "video: 'share.textVideo'}", HTML)
+        self.assertIn("t(SHARE_TEXT[roomMode])", HTML)
+        self.assertNotIn("t('share.text')", HTML)
+
     def test_microphone_and_camera_permissions_are_independent(self):
         self.assertIn("function getAudioMedia()", HTML)
         self.assertIn("function getVideoMedia()", HTML)
