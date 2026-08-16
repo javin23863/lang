@@ -5,6 +5,7 @@ the security/default-mode surface fail before a browser is even launched.
 """
 
 import pathlib
+import re
 import unittest
 
 
@@ -223,6 +224,87 @@ class CloudClientContractTests(unittest.TestCase):
         self.assertIn("disconnectRoom(true)", HTML)
         self.assertIn("window.addEventListener('pageshow', restoreSuspendedRoom)", HTML)
         self.assertIn("window.addEventListener('pagehide', suspendRoom)", HTML)
+
+    def test_mode_is_read_from_the_link_and_never_from_the_server(self):
+        self.assertIn("const MODES = new Set(['voice', 'chat', 'video'])", HTML)
+        self.assertIn("MODES.has(requestedMode) ? requestedMode : 'video'", HTML)
+        self.assertIn("document.body.dataset.mode = roomMode", HTML)
+        self.assertIn("function modeQuery()", HTML)
+        self.assertIn("runtime.inviteUrl('/room/' + roomId + modeQuery())", HTML)
+        # The callee's name is a label written with textContent, never markup.
+        self.assertIn("$('callName').textContent = calleeName", HTML)
+        self.assertNotIn("callName').innerHTML", HTML)
+
+    def test_voice_and_chat_hide_the_video_without_silencing_the_call(self):
+        # Peer audio arrives on #remoteVideo (pc.ontrack sets its srcObject), so
+        # a rule that removes that element removes the other person's voice.
+        # Every mode rule for it must move or shrink it instead.
+        self.assertNotIn("#remoteVideo{display:none", HTML)
+        rules = re.findall(r"([^{}]*#remoteVideo[^{}]*)\{([^}]*)\}", HTML)
+        self.assertTrue(rules, "the stylesheet still names #remoteVideo")
+        for selector, body in rules:
+            self.assertNotIn("display:none", body.replace(" ", ""),
+                             "a rule removes #remoteVideo: " + selector.strip())
+        hidden = next(body for selector, body in rules
+                      if 'body[data-mode="voice"] #remoteVideo' in selector)
+        self.assertIn("opacity:0", hidden)
+        self.assertIn("width:1px", hidden)
+        # The controls may go — they are buttons, not the audio sink. Camera is
+        # hidden in both modes, and chat hides the microphone and voice too.
+        hidden_controls = next(selector for selector, body in
+                               re.findall(r"([^{}]*#camBtn[^{}]*)\{([^}]*)\}", HTML)
+                               if "display:none" in body)
+        for selector in ['body[data-mode="voice"] #camBtn', 'body[data-mode="chat"] #camBtn',
+                         'body[data-mode="voice"] #micBtn', 'body[data-mode="chat"] #micBtn',
+                         'body[data-mode="chat"] #voiceBtn']:
+            self.assertIn(selector, hidden_controls)
+
+    def test_call_shell_proxies_the_controls_that_already_exist(self):
+        self.assertIn('id="callShell"', HTML)
+        for element in ["callName", "callState", "callTimer", "callMute", "callSound",
+                        "callEnd", "captionsToggle", "declineBtn"]:
+            self.assertIn('id="%s"' % element, HTML)
+        # One owner per behaviour: the shell clicks the real buttons rather than
+        # opening its own microphone or closing its own socket.
+        self.assertIn("$('callMute').onclick = () => $('micBtn').click()", HTML)
+        self.assertIn("$('callEnd').onclick = () => $('leaveBtn').click()", HTML)
+        self.assertEqual(HTML.count("new RTCPeerConnection"), 1)
+        self.assertEqual(HTML.count("navigator.mediaDevices.getUserMedia"), 2)
+        # Sound off is a second reason to mute the same element, applied through
+        # the single owner rather than beside it.
+        mute_start = HTML.index("function setNaturalAudioMuted")
+        mute_end = HTML.index("\n}", mute_start)
+        self.assertIn("muted || remoteMuted", HTML[mute_start:mute_end])
+        self.assertIn("setNaturalAudioMuted(asrPaused)", HTML)
+
+    def test_ringback_is_synthesised_and_ships_no_audio_asset(self):
+        self.assertIn("new OscillatorNode(ringContext, {frequency})", HTML)
+        self.assertIn("[440, 480]", HTML)
+        self.assertIn("new GainNode(ringContext", HTML)
+        self.assertIn("function stopRingback", HTML)
+        self.assertNotIn("<audio src=", HTML)
+        # Every path out of a ringing call stops the tone.
+        for caller in ["function connectCall", "function endCall"]:
+            start = HTML.index(caller)
+            self.assertIn("stopRingback()", HTML[start:HTML.index("\n}", start)])
+
+    def test_answering_is_a_signal_on_the_relay_the_room_already_has(self):
+        self.assertIn("send({type: 'signal', to: peer.id, data: {call: 'accept'}})", HTML)
+        self.assertIn("data.call === 'accept'", HTML)
+        signal_start = HTML.index("async function onSignal")
+        signal_end = HTML.index("\n}", signal_start)
+        self.assertIn("connectCall()", HTML[signal_start:signal_end])
+        # Declining never joins, so it never opens a socket or a microphone.
+        decline_start = HTML.index("$('declineBtn').onclick")
+        decline_end = HTML.index("\n};", decline_start)
+        decline = HTML[decline_start:decline_end]
+        self.assertIn("window.close()", decline)
+        self.assertNotIn("connect()", decline)
+        self.assertNotIn("getUserMedia", decline)
+        # A late third arrival is not a second answer.
+        timer_start = HTML.index("function startCallTimer")
+        self.assertIn("if (callTimerStart) return",
+                      HTML[timer_start:HTML.index("\n}", timer_start)])
 
     def test_live_acceptance_uses_real_browser_audio_and_server_results(self):
         source = LIVE_CHECK_PATH.read_text(encoding="utf-8")

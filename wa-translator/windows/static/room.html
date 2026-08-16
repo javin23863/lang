@@ -53,6 +53,48 @@ html[dir=rtl] #selfWrap{left:10px;right:auto}html[dir=rtl] #participantCount{rig
   .icon{width:100%;min-width:0;padding:0}.setting select{font-size:13px;padding:9px 5px}
   .roleCard{padding:18px}
 }
+
+/* ── modes ────────────────────────────────────────────────
+   One room, three arrangements of the same DOM. #remoteVideo carries the other
+   person's AUDIO, so a voice call may not remove it: `display:none` on that
+   element — or on #stage around it — is a silent call. Everything here moves
+   or shrinks it instead, and #stage keeps the height its status pill needs. */
+body[data-mode="voice"] #stage,body[data-mode="chat"] #stage{height:46px;min-height:0;overflow:hidden}
+body[data-mode="voice"] #remoteVideo,body[data-mode="chat"] #remoteVideo,
+body[data-mode="voice"] #selfWrap,body[data-mode="chat"] #selfWrap{position:absolute;top:0;width:1px;height:1px;aspect-ratio:auto;opacity:0;border:none;box-shadow:none;pointer-events:none}
+body[data-mode="voice"] #videoNote,body[data-mode="chat"] #videoNote{display:none}
+body[data-mode="voice"] #bar,body[data-mode="chat"] #bar{grid-template-columns:repeat(3,minmax(0,1fr))}
+body[data-mode="voice"] #micBtn,body[data-mode="voice"] #camBtn,body[data-mode="voice"] #leaveBtn,
+body[data-mode="chat"] #micBtn,body[data-mode="chat"] #camBtn,body[data-mode="chat"] #voiceBtn{display:none}
+
+/* ── phone-call shell (voice mode) ────────────────────────
+   The iOS Phone screen, built from the room's own dark tokens: who, what the
+   call is doing, and four labelled circles that drive the controls already in
+   the bar. It is a flex child rather than an overlay, so ⋯ (report, language,
+   voice) stays reachable during a call in every mode. */
+#callShell{flex:1;display:none;flex-direction:column;justify-content:space-between;align-items:center;gap:16px;padding:clamp(18px,6vh,54px) 18px 16px;background:var(--bg);text-align:center}
+body[data-mode="voice"] #callShell:not([hidden]){display:flex}
+/* A phone call is not a settings screen: the language and voice selects fold
+   into ⋯ beside the report control, which is what keeps all three reachable
+   during a call. `hidden` alone cannot do it — #settings sits before #roomMenu
+   in the bar — so the ⋯ button's own expanded state opens both. */
+body[data-mode="voice"] #settings{display:none}
+body[data-mode="voice"] #menuBtn[aria-expanded="true"]~#settings{display:grid}
+body[data-mode="voice"] #captions{display:none}
+body[data-mode="voice"][data-captions="on"] #captions{display:flex}
+body[data-mode="voice"][data-captions="on"] #callShell{flex:0 0 auto;padding-top:12px;gap:12px}
+.callWho{display:grid;gap:6px;max-width:100%}
+#callName{font-size:clamp(26px,8vw,34px);font-weight:600;letter-spacing:-.022em;line-height:1.15;overflow-wrap:anywhere}
+#callName[hidden]{display:none}
+#callState{font-size:17px;color:var(--label-2)}
+#callTimer{font-size:17px;color:var(--label-2);font-variant-numeric:tabular-nums}
+#callTimer[hidden]{display:none}
+.callControls{display:grid;grid-template-columns:repeat(3,minmax(0,86px));gap:14px 22px;justify-content:center;justify-items:center}
+.callControls button{display:grid;place-items:center;width:72px;height:72px;min-height:72px;padding:6px;border-radius:50%;background:var(--card-2);color:var(--label);font-size:13px;font-weight:400;line-height:1.15;overflow-wrap:anywhere}
+.callControls button.on{background:#FFF;color:#000}
+#callEnd{grid-column:2;background:var(--destructive);color:#FFF}
+.roleJoin.accept{background:var(--confirm)}
+#declineBtn{width:100%;min-height:50px;margin-top:10px;background:transparent;color:var(--destructive);border-radius:12px}
 </style>
 </head>
 <body>
@@ -66,6 +108,7 @@ html[dir=rtl] #selfWrap{left:10px;right:auto}html[dir=rtl] #participantCount{rig
     <p id="roleCapability" class="capability" role="status" aria-live="polite" data-i18n="gate.loading">Loading…</p>
     <label class="termsAgree"><input id="termsAgree" type="checkbox" checked><span data-i18n="gate.agreeBefore">I agree to the </span><a id="termsLink" href="/terms" data-i18n="legal.terms">Terms</a><span data-i18n="gate.agreeAfter"></span></label>
     <button id="joinBtn" class="roleJoin" type="button" disabled data-i18n="gate.join">Join room</button>
+    <button id="declineBtn" type="button" hidden data-i18n="call.decline">Decline</button>
   </div>
 </div>
 
@@ -78,6 +121,20 @@ html[dir=rtl] #selfWrap{left:10px;right:auto}html[dir=rtl] #participantCount{rig
 </div>
 
 <div id="captions"><p id="captionEmpty" data-i18n="captions.heading">Captions</p></div>
+
+<div id="callShell" hidden>
+  <div class="callWho">
+    <p id="callName" hidden></p>
+    <p id="callState" role="status" aria-live="polite"></p>
+    <p id="callTimer" hidden>0:00</p>
+  </div>
+  <div class="callControls">
+    <button id="callMute" type="button"></button>
+    <button id="callSound" type="button"></button>
+    <button id="captionsToggle" type="button"></button>
+    <button id="callEnd" type="button"></button>
+  </div>
+</div>
 
 <div id="bar">
   <button id="micBtn" data-i18n-title="bar.startMic" data-i18n-label="bar.startMic" title="Start microphone" aria-label="Start microphone"></button>
@@ -103,6 +160,25 @@ const runtime = window.LinguaRuntime;
 const roomId = runtime.roomToken();
 const termsKey = 'lingua-relay.terms.2026-08-14';
 const blockedRoomKey = 'lingua-relay.blocked-room.' + roomId;
+
+// ── Mode ──────────────────────────────────────────────────
+// One page, three arrangements. `?m=` is furniture and nothing else: the room
+// token is what is signed, the server matches on pathname only, and a
+// participant who edits the parameter rearranges their own screen and no one
+// else's. An absent or unknown value is a video call, so every link made
+// before modes existed still opens exactly as it did.
+// ponytail: blast radius is this page. The day a mode has to bind everyone —
+// billing, or a guest who must not see video — store it on the Room durable
+// object at creation and echo it in `welcome`, then read it from there.
+const MODES = new Set(['voice', 'chat', 'video']);
+const roomParams = new URLSearchParams(location.search);
+const requestedMode = roomParams.get('m');
+const roomMode = MODES.has(requestedMode) ? requestedMode : 'video';
+// A name typed by the host, carried in the link and written with textContent:
+// it is a label on this screen, never markup and never sent to the server.
+const calleeName = (roomParams.get('n') || '').trim().slice(0, 40);
+document.body.dataset.mode = roomMode;
+function modeQuery() { return roomMode === 'video' ? '' : '?m=' + roomMode; }
 
 let ws, myId = null, ttsToken = null, myLang = null, myLocale = null;
 let myVoiceProfileId = null, myVoiceChoice = null, catalog = null, catalogRevision = null;
@@ -361,6 +437,7 @@ function chooseLocale(localeId) {
   $('roleGate').hidden = true;
   setStatus('status.joiningAs', {language: spokenLocaleName(myLocale)}, true);
   connect();
+  enterCall();
 }
 async function loadCapabilities() {
   try {
@@ -575,6 +652,7 @@ function closeByHost() {
   disconnectRoom(false, true);
   setStatus('status.roomClosed', null, true);
   showVideoNote('note.closedByHost');
+  endCall('call.ended');
 }
 
 function leaveRoom() {
@@ -582,6 +660,7 @@ function leaveRoom() {
   disconnectRoom(true);
   setStatus('status.youLeft', null, true);
   showVideoNote('note.youLeft');
+  endCall('call.ended');
 }
 
 async function reportAndBlockRoom() {
@@ -652,10 +731,25 @@ async function handle(m) {
     // myId decides who is polite, so no peer may be built before it is known.
     for (const peer of m.peers) startPeer(peer);
     updateParticipantCount(m.participant_count);
+    // Answering a call is one signal on the relay the room already has. It
+    // goes to everyone already inside rather than to a guessed caller: in a
+    // two-person call that is the caller, and in a bigger one everybody sees
+    // the same "Connected" instead of one screen still ringing.
+    if (roomMode === 'voice' && !isHost && m.peers.length) {
+      for (const peer of m.peers) send({type: 'signal', to: peer.id, data: {call: 'accept'}});
+      connectCall();
+    }
   } else if (m.type === 'peer_join') {
     setStatus('status.speakerJoined', {language: spokenLocaleName(m.locale)});
     startPeer(m);
     updateParticipantCount(m.participant_count);
+    // Someone is in the room but has not answered yet — a third person
+    // arriving mid-call, or a peer whose accept is still in flight.
+    if (roomMode === 'voice' && isHost && !callTimerStart) {
+      setCallState('call.ringing');
+      startRingback();
+      updateCallButtons();
+    }
   } else if (m.type === 'peer_update') {
     const p = peers.get(m.id);
     if (p) { p.lang = m.lang; p.locale = m.locale; p.voiceProfileId = m.voice_profile || null; }
@@ -666,6 +760,7 @@ async function handle(m) {
     failVoice('voice.naturalAudioRestored');
     if (peers.size === 0) {
       showVideoNote('note.otherLeft');
+      endCall('call.ended');
     }
   } else if (m.type === 'presence') {
     updateParticipantCount(m.participant_count);
@@ -734,14 +829,17 @@ function renderCaption(m) {
 // ── Spoken translation ────────────────────────────────────
 // Captions-only is the safe default. Device voices stay on this device; included
 // voices use the room's authenticated TTS route.
-let voiceOn = false, speaking = false, asrPaused = false;
+let voiceOn = false, speaking = false, asrPaused = false, remoteMuted = false;
 let speechGeneration = 0, ttsRequestId = 0, activeSpeech = null;
 const fallbackAudio = new Audio();
 let fallbackUrl = null;
 const speakQueue = [];
 
+// The one owner of the remote element's sound. Two reasons can silence it — a
+// translation is speaking, or the call's Sound button is off — and both go
+// through here, so neither can quietly undo the other.
 function setNaturalAudioMuted(muted) {
-  $('remoteVideo').muted = muted;
+  $('remoteVideo').muted = muted || remoteMuted;
 }
 
 function updateVoiceButton() {
@@ -1020,7 +1118,7 @@ $('shareBtn').onclick = async () => {
   const invite = {
     title: t('share.title'),
     text: t('share.text'),
-    url: runtime.inviteUrl('/room/' + roomId)
+    url: runtime.inviteUrl('/room/' + roomId + modeQuery())
   };
   if (await runtime.share(invite)) {
     setStatus('status.invitationShared');
@@ -1121,6 +1219,7 @@ function setMicEnabled(on) {
   if (workletNode) workletNode.port.postMessage({on: on && !asrPaused});
   $('micBtn').className = on ? 'on' : '';
   setMicButtonLabel();
+  updateCallButtons();
 }
 
 // A picture, not a phrase. Every language renders a microphone the same width,
@@ -1219,6 +1318,177 @@ $('localeSel').onchange = () => {
   setStatus('status.languageChanged', {language: spokenLocaleName(myLocale)});
 };
 
+// ── Phone-call shell (voice mode) ─────────────────────────
+// The controls are proxies, not a second implementation: mute clicks the mic
+// button, end clicks leave. There is one owner of each behaviour, and the
+// buttons the shell hides are still in the DOM doing the work.
+let isHost = false, callTimerStart = 0, callTimerHandle = null;
+let callStateKey = 'call.calling';
+let ringContext = null, ringGain = null, ringOscillators = null, ringTimer = null;
+
+function setCallState(key) {
+  callStateKey = key;
+  $('callState').textContent = t(key);
+}
+
+function renderCallName() {
+  $('callName').textContent = calleeName;
+  $('callName').hidden = !calleeName;
+}
+
+function renderCallTimer() {
+  if (!callTimerStart) return;
+  const seconds = Math.floor((Date.now() - callTimerStart) / 1000);
+  $('callTimer').textContent =
+    Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
+}
+
+function startCallTimer() {
+  // A third person arriving is not a second answer: the clock started when the
+  // call was answered and keeps running.
+  if (callTimerStart) return;
+  callTimerStart = Date.now();
+  $('callTimer').hidden = false;
+  renderCallTimer();
+  callTimerHandle = setInterval(renderCallTimer, 1000);
+}
+
+// Ringback is two tones through a gain node, not an audio file: nothing to
+// ship, nothing to authorize, and no <audio src> to leak a bearer into. The
+// Call or Accept tap is the gesture that unlocks this context.
+function startRingback() {
+  if (ringContext) return;
+  try {
+    ringContext = new (window.AudioContext || window.webkitAudioContext)();
+    ringGain = new GainNode(ringContext, {gain: 0});
+    ringGain.connect(ringContext.destination);
+    ringOscillators = [440, 480].map(frequency => {
+      const oscillator = new OscillatorNode(ringContext, {frequency});
+      oscillator.connect(ringGain);
+      oscillator.start();
+      return oscillator;
+    });
+    const cycle = () => {
+      // Two seconds of tone, four of silence.
+      ringGain.gain.setValueAtTime(0.05, ringContext.currentTime);
+      ringGain.gain.setValueAtTime(0, ringContext.currentTime + 2);
+    };
+    cycle();
+    ringTimer = setInterval(cycle, 6000);
+  } catch (_) {
+    stopRingback();   // no ringback is a quiet call, never a broken one
+  }
+}
+
+function stopRingback() {
+  clearInterval(ringTimer);
+  ringTimer = null;
+  for (const oscillator of ringOscillators || []) {
+    try { oscillator.stop(); } catch (_) {}
+  }
+  ringOscillators = null;
+  ringGain = null;
+  if (ringContext) ringContext.close().catch(() => {});
+  ringContext = null;
+}
+
+function updateCallButtons() {
+  if (roomMode !== 'voice') return;
+  $('callMute').textContent = t(micOn ? 'call.mute' : 'call.unmute');
+  $('callMute').classList.toggle('on', !micOn);
+  $('callSound').textContent = t(remoteMuted ? 'call.soundOff' : 'call.soundOn');
+  $('callSound').classList.toggle('on', remoteMuted);
+  $('captionsToggle').textContent =
+    t(document.body.dataset.captions === 'on' ? 'call.captionsHide' : 'call.captionsShow');
+  $('callEnd').textContent = t('call.end');
+  $('callState').textContent = t(callStateKey);
+}
+
+// The gate is the same card in every mode. In a voice room it reads as a phone
+// call: the caller taps Call, the person invited answers or declines. The key
+// stays on the element, so a language change repaints it for free.
+function applyCallSkin() {
+  if (roomMode !== 'voice') return;
+  const title = isHost ? 'call.call' : 'call.incoming';
+  const join = isHost ? 'call.call' : 'call.accept';
+  $('roleTitle').dataset.i18n = title;
+  $('roleTitle').textContent = t(title);
+  $('joinBtn').dataset.i18n = join;
+  $('joinBtn').textContent = t(join);
+  $('joinBtn').classList.toggle('accept', !isHost);
+  $('declineBtn').hidden = isHost;
+  renderCallName();
+}
+
+// Who is calling whom is decided by which device made the room, not by the
+// link: only the host's own device holds that room's record.
+async function detectHostRole() {
+  try {
+    const saved = JSON.parse(await runtime.loadHostRoom() || 'null');
+    isHost = Boolean(saved && typeof saved.path === 'string'
+                     && saved.path.split('/').pop() === roomId);
+  } catch (_) {
+    isHost = false;
+  }
+  applyCallSkin();
+}
+
+function enterCall() {
+  if (roomMode !== 'voice') return;
+  $('callShell').hidden = false;
+  document.body.dataset.captions = 'off';
+  renderCallName();
+  setCallState('call.calling');
+  // The tap that started or answered the call is the gesture that authorizes
+  // the microphone and unlocks the audio context; nothing was captured, and
+  // nothing made a sound, before it.
+  if (!micOn) $('micBtn').click();
+  // The caller hears ringback for the whole wait, as on a phone. It cannot
+  // start at `peer_join`: someone reading the Accept card has not joined
+  // anything yet, so joining and answering arrive together and there would be
+  // no audible ring at all.
+  if (isHost) startRingback();
+  updateCallButtons();
+}
+
+function connectCall() {
+  if (roomMode !== 'voice') return;
+  stopRingback();
+  setCallState('call.connected');
+  startCallTimer();
+  updateCallButtons();
+}
+
+function endCall(key) {
+  if (roomMode !== 'voice') return;
+  stopRingback();
+  clearInterval(callTimerHandle);
+  callTimerHandle = null;
+  setCallState(key);
+  updateCallButtons();
+}
+
+$('callMute').onclick = () => $('micBtn').click();
+$('callEnd').onclick = () => $('leaveBtn').click();
+$('callSound').onclick = () => {
+  remoteMuted = !remoteMuted;
+  // Re-apply through the single owner so the translation currently speaking
+  // and this button cannot disagree about the element.
+  setNaturalAudioMuted(asrPaused);
+  updateCallButtons();
+};
+$('captionsToggle').onclick = () => {
+  document.body.dataset.captions =
+    document.body.dataset.captions === 'on' ? 'off' : 'on';
+  updateCallButtons();
+};
+$('declineBtn').onclick = () => {
+  // Declining never opens a socket and never asked for a microphone, so there
+  // is nothing to leave and nothing to stop.
+  window.close();
+  location.href = '/';
+};
+
 // ── WebRTC (perfect negotiation; lower id is polite) ──────
 function showVideoNote(key, params) {
   noteKey = key || '';
@@ -1262,8 +1532,13 @@ function startPeer(peer) {
                  voiceProfileId: peer?.voice_profile || null};
   peers.set(peerId, state);
 
-  // Joining never asks for camera or microphone permission. Start/Camera adds
-  // tracks later and negotiationneeded drives the offer from that user action.
+  // Joining never asks for camera or microphone permission: addTracks publishes
+  // only what an earlier Start/Camera tap already captured, and does nothing
+  // when there is no stream. Without it a microphone opened BEFORE the other
+  // person arrived is never published to them — the caller taps Call, the mic
+  // starts in an empty room, and the guest hears silence for the whole call.
+  // negotiationneeded drives the offer either way.
+  addTracks(pc);
 
   pc.ontrack = (e) => {
     $('remoteVideo').srcObject = e.streams[0];
@@ -1317,6 +1592,10 @@ async function onSignal(from, data) {
   } else if (data.candidate) {
     try { await pc.addIceCandidate(data.candidate); }
     catch (e) { if (!state.ignoreOffer) throw e; }
+  } else if (data.call === 'accept') {
+    // The other side answered. Same relay as ICE — the server only checks that
+    // `to` names a participant and that `data` is an object.
+    connectCall();
   }
 }
 
@@ -1349,6 +1628,7 @@ runtime.i18n.onChange(() => {
   updateVoiceButton();
   updateCapabilityNote();
   setMicButtonLabel();
+  updateCallButtons();
 });
 
 $('roleLocaleSel').onchange = previewRoleLocale;
@@ -1365,6 +1645,8 @@ $('menuBtn').onclick = () => {
   $('roomMenu').hidden = !opening;
   $('menuBtn').setAttribute('aria-expanded', String(opening));
 };
+detectHostRole();
+updateCallButtons();
 if ('speechSynthesis' in window) {
   refreshDeviceVoices();
   speechSynthesis.addEventListener('voiceschanged', refreshDeviceVoices);

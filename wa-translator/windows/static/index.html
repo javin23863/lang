@@ -27,8 +27,31 @@ button.danger{background:transparent;color:var(--destructive)}
 button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
 button:disabled{cursor:wait;opacity:.4}
 .notice{min-height:20px;margin:-6px 4px 0;color:var(--label-2);font-size:13px}
-.create{width:100%}
 .roomLabel{font-size:13px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;margin:0;color:var(--label-2)}
+/* Until /api/me answers, neither the sign-in card nor the account surfaces are
+   shown: a signed-in host must never see a sign-in button flash by. */
+body:not([data-auth="in"]) .authed{display:none}
+body:not([data-auth="out"]) #authPanel{display:none}
+#authPanel{display:grid;gap:12px;padding:16px}
+.prompt{margin:0;color:var(--label-2);font-size:15px;line-height:1.4}
+.signIn{display:flex;align-items:center;justify-content:center;min-height:50px;border-radius:12px;background:var(--accent);color:#FFF;font:600 17px var(--font);text-decoration:none;padding:10px 12px;text-align:center}
+.signIn~.signIn{background:var(--fill);color:var(--accent)}
+#authStatus{margin:0;color:var(--destructive);font-size:13px;min-height:0}
+#accountChip{display:flex;align-items:center;gap:12px;padding:8px 16px}
+#accountName{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#signOutBtn{background:transparent;min-height:44px}
+.modes{display:grid;gap:12px}
+.tile{display:flex;align-items:center;justify-content:center;width:100%;min-height:64px;border-radius:16px;background:var(--card);color:var(--accent);font-size:17px}
+.calleeField{padding:14px 16px;gap:7px}
+.hint{color:var(--label-2);font-size:13px}
+.credits{display:grid;gap:12px;padding:16px}
+#creditsBalance{margin:0;font-size:28px;font-weight:700;letter-spacing:-.02em}
+#buyCreditsBtn{width:100%}
+#usageList{list-style:none;margin:0;padding:0;display:grid}
+#usageList li{display:flex;justify-content:space-between;gap:12px;align-items:baseline;min-height:34px;padding:7px 0;border-top:.5px solid var(--separator);font-size:15px}
+#usageList li:first-child{border-top:none}
+#usageList .when{color:var(--label-2);font-size:13px}
+#deleteAccountBtn{width:calc(100% + 32px);text-align:center;font-weight:400;border-top:.5px solid var(--separator);border-radius:0;margin:2px -16px -16px}
 .appLocale{display:grid;gap:7px;padding:14px 16px;color:var(--label-2);font-size:13px}
 .appLocale select{width:100%;min-width:0;min-height:44px;border:none;border-radius:10px;background:var(--fill);color:var(--label);font:17px var(--font);padding:11px 10px}
 .legal{display:grid}
@@ -38,13 +61,22 @@ button:disabled{cursor:wait;opacity:.4}
 @media(max-width:380px){body{padding:12px 8px}.actions{gap:7px}.actions button{font-size:14px;padding:9px 7px}input{font-size:13px}}
 </style>
 </head>
-<body>
+<body data-auth="loading">
 <main class="page" aria-label="Lingua Relay">
   <h1 class="title">Lingua Relay</h1>
-  <section class="card">
+  <section id="authPanel" class="card" aria-label="Sign in">
+    <p class="prompt" data-i18n="auth.signInPrompt">Sign in to start a call. Joining an invite link never needs an account.</p>
+    <div id="authButtons"></div>
+    <p id="authStatus" role="status" aria-live="polite"></p>
+  </section>
+  <section id="accountChip" class="card authed" aria-label="Account">
+    <span id="accountName"></span>
+    <button id="signOutBtn" type="button" data-i18n="auth.signOut">Sign out</button>
+  </section>
+  <section class="card authed">
     <p id="roomState" class="state" data-state="idle" aria-live="polite">No active room on this device.</p>
   </section>
-  <section id="roomPanel" class="card room" hidden aria-label="Current private room">
+  <section id="roomPanel" class="card room authed" hidden aria-label="Current private room">
     <p class="roomLabel" data-i18n="home.roomControl">Room control</p>
     <label class="field" for="shareLink"><span data-i18n="home.participantLink">Participant link</span>
       <input id="shareLink" type="url" readonly spellcheck="false" autocomplete="off">
@@ -57,7 +89,24 @@ button:disabled{cursor:wait;opacity:.4}
     </div>
   </section>
   <p id="roomNotice" class="notice" role="status" aria-live="polite"></p>
-  <button id="createBtn" class="primary create" type="button">Create private room</button>
+  <section class="modes authed" aria-label="Start a call">
+    <label class="card field calleeField" for="calleeName"><span data-i18n="tile.calleeName">Who are you calling?</span>
+      <input id="calleeName" type="text" maxlength="40" autocomplete="off" spellcheck="false">
+      <span class="hint" data-i18n="tile.calleeHint">Optional — shown on the call screen.</span>
+    </label>
+    <button id="createVoiceBtn" class="tile" type="button" data-i18n="tile.voice">Voice call</button>
+    <button id="createChatBtn" class="tile" type="button" data-i18n="tile.chat">Text chat</button>
+    <button id="createBtn" class="tile" type="button" data-i18n="tile.video">Video call</button>
+  </section>
+  <section id="creditsPanel" class="card credits authed" aria-labelledby="creditsHeading">
+    <p id="creditsHeading" class="roomLabel" data-i18n="credits.heading">Credits</p>
+    <p id="creditsBalance"></p>
+    <button id="buyCreditsBtn" type="button" data-stub disabled data-i18n="credits.buy">Buy credits</button>
+    <p class="hint" data-i18n="credits.buyUnavailable">Buying credits is not available yet.</p>
+    <p class="roomLabel" data-i18n="credits.usageHeading">Recent usage</p>
+    <ul id="usageList"></ul>
+    <button id="deleteAccountBtn" class="danger" type="button" data-i18n="auth.deleteAccount">Delete account</button>
+  </section>
   <label class="card appLocale" for="appLocaleSel"><span data-i18n="gate.language">Language</span>
     <select id="appLocaleSel"></select>
   </label>
@@ -71,16 +120,40 @@ const $ = id => document.getElementById(id);
 const runtime = window.LinguaRuntime;
 const t = runtime.t;
 let currentRoom = null;
+let account = null;
 let statusTimer = null;
 let busy = false;
 // Every visible line is stored as its key, never as finished text, so a
 // language switch can re-render the screen the person is already looking at.
 let stateKey = "home.noRoom", stateParams = null, noticeKey = "", noticeParams = null;
+let authStatusKey = "";
 
-function roomUrl(room) {
-  return runtime.inviteUrl(room);
+// The three surfaces a room can open as. Video is the mode that needs no
+// parameter, so every link made before modes existed still opens a video call.
+const MODES = new Set(["voice", "chat", "video"]);
+// Google is provisioned day one and leads the list; the others appear only
+// when the worker reports credentials for them.
+const PROVIDERS = [["google", "signInGoogle"], ["apple", "signInApple"],
+                   ["facebook", "signInFacebook"]];
+const USAGE_KIND = {call: "credits.callMinutes", chat: "credits.chatMessages",
+                    tts: "credits.ttsPhrases"};
+
+function roomMode(room) {
+  return MODES.has(room?.mode) ? room.mode : "video";
 }
 
+function roomUrl(room) {
+  const url = new URL(runtime.inviteUrl(room));
+  const mode = roomMode(room);
+  if (mode !== "video") url.searchParams.set("m", mode);
+  // The callee's name is a label on the call screen and nothing else: it is
+  // never sent to the server and never part of the signed token.
+  if (mode === "voice" && room?.callee) url.searchParams.set("n", room.callee);
+  return url.toString();
+}
+
+// `mode` and `callee` are optional on purpose: a record saved before modes
+// existed is still a valid room and still opens.
 function validRoom(value) {
   return value && typeof value.path === "string" && typeof value.host_control === "string"
     && Number.isSafeInteger(value.expires_at);
@@ -132,8 +205,92 @@ function renderRoom(state, participantCount) {
 
 function setBusy(value) {
   busy = value;
-  for (const id of ["createBtn", "copyBtn", "shareBtn", "openBtn", "closeBtn"]) {
+  for (const id of ["createVoiceBtn", "createChatBtn", "createBtn",
+                    "copyBtn", "shareBtn", "openBtn", "closeBtn"]) {
     $(id).disabled = value;
+  }
+}
+
+// ── Account, sign-in and credits ─────────────────────────
+async function loadAccount() {
+  try {
+    // Same-origin, so the session cookie rides along without a credentials
+    // option. A native shell talks to another origin and reads signed-out.
+    const response = await fetch(runtime.apiUrl("/api/me"), {headers: {Accept: "application/json"}});
+    if (!response.ok) throw new Error("account unavailable");
+    return await response.json();
+  } catch (_) {
+    // An unreachable worker is a signed-out screen with no provider to offer,
+    // never a blank page.
+    return {signed_in: false, providers: []};
+  }
+}
+
+function setAuthStatus(key) {
+  authStatusKey = key || "";
+  $("authStatus").textContent = authStatusKey ? t(authStatusKey) : "";
+}
+
+function renderProviders() {
+  const offered = Array.isArray(account?.providers) ? account.providers : [];
+  const box = $("authButtons");
+  box.replaceChildren();
+  for (const [provider, id] of PROVIDERS) {
+    if (!offered.includes(provider)) continue;
+    const link = document.createElement("a");
+    link.id = id;
+    link.className = "signIn";
+    link.href = runtime.apiUrl("/auth/" + provider + "/start");
+    // The runtime repaints anything carrying a key, so these labels follow a
+    // language change for free.
+    link.dataset.i18n = "auth." + id;
+    link.textContent = t(link.dataset.i18n);
+    box.appendChild(link);
+  }
+}
+
+function renderAccount() {
+  if (!account) return;   // /api/me has not answered yet: show neither side
+  document.body.dataset.auth = account.signed_in ? "in" : "out";
+  renderProviders();
+  if (!account?.signed_in) return;
+  $("accountName").textContent = t("auth.signedInAs", {name: account.user?.name || ""});
+  $("creditsBalance").textContent =
+    t("credits.balance", {count: Number(account.credits?.balance) || 0});
+  const rows = Array.isArray(account.recent) ? account.recent.slice(0, 20) : [];
+  const list = $("usageList");
+  list.replaceChildren();
+  if (!rows.length) {
+    const empty = document.createElement("li");
+    empty.textContent = t("credits.usageEmpty");
+    list.appendChild(empty);
+    return;
+  }
+  for (const row of rows) {
+    const item = document.createElement("li");
+    const when = document.createElement("span");
+    when.className = "when";
+    const at = new Date(row.at);
+    when.textContent = Number.isNaN(at.getTime()) ? "" : at.toLocaleDateString(runtime.i18n.locale);
+    const what = document.createElement("span");
+    // The unit count sits inside the sentence, so a language that puts the
+    // number last still reads correctly.
+    what.textContent = USAGE_KIND[row.kind]
+      ? t(USAGE_KIND[row.kind], {count: Number(row.units) || 0}) : String(row.units);
+    item.append(when, what);
+    list.appendChild(item);
+  }
+}
+
+async function deleteAccount() {
+  if (!window.confirm(t("auth.deleteConfirm"))) return;
+  try {
+    const response = await fetch(runtime.apiUrl("/api/account/delete"),
+                                 {method: "POST", headers: {Accept: "application/json"}});
+    if (!response.ok) throw new Error("delete failed");
+    location.reload();
+  } catch (_) {
+    setNotice("auth.deleteFailed");
   }
 }
 
@@ -182,7 +339,7 @@ async function refreshStatus() {
   }
 }
 
-async function createRoom() {
+async function createRoom(mode) {
   if (busy) return;
   if (currentRoom) {
     if (!window.confirm(t("home.confirmReplace"))) return;
@@ -197,7 +354,13 @@ async function createRoom() {
     });
     if (!response.ok) throw new Error("creation failed");
     const room = await response.json();
-    if (!validRoom(room) || !await saveRoom(room)) throw new Error("storage unavailable");
+    if (!validRoom(room)) throw new Error("storage unavailable");
+    // The mode and the callee's label belong to this device's record, not to
+    // the room the server signed.
+    room.mode = MODES.has(mode) ? mode : "video";
+    const callee = $("calleeName").value.trim();
+    if (room.mode === "voice" && callee) room.callee = callee;
+    if (!await saveRoom(room)) throw new Error("storage unavailable");
     currentRoom = room;
     renderRoom("ready", 0);
     startPolling();
@@ -227,12 +390,14 @@ async function copyLink() {
   }
 }
 
+const SHARE_TEXT = {voice: "share.textVoice", chat: "share.textChat", video: "share.textVideo"};
+
 async function shareLink() {
   if (!currentRoom || busy) return;
   const link = roomUrl(currentRoom);
   if (await runtime.share({
     title: t("share.title"),
-    text: t("share.text"),
+    text: t(SHARE_TEXT[roomMode(currentRoom)]),
     url: link
   })) {
     setNotice("home.linkShared");
@@ -243,7 +408,7 @@ async function shareLink() {
 
 function openRoom() {
   if (!currentRoom || busy) return;
-  if (!runtime.openRoom(currentRoom)) {
+  if (!runtime.openRoom(currentRoom, roomMode(currentRoom))) {
     setNotice("home.openBlocked");
   }
 }
@@ -267,7 +432,16 @@ async function closeRoom(withConfirmation = true) {
   }
 }
 
-$("createBtn").onclick = createRoom;
+$("createVoiceBtn").onclick = () => createRoom("voice");
+$("createChatBtn").onclick = () => createRoom("chat");
+$("createBtn").onclick = () => createRoom("video");
+$("signOutBtn").onclick = async () => {
+  try {
+    await fetch(runtime.apiUrl("/auth/logout"), {method: "POST", headers: {Accept: "application/json"}});
+  } catch (_) { /* the reload re-reads the session either way */ }
+  location.reload();
+};
+$("deleteAccountBtn").onclick = deleteAccount;
 $("copyBtn").onclick = copyLink;
 $("shareBtn").onclick = shareLink;
 $("openBtn").onclick = openRoom;
@@ -308,6 +482,8 @@ runtime.i18n.onChange(() => {
   $("appLocaleSel").value = runtime.i18n.language;
   $("roomState").textContent = t(stateKey, stateParams);
   $("roomNotice").textContent = noticeKey ? t(noticeKey, noticeParams) : "";
+  setAuthStatus(authStatusKey);
+  renderAccount();
 });
 
 async function boot() {
@@ -315,9 +491,12 @@ async function boot() {
     await runtime.ready();
   } catch (_) {
     setState("error", "home.needsUpdate");
-    $("createBtn").disabled = true;
+    setBusy(true);
     return;
   }
+  if (new URLSearchParams(location.search).get("auth") === "failed") setAuthStatus("auth.failed");
+  account = await loadAccount();
+  renderAccount();
   currentRoom = await loadRoom();
   if (currentRoom && currentRoom.expires_at * 1000 > Date.now()) {
     renderRoom("ready", 0);

@@ -405,14 +405,20 @@
     }
   }
 
-  function openRoom(room) {
+  // `mode` rearranges the room's own furniture and nothing else, so the native
+  // shell takes the token alone until it has a screen per mode of its own.
+  function openRoom(room, mode) {
     const token = String((typeof room === "string" ? room : room?.path) || "")
       .split("/").filter(Boolean).pop();
     if (native) return window.LinguaNative.openRoom(token);
     const opened = window.open("about:blank", "_blank");
     if (!opened) return false;
     opened.opener = null;
-    opened.location.replace(inviteUrl(room));
+    const url = new URL(inviteUrl(room));
+    if (mode && mode !== "video") url.searchParams.set("m", mode);
+    // The host opens the same call screen the invitation opens, name included.
+    if (mode === "voice" && room?.callee) url.searchParams.set("n", room.callee);
+    opened.location.replace(url.toString());
     return true;
   }
 

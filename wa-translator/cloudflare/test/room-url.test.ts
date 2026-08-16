@@ -99,6 +99,20 @@ describe("public room URL interface", () => {
     expect(deniedPreflight.status).toBe(401);
   });
 
+  it("serves the same room page whatever mode the link asks for", async () => {
+    // `?m=` is the participant's own furniture. The router matches on pathname,
+    // nothing signs the mode, and an unknown value must not deny a valid room.
+    const path = await createRoom();
+    for (const query of ["?m=voice", "?m=chat", "?m=video", "?m=nonsense", "?m=voice&n=Ana%20R"]) {
+      const page = await exports.default.fetch(`${ORIGIN}${path}${query}`);
+      expect(page.status, query).toBe(200);
+      expect(page.headers.get("Cache-Control")).toBe("no-store");
+    }
+    const html = await (await exports.default.fetch(`${ORIGIN}${path}?m=voice`)).text();
+    // The page decides the mode itself; the server sends one document.
+    expect(html).toContain("document.body.dataset.mode = roomMode");
+  });
+
   it("rejects expired bearers and cross-origin room creation", async () => {
     const expired = await signedToken("A2345678901234567890123", Math.floor(Date.now() / 1000) - 1);
     const page = await exports.default.fetch(`${ORIGIN}/room/${expired}`);

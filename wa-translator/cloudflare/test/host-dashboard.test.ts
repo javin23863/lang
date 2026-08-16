@@ -12,11 +12,33 @@ describe("installed host dashboard client", () => {
     const html = await response.text();
 
     for (const id of [
-      "roomState", "createBtn", "shareLink", "copyBtn", "shareBtn", "openBtn", "closeBtn"
+      "roomState", "createBtn", "shareLink", "copyBtn", "shareBtn", "openBtn", "closeBtn",
+      // Accounts: the sign-in card, the account chip, and the credits panel.
+      "authPanel", "accountChip", "signOutBtn", "creditsPanel", "creditsBalance",
+      "buyCreditsBtn", "usageList", "deleteAccountBtn",
+      // The three call surfaces. createBtn above is the video tile, unchanged.
+      "createVoiceBtn", "createChatBtn"
     ]) expect(html).toContain(`id="${id}"`);
+    // The provider buttons are rendered from what /api/me reports, so their ids
+    // are in the source as the strings the page assigns rather than as markup.
+    expect(html).toContain('"signInGoogle"');
+    expect(html).toContain('"signInApple"');
+    expect(html).toContain('"signInFacebook"');
+    // Purchase is a stub and says so: a live-looking dead button is a store
+    // review finding, and an enabled one would take money for nothing.
+    expect(html).toContain("data-stub");
     expect(html).toContain('aria-live="polite"');
     expect(html).toContain('<script src="/app-runtime.js"></script>');
     expect(html).toContain('fetch(runtime.apiUrl("/api/rooms")');
+    expect(html).toContain('fetch(runtime.apiUrl("/api/me")');
+    // Signed-in and signed-out are one attribute on <body>; nothing about the
+    // account is decided by hiding elements one at a time.
+    expect(html).toContain("[data-auth=");
+    expect(html).toContain('document.body.dataset.auth = account.signed_in ? "in" : "out"');
+    // Sign-in is a link to the provider. This app never holds a credential.
+    expect(html).toContain('/auth/" + provider + "/start');
+    expect(html).not.toContain("password");
+    expect(html).not.toContain('type="password"');
     expect(html).toContain('fetch(runtime.apiUrl("/api/room-control")');
     expect(html).toContain('fetch(runtime.apiUrl("/api/room-control/close")');
     expect(html).not.toContain('fetch("/api/capabilities"');
@@ -31,6 +53,10 @@ describe("installed host dashboard client", () => {
     expect(html).toContain('clearCurrentRoom("expired", "home.controlLost")');
     expect(html).toContain('clearCurrentRoom("closed", "home.roomClosed")');
     expect(html).toContain('clearCurrentRoom("closed", "home.roomClosedLink")');
+    // The mode rides the link, never the signed token: the worker is indifferent
+    // to it and a video link stays exactly what it was.
+    expect(html).toContain('url.searchParams.set("m", mode)');
+    expect(html).toContain('room.mode = MODES.has(mode) ? mode : "video"');
     expect(html).toContain('id="appLocaleSel"');
     expect(html).toContain("runtime.i18n.use($(\"appLocaleSel\").value)");
     const runtime = await (await exports.default.fetch(`${ORIGIN}/app-runtime.js`)).text();
