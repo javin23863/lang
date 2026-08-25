@@ -117,11 +117,34 @@ export class UserDirectory extends WorkerUserDirectory {
     return new Response(null, {status: 204});
   }
 
+  // A Durable Object is named from provider+subject, so once its profile exists
+  // its derived user id/provider are immutable. Reject any internal write that
+  // tries to mutate those authority fields rather than silently accepting an
+  // inconsistent account record.
+  private async profileIdentityConflict(request: Request): Promise<Response | null> {
+    const url = new URL(request.url);
+    if (request.method !== "POST" || url.pathname !== "/") return null;
+    let data: Record<string, unknown>;
+    try {
+      const parsed = await request.clone().json<unknown>();
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+      data = parsed as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+    if (typeof data.user_id !== "string" || typeof data.provider !== "string") return null;
+    const existing = await this.ctx.storage.get<UserProfile>("profile");
+    if (!existing) return null;
+    if (existing.user_id === data.user_id && existing.provider === data.provider) return null;
+    return new Response("Account identity mismatch", {status: 409});
+  }
+
   // Provider profile strings are presentation metadata, not account identity.
   // Keep international letters/scripts intact while removing C0/C1 controls and
   // bidi override/isolate characters that can make the rendered account label
-  // visually impersonate surrounding UI. The provider subject-derived object ID
-  // and provider name are never rewritten here.
+  // visually impersonate surrounding UI. If an established provider later omits
+  // email/name claims, preserve the previous non-empty values instead of erasing
+  // account metadata during an otherwise valid reauthentication.
   private async sanitizeProviderProfile(request: Request): Promise<Request> {
     const url = new URL(request.url);
     if (request.method !== "POST" || url.pathname !== "/") return request;
@@ -135,8 +158,14 @@ export class UserDirectory extends WorkerUserDirectory {
     }
     if (typeof data.name !== "string" || typeof data.email !== "string") return request;
 
-    const email = cleanProfileText(data.email, 160);
-    const name = cleanProfileText(data.name, 80) || cleanProfileText(email, 80);
+    const existing = await this.ctx.storage.get<UserProfile>("profile");
+    let email = cleanProfileText(data.email, 160);
+    let name = cleanProfileText(data.name, 80);
+    if (existing && existing.user_id === data.user_id && existing.provider === data.provider) {
+      if (!email) email = existing.email;
+      if (!name) name = existing.name;
+    }
+    if (!name) name = cleanProfileText(email, 80);
     if (name === data.name && email === data.email) return request;
     data.name = name;
     data.email = email;
@@ -274,6 +303,9 @@ export class UserDirectory extends WorkerUserDirectory {
 
     const profileName = await this.appleProfileName(request);
     if (profileName) return profileName;
+
+    const identityConflict = await this.profileIdentityConflict(request);
+    if (identityConflict) return identityConflict;
 
     const idempotent = await this.idempotentUsage(request);
     if (idempotent) return idempotent;
