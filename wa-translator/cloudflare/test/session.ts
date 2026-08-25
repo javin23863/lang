@@ -52,10 +52,15 @@ export async function hostSession(
 }
 
 export async function hostSessionV2(
-  userId = "TestHostUser0123456789", ttlSeconds = SESSION_TTL_SECONDS
+  userId = "TestHostUser0123456789",
+  ttlSeconds = SESSION_TTL_SECONDS,
+  absoluteExpiresAt?: number
 ): Promise<string> {
   await ensureHostAccount(userId);
-  const expiresAt = Math.floor(Date.now() / 1000) + ttlSeconds;
+  const expiresAt = absoluteExpiresAt ?? Math.floor(Date.now() / 1000) + ttlSeconds;
+  if (!Number.isSafeInteger(expiresAt) || expiresAt <= Math.floor(Date.now() / 1000)) {
+    throw new TypeError("test session expiry must be a future integer timestamp");
+  }
   return (await mintSessionV2(userId, SECRET, expiresAt)).token;
 }
 

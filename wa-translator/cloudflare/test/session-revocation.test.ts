@@ -23,12 +23,18 @@ async function browserSnapshot(session: string): Promise<Response> {
 describe("server-side session revocation", () => {
   it("revokes only the v2 browser session that logged out even when both expire together", async () => {
     const userId = "LogoutHostUser00000001";
-    const first = await hostSessionV2(userId, SESSION_TTL_SECONDS);
-    const second = await hostSessionV2(userId, SESSION_TTL_SECONDS);
+    // Pin one future second for both tokens. The regression is specifically
+    // guarding against revocation keyed too coarsely by account or expiry, so
+    // relying on two separate Date.now() calls would make the collision test
+    // nondeterministic at a wall-clock second boundary.
+    const sharedExpiry = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS;
+    const first = await hostSessionV2(userId, SESSION_TTL_SECONDS, sharedExpiry);
+    const second = await hostSessionV2(userId, SESSION_TTL_SECONDS, sharedExpiry);
     expect(first).toMatch(/^s2\./);
     expect(second).toMatch(/^s2\./);
     expect(first).not.toBe(second);
-    expect(first.split(".")[2]).toBe(second.split(".")[2]);
+    expect(first.split(".")[2]).toBe(String(sharedExpiry));
+    expect(second.split(".")[2]).toBe(String(sharedExpiry));
 
     const foreign = await exports.default.fetch(`${ORIGIN}/auth/logout`, {
       method: "POST",
