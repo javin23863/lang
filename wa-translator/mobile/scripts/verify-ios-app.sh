@@ -1,9 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-app="${1:-build/ios/Build/Products/Release-iphoneos/App.app}"
-if [[ ! -d "$app" ]]; then
-  echo "iOS app bundle not found: $app" >&2
+input="${1:-build/ios/Build/Products/Release-iphoneos/App.app}"
+tmp=""
+cleanup() {
+  if [[ -n "$tmp" ]]; then rm -rf "$tmp"; fi
+}
+trap cleanup EXIT
+
+if [[ "$input" == *.ipa ]]; then
+  if [[ ! -s "$input" ]]; then
+    echo "iOS IPA not found: $input" >&2
+    exit 1
+  fi
+  tmp="$(mktemp -d)"
+  unzip -q "$input" -d "$tmp"
+  app="$(find "$tmp/Payload" -maxdepth 1 -type d -name '*.app' -print -quit)"
+else
+  app="$input"
+fi
+
+if [[ -z "${app:-}" || ! -d "$app" ]]; then
+  echo "iOS app bundle not found in: $input" >&2
   exit 1
 fi
 
