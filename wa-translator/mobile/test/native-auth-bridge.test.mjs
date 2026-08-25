@@ -30,11 +30,15 @@ test("stale native sessions clear themselves on auth failure or signed-out accou
   assert.match(bridge, /if \(clearSession\) await clearNativeSession\(\)/);
 });
 
-test("native one-time auth handoffs are idempotent across cold-launch delivery", async () => {
+test("native one-time auth handoffs are idempotent and always retire their binding", async () => {
   const bridge = await read("../src/mobile-bridge.ts");
   assert.match(bridge, /const handledAuthHandoffs = new Set<string>\(\)/);
   assert.match(bridge, /if \(handledAuthHandoffs\.has\(auth\.handoff\)\) return/);
   assert.match(bridge, /handledAuthHandoffs\.add\(auth\.handoff\)/);
+  assert.match(bridge, /await hostStorage\.setItem\(NATIVE_SESSION_KEY, nativeSession\);\s*clearAuthBinding\(provider\)/,
+               "successful exchange removes the temporary binding after the session is persisted");
+  assert.match(bridge, /catch \{[\s\S]*?clearAuthBinding\(provider\);[\s\S]*?index\.html\?auth=failed/,
+               "failed one-shot exchange also removes a binding that can no longer be used safely");
   assert.match(bridge, /App\.addListener\("appUrlOpen"/);
   assert.match(bridge, /App\.getLaunchUrl\(\)/,
                "both Capacitor delivery paths remain supported while duplicate handoffs are ignored");
