@@ -15,7 +15,8 @@ const NONCE = "ABCDEFGHIJKLMNOPQRSTUV";
 const CHALLENGE = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq";
 const SIGNATURE = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq";
 const HANDOFF = `nh2.google.${USER}.${FUTURE}.${NONCE}.${CHALLENGE}.${SIGNATURE}`;
-const SESSION = `s1.${USER}.${FUTURE}.${CHALLENGE}`;
+const SESSION_V1 = `s1.${USER}.${FUTURE}.${CHALLENGE}`;
+const SESSION_V2 = `s2.${USER}.${FUTURE}.${NONCE}.${CHALLENGE}`;
 
 test("deep links accept only exact signed public room URLs", () => {
   assert.deepEqual(
@@ -82,8 +83,13 @@ test("native auth completion accepts only the app scheme and matching provider",
   assert.equal(parseNativeAuthLink(
     `${MOBILE_AUTH_SCHEME}://auth/google#${"x".repeat(2000)}`
   ), null, "oversized custom-scheme input is rejected before fragment parsing");
-  assert.equal(isSessionToken(SESSION), true);
+  assert.equal(isSessionToken(SESSION_V1), true,
+               "installed clients temporarily retain existing s1 secure-storage sessions");
+  assert.equal(isSessionToken(SESSION_V2), true,
+               "new nonce-bearing s2 sessions are accepted by the installed client");
   assert.equal(isSessionToken(`s1.${USER}.1.${CHALLENGE}`), false);
+  assert.equal(isSessionToken(`s2.${USER}.1.${NONCE}.${CHALLENGE}`), false);
+  assert.equal(isSessionToken(`s2.${USER}.${FUTURE}.short.${CHALLENGE}`), false);
 });
 
 test("native traffic stays on the versioned backend seam", () => {
