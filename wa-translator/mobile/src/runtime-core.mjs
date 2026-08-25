@@ -1,6 +1,6 @@
 export const PUBLIC_ORIGIN =
   "https://spoken-translation-room.spoken-translation-cloudflare.workers.dev";
-export const MOBILE_PROTOCOL = 1;
+export const MOBILE_PROTOCOL = 2;
 export const MOBILE_BUILD = 1;
 export const PARTICIPANT_LIMIT = 2;
 export const MOBILE_AUTH_SCHEME = "com.javin23863.linguarelay";
