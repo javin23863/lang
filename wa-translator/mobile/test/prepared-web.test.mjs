@@ -4,11 +4,11 @@ import test from "node:test";
 
 const root = new URL("../www/", import.meta.url);
 
-test("prepared mobile web bundle contains the app, runtime, and local worklet", async () => {
+test("prepared mobile web bundle contains the app, runtime, legal pages, and local worklet", async () => {
   for (const path of [
     "index.html", "room.html", "app-runtime.js", "mobile-bridge.js", "qr.js",
     "dashboard.css", "dashboard.js", "privacy.html", "terms.html", "support.html",
-    "legal-runtime.js", "static/pcm-worklet.js"
+    "delete-account.html", "legal-runtime.js", "static/pcm-worklet.js"
   ]) await access(new URL(path, root));
 
   for (const name of ["index.html", "room.html"]) {
@@ -22,11 +22,11 @@ test("prepared mobile web bundle contains the app, runtime, and local worklet", 
   assert.match(dashboard, /<link rel="stylesheet" href="\/dashboard\.css">/);
   assert.match(dashboard, /<script src="\/dashboard\.js"><\/script>/);
 
-  for (const name of ["privacy.html", "terms.html", "support.html"]) {
+  for (const name of ["privacy.html", "terms.html", "support.html", "delete-account.html"]) {
     const html = await readFile(new URL(name, root), "utf8");
     assert.match(html, /id="legalBack"/);
     assert.match(html, /<script src="legal-runtime\.js"><\/script>/,
-                 `${name} keeps safe room-return behavior in the native bundle`);
+                 `${name} keeps safe return-navigation behavior in the native bundle`);
   }
 });
 
