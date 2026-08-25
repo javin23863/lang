@@ -9,7 +9,7 @@ type Client = {
   id: string;
   peers: Array<{ id: string }>;
   socket: WebSocket;
-  next: () => Promise<Record<string, any>>;
+  next: (type?: string) => Promise<Record<string, any>>;
 };
 
 async function createRoom(): Promise<string> {
@@ -28,15 +28,23 @@ async function open(path: string, lang: "en" | "es" | "fr" | "de", localeOverrid
   const socket = response.webSocket!;
   socket.accept();
   const pending: Record<string, any>[] = [];
-  const readers: ((message: Record<string, any>) => void)[] = [];
+  const readers: Array<{
+    type?: string;
+    resolve: (message: Record<string, any>) => void;
+  }> = [];
   socket.addEventListener("message", (event: MessageEvent) => {
     const message = JSON.parse(String(event.data));
-    const reader = readers.shift();
-    if (reader) reader(message); else pending.push(message);
+    const readerIndex = readers.findIndex(reader => !reader.type || reader.type === message.type);
+    if (readerIndex >= 0) readers.splice(readerIndex, 1)[0].resolve(message);
+    else pending.push(message);
   });
-  const next = () => pending.length
-    ? Promise.resolve(pending.shift()!)
-    : new Promise<Record<string, any>>(resolve => readers.push(resolve));
+  const next = (type?: string) => {
+    const pendingIndex = type ? pending.findIndex(message => message.type === type) : 0;
+    if (pendingIndex >= 0 && pending.length) {
+      return Promise.resolve(pending.splice(pendingIndex, 1)[0]);
+    }
+    return new Promise<Record<string, any>>(resolve => readers.push({ type, resolve }));
+  };
   const profile = {
     en: ["en-US", "en-us-af-heart"],
     es: ["es-ES", "es-ef-dora"],
@@ -47,7 +55,7 @@ async function open(path: string, lang: "en" | "es" | "fr" | "de", localeOverrid
     type: "join", locale: localeOverride || profile[lang][0], name: lang,
     voice_profile: profile[lang][1],
   }));
-  const welcome = await next();
+  const welcome = await next("welcome");
   expect(welcome.type).toBe("welcome");
   return { id: welcome.id, peers: welcome.peers, socket, next };
 }
@@ -73,7 +81,7 @@ describe("authenticated independent Modal compute proxy", () => {
     const room = await createRoom();
     const speaker = await open(room, "de");
     speaker.socket.send(new Uint8Array(3200).buffer);
-    expect(await speaker.next()).toEqual({
+    expect(await speaker.next("caption_status")).toEqual({
       type: "caption_status", status: "capacity", scope: "global", retry_after_ms: 1000
     });
     speaker.socket.close(1000, "done");
@@ -83,12 +91,12 @@ describe("authenticated independent Modal compute proxy", () => {
     const room = await createRoom();
     const listener = await open(room, "es");
     const speaker = await open(room, "en");
-    await listener.next();
+    await listener.next("peer_join");
     const frame = new Uint8Array(3200);
     frame[0] = 7; // test adapter holds this marker until speech_end arrives
     speaker.socket.send(frame.buffer);
     speaker.socket.send(JSON.stringify({ type: "speech_end" }));
-    expect(await listener.next()).toMatchObject({
+    expect(await listener.next("caption")).toMatchObject({
       type: "caption", speaker: speaker.id, final: true, original: "flushed"
     });
     speaker.socket.close(1000, "done");
@@ -100,10 +108,10 @@ describe("authenticated independent Modal compute proxy", () => {
     const listener = await open(room, "es");
     const speaker = await open(room, "en");
     expect(speaker.peers).toEqual([expect.objectContaining({ id: listener.id })]);
-    expect(await listener.next()).toMatchObject({ type: "peer_join", id: speaker.id });
+    expect(await listener.next("peer_join")).toMatchObject({ type: "peer_join", id: speaker.id });
 
     speaker.socket.send(new Uint8Array(3200).buffer);
-    const first = await listener.next();
+    const first = await listener.next("caption");
     expect(first).toMatchObject({
       type: "caption", speaker: speaker.id, speaker_lang: "en",
       final: true, original: "hello", translations: { es: "hola" }
@@ -116,7 +124,7 @@ describe("authenticated independent Modal compute proxy", () => {
       type: "signal", to: listener.id,
       data: { candidate: { candidate: "still-alive" } }
     }));
-    expect(await listener.next()).toMatchObject({
+    expect(await listener.next("signal")).toMatchObject({
       type: "signal", from: speaker.id,
       data: { candidate: { candidate: "still-alive" } }
     });
@@ -124,7 +132,7 @@ describe("authenticated independent Modal compute proxy", () => {
 
     await new Promise(resolve => setTimeout(resolve, 600));
     speaker.socket.send(new Uint8Array(3200).buffer);
-    expect(await listener.next()).toMatchObject({
+    expect(await listener.next("caption")).toMatchObject({
       type: "caption", speaker: speaker.id, final: true
     });
 
@@ -136,30 +144,27 @@ describe("authenticated independent Modal compute proxy", () => {
     const room = await createRoom();
     const listener = await open(room, "es");
     const speaker = await open(room, "en");
-    await listener.next(); // peer_join English
+    await listener.next("peer_join");
 
     speaker.socket.send(new Uint8Array(3200).buffer);
-    expect(await listener.next()).toMatchObject({
+    expect(await listener.next("caption")).toMatchObject({
       type: "caption", speaker: speaker.id,
       translations: { es: "hola" },
     });
 
     // The same listener can change languages in a two-person conversation.
     // The compute route must follow that current language rather than retain a
-    // stale target from before the change. The speaker also receives its own
-    // previous caption, so skip unrelated queued events while waiting for the
-    // listener's locale update.
+    // stale target from before the change. Typed reads intentionally leave the
+    // sender's prior caption and the listener's own peer_update queued.
     listener.socket.send(JSON.stringify({
       type: "set_locale", locale: "fr-FR", voice_profile: "fr-ff-siwis"
     }));
-    let update = await speaker.next();
-    while (update.type !== "peer_update") update = await speaker.next();
-    expect(update).toMatchObject({
+    expect(await speaker.next("peer_update")).toMatchObject({
       type: "peer_update", id: listener.id, lang: "fr"
     });
     await new Promise(resolve => setTimeout(resolve, 600));
     speaker.socket.send(new Uint8Array(3200).buffer);
-    expect(await listener.next()).toMatchObject({
+    expect(await listener.next("caption")).toMatchObject({
       type: "caption", speaker: speaker.id,
       translations: { fr: "translated-fr" },
     });
