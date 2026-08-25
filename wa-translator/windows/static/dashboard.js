@@ -170,6 +170,10 @@ async function deleteAccount() {
     const response = await fetch(runtime.apiUrl("/api/account/delete"),
                                  {method: "POST", headers: {Accept: "application/json"}});
     if (!response.ok) throw new Error("delete failed");
+    // A room link remains independently valid until room expiry, but the local
+    // host-control bearer belongs to the account/device session that created it.
+    // Do not let the next account on a shared device inherit that control token.
+    await forgetRoom();
     location.reload();
   } catch (_) {
     setNotice("auth.deleteFailed");
@@ -339,9 +343,17 @@ $("createChatBtn").onclick = () => createRoom("chat");
 $("createBtn").onclick = () => createRoom("video");
 $("signOutBtn").onclick = async () => {
   try {
-    await fetch(runtime.apiUrl("/auth/logout"), {method: "POST", headers: {Accept: "application/json"}});
-  } catch (_) { /* the reload re-reads the session either way */ }
-  location.reload();
+    const response = await fetch(runtime.apiUrl("/auth/logout"), {
+      method: "POST", headers: {Accept: "application/json"}
+    });
+    if (!response.ok) throw new Error("logout failed");
+    // Logout revokes only this account session. Remove its local host-control
+    // bearer as well so a later account on the device cannot inherit room admin.
+    await forgetRoom();
+    location.reload();
+  } catch (_) {
+    setAuthStatus("auth.signOutFailed");
+  }
 };
 $("deleteAccountBtn").onclick = deleteAccount;
 $("copyBtn").onclick = copyLink;
