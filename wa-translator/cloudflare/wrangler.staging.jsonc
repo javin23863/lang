@@ -1,0 +1,42 @@
+// Staging is a separate Worker and Durable Object namespace. It intentionally
+// uses a distinct workers.dev origin so OAuth, room capability URLs, reports,
+// quotas, and test data cannot cross into production.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "spoken-translation-room-staging",
+  "main": "src/session-issuance-entry.ts",
+  "compatibility_date": "2026-08-13",
+  "upload_source_maps": true,
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": false
+    }
+  },
+  "rules": [
+    { "type": "Text", "globs": ["**/*.html"], "fallthrough": true }
+  ],
+  "assets": {
+    "directory": "../windows/static",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "ROOMS", "class_name": "Room" },
+      { "name": "ABUSE", "class_name": "AbuseGate" },
+      { "name": "REPORTS", "class_name": "ReportInbox" },
+      { "name": "USERS", "class_name": "UserDirectory" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Room"] },
+    { "tag": "v2", "new_sqlite_classes": ["AbuseGate", "ReportInbox"] },
+    { "tag": "v3", "new_sqlite_classes": ["UserDirectory"] }
+  ],
+  "vars": {
+    "TURN_TTL_SECONDS": "3600",
+    "PUBLIC_ORIGIN": "https://spoken-translation-room-staging.spoken-translation-cloudflare.workers.dev"
+  }
+}
