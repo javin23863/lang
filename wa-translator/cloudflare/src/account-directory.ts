@@ -108,8 +108,10 @@ export class UserDirectory extends WorkerUserDirectory {
     if (!match || request.method !== "GET") return null;
     const key = `${SESSION_REVOCATION_PREFIX}${match[1]}`;
     const marker = await this.ctx.storage.get<SessionRevocation>(key);
+    const now = Date.now();
     if (!marker || !Number.isSafeInteger(marker.expiresAt)
-        || marker.expiresAt * 1000 <= Date.now()) {
+        || marker.expiresAt * 1000 <= now
+        || marker.expiresAt * 1000 > now + SESSION_REVOCATION_MAX_MS) {
       if (marker) await this.ctx.storage.delete(key);
       await this.pruneSessionRevocations();
       return new Response("Not found", {status: 404});
@@ -173,6 +175,23 @@ export class UserDirectory extends WorkerUserDirectory {
     headers.delete("Content-Length");
     headers.set("Content-Type", "application/json");
     return new Request(request, {headers, body: JSON.stringify(data)});
+  }
+
+  // A first login needs a usable contact/display profile because the shipping
+  // account contract exposes both. Established accounts are handled above and
+  // can survive a later provider response that omits those presentation claims.
+  private async incompleteNewProfile(request: Request): Promise<Response | null> {
+    const url = new URL(request.url);
+    if (request.method !== "POST" || url.pathname !== "/") return null;
+    if (await this.ctx.storage.get<UserProfile>("profile")) return null;
+    try {
+      const data = await request.clone().json<Record<string, unknown>>();
+      if (typeof data.name === "string" && data.name
+          && typeof data.email === "string" && data.email) return null;
+    } catch {
+      return null; // base object owns malformed-profile validation
+    }
+    return new Response("Account profile unavailable", {status: 422});
   }
 
   // Apple provides the person's name only on the first authorization. Later
@@ -314,6 +333,8 @@ export class UserDirectory extends WorkerUserDirectory {
     const accountRoot = url.pathname === "/";
     const sanitized = await this.sanitizeProviderProfile(request);
     const forwarded = await this.preserveAppleProfileName(sanitized);
+    const incomplete = await this.incompleteNewProfile(forwarded);
+    if (incomplete) return incomplete;
     const response = await super.fetch(forwarded);
 
     // Root profile reads/writes and legacy /usage writes are all account
