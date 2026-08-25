@@ -44,6 +44,13 @@ test("native auth keeps the raw binding on-device and exposes only its challenge
                       "current bindings are never written to WebView localStorage");
   assert.match(bridge, /LEGACY_AUTH_BINDING_PREFIX/,
                "an older in-flight localStorage binding can be migrated once rather than stranded");
+  assert.match(bridge, /let migratedLegacy = false/);
+  assert.match(bridge, /if \(legacy\) \{\s*binding = legacy;\s*migratedLegacy = true;/,
+               "the bridge knows when the current proof exists only in legacy storage");
+  assert.match(bridge, /let persisted = false;[\s\S]*?await hostStorage\.setItem\(authBindingKey\(provider\), binding\);\s*persisted = true/,
+               "secure migration success is tracked explicitly");
+  assert.match(bridge, /if \(!migratedLegacy \|\| persisted\) \{\s*try \{ localStorage\.removeItem\(legacyAuthBindingKey\(provider\)\); \}/,
+               "a legacy in-flight proof is not deleted until secure storage really has it");
 });
 
 test("native one-time handoffs remain idempotent and retire their proof after every terminal attempt", async () => {
