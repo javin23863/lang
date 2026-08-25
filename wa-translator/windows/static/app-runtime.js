@@ -171,8 +171,8 @@
     "captions.live": "live",
 
     "stage.waiting": "Waiting for the other person to join…",
-    "stage.countOne": "{count} / 4 person",
-    "stage.countMany": "{count} / 4 people",
+    "stage.countOne": "{count} / 2 person",
+    "stage.countMany": "{count} / 2 people",
 
     "status.joiningAs": "Joining as {language}…",
     "status.connected": "Connected",
@@ -410,14 +410,15 @@
   function openRoom(room, mode) {
     const token = String((typeof room === "string" ? room : room?.path) || "")
       .split("/").filter(Boolean).pop();
-    if (native) return window.LinguaNative.openRoom(token, mode);
+    const name = mode === "voice" && room?.callee ? room.callee : undefined;
+    if (native) return window.LinguaNative.openRoom(token, mode, name);
     const opened = window.open("about:blank", "_blank");
     if (!opened) return false;
     opened.opener = null;
     const url = new URL(inviteUrl(room));
     if (mode && mode !== "video") url.searchParams.set("m", mode);
     // The host opens the same call screen the invitation opens, name included.
-    if (mode === "voice" && room?.callee) url.searchParams.set("n", room.callee);
+    if (name) url.searchParams.set("n", name);
     opened.location.replace(url.toString());
     return true;
   }
