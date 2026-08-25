@@ -13,26 +13,37 @@ fi
 
 SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager 2>/dev/null | sort | tail -n 1)"
 AVDMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name avdmanager 2>/dev/null | sort | tail -n 1)"
-EMULATOR="$SDK_ROOT/emulator/emulator"
-ADB="$SDK_ROOT/platform-tools/adb"
-
-for tool in "$SDKMANAGER" "$AVDMANAGER" "$EMULATOR" "$ADB"; do
+for tool in "$SDKMANAGER" "$AVDMANAGER"; do
   if [[ -z "$tool" || ! -x "$tool" ]]; then
-    echo "Required Android SDK tool is unavailable: ${tool:-<unset>}" >&2
+    echo "Required Android command-line tool is unavailable: ${tool:-<unset>}" >&2
     exit 1
   fi
 done
 
-if [[ ! -d "$SDK_ROOT/system-images/android-36/google_apis/x86_64" ]]; then
+packages=()
+[[ -x "$SDK_ROOT/platform-tools/adb" ]] || packages+=("platform-tools")
+[[ -x "$SDK_ROOT/emulator/emulator" ]] || packages+=("emulator")
+[[ -d "$SDK_ROOT/system-images/android-36/google_apis/x86_64" ]] || packages+=("$SYSTEM_IMAGE")
+if (( ${#packages[@]} )); then
   set +o pipefail
-  yes | "$SDKMANAGER" --install "$SYSTEM_IMAGE" >/dev/null
-  install_status="${PIPESTATUS[1]}"
+  yes | "$SDKMANAGER" --licenses >/dev/null
+  license_status="${PIPESTATUS[1]}"
   set -o pipefail
-  if [[ "$install_status" -ne 0 ]]; then
-    echo "Could not install Android API 36 emulator image" >&2
-    exit "$install_status"
+  if [[ "$license_status" -ne 0 ]]; then
+    echo "Could not accept Android SDK licenses for native smoke" >&2
+    exit "$license_status"
   fi
+  "$SDKMANAGER" --install "${packages[@]}" >/dev/null
 fi
+
+EMULATOR="$SDK_ROOT/emulator/emulator"
+ADB="$SDK_ROOT/platform-tools/adb"
+for tool in "$EMULATOR" "$ADB"; do
+  if [[ ! -x "$tool" ]]; then
+    echo "Required Android runtime tool is unavailable after SDK provisioning: $tool" >&2
+    exit 1
+  fi
+done
 
 "$AVDMANAGER" delete avd --name "$AVD_NAME" >/dev/null 2>&1 || true
 set +o pipefail
