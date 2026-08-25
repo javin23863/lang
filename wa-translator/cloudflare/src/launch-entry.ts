@@ -4,12 +4,8 @@ import type { Env } from "./worker";
 
 export { AbuseGate, ReportInbox, Room, UserDirectory };
 
-const HTML_ISOLATION_POLICY = "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'none'";
-const APP_CONTENT_POLICY = `${HTML_ISOLATION_POLICY}; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self'`;
-// Keep room connections unrestricted at CSP level for now: signalling uses a
-// same-origin WebSocket, and browser handling of `connect-src 'self'` for wss
-// has historically varied. Script/style/media loading is still locked down.
-const ROOM_CONTENT_POLICY = `${HTML_ISOLATION_POLICY}; style-src 'self'; script-src 'self'; img-src 'self' data:; media-src 'self' blob: data:`;
+const HTML_ISOLATION_POLICY = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'none'";
+const APP_CONTENT_POLICY = `${HTML_ISOLATION_POLICY}; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self'; worker-src 'self'; manifest-src 'self'`;
 const FOUR_PERSON_FALLBACK = 'id="participantCount" aria-live="polite">0 / 4 people<';
 const TWO_PERSON_FALLBACK = 'id="participantCount" aria-live="polite">0 / 2 people<';
 const ROOM_STYLE_PATTERN = /<style>\n([\s\S]*?)\n<\/style>/;
@@ -99,6 +95,12 @@ function roomAsset(pathname: string): Response | null {
   }});
 }
 
+function roomContentPolicy(request: Request): string {
+  const url = new URL(request.url);
+  const websocketOrigin = `${url.protocol === "https:" ? "wss:" : "ws:"}//${url.host}`;
+  return `${HTML_ISOLATION_POLICY}; style-src 'self'; script-src 'self'; img-src 'self' data:; media-src 'self' blob: data:; connect-src 'self' ${websocketOrigin}; worker-src 'self'`;
+}
+
 async function hardenHtml(request: Request, response: Response): Promise<Response> {
   if (response.webSocket) return response;
   const contentType = response.headers.get("Content-Type") || "";
@@ -115,7 +117,7 @@ async function hardenHtml(request: Request, response: Response): Promise<Respons
 
   const headers = new Headers(response.headers);
   headers.delete("Content-Length");
-  headers.set("Content-Security-Policy", room ? ROOM_CONTENT_POLICY : APP_CONTENT_POLICY);
+  headers.set("Content-Security-Policy", room ? roomContentPolicy(request) : APP_CONTENT_POLICY);
   headers.set("X-Frame-Options", "DENY");
   headers.set("Referrer-Policy", "no-referrer");
   headers.set("X-Content-Type-Options", "nosniff");
