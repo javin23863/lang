@@ -84,8 +84,13 @@ describe("installed host dashboard client", () => {
     expect(roomController).toContain('dashboardFetch(runtime.apiUrl("/api/rooms")');
     expect(roomController).toContain('dashboardFetch(runtime.apiUrl("/api/room-control")');
     expect(roomController).toContain('dashboardFetch(runtime.apiUrl("/api/room-control/close")');
-    expect(roomController).toContain("let statusRefreshing = false");
-    expect(roomController).toContain("if (!room || busy || statusRefreshing) return");
+    expect(roomController).toContain("let statusRefreshRoom = null");
+    expect(roomController).toContain("const targetRoom = room");
+    expect(roomController).toContain("if (!targetRoom || busy || statusRefreshRoom === targetRoom) return");
+    expect(roomController).toContain("statusRefreshRoom = targetRoom");
+    expect(roomController).toContain("if (room !== targetRoom) return");
+    expect(roomController).toContain("if (room === targetRoom)");
+    expect(roomController).toContain("if (statusRefreshRoom === targetRoom) statusRefreshRoom = null");
     expect(roomController).toContain("value.participant_limit !== 2");
     expect(roomController).toContain('events()?.emit("room.create.result", {mode: requestedMode, result: "success"})');
     expect(roomController).toContain('events()?.emit("room.create.result", {mode: requestedMode, result: "failure"})');
