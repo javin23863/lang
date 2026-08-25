@@ -5,6 +5,7 @@ export { PUBLIC_ORIGIN };
 export const APP_ID = "com.javin23863.linguarelay";
 export const PARTICIPANT_LIMIT = 2;
 export const MOBILE_PROTOCOL = 1;
+export const PLAY_VERSION_CODE_MAX = 2_100_000_000;
 
 function requireCondition(condition, message) {
   if (!condition) throw new Error(message);
@@ -23,6 +24,10 @@ export function releaseBuildNumber(platform, environment = process.env) {
   const build = Number(raw);
   requireCondition(Number.isSafeInteger(build) && build >= 1,
     `${platform} release build number is missing or invalid`);
+  if (platform === "android") {
+    requireCondition(build <= PLAY_VERSION_CODE_MAX,
+      `Android versionCode ${build} exceeds Google Play maximum ${PLAY_VERSION_CODE_MAX}`);
+  }
   return build;
 }
 
