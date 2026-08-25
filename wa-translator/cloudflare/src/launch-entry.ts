@@ -1,5 +1,6 @@
 import roomSource from "../../windows/static/room.html";
-import mobileEntry, { AbuseGate, ReportInbox, Room, UserDirectory } from "./mobile-entry";
+import mobileEntry, { AbuseGate, Room, UserDirectory } from "./mobile-entry";
+import { ReportInbox } from "./report-inbox";
 import type { Env } from "./worker";
 
 export { AbuseGate, ReportInbox, Room, UserDirectory };
