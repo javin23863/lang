@@ -2,6 +2,7 @@ export const PUBLIC_ORIGIN =
   "https://spoken-translation-room.spoken-translation-cloudflare.workers.dev";
 export const MOBILE_PROTOCOL = 1;
 export const MOBILE_BUILD = 1;
+export const PARTICIPANT_LIMIT = 2;
 export const MOBILE_AUTH_COMPLETE_PATH = "/mobile-auth-complete";
 
 const ROOM_TOKEN_PATTERN =
@@ -151,5 +152,6 @@ export function validateBootstrap(value, build) {
     && Number(bootstrap.minimum_client_build) <= build
     && bootstrap.public_origin === PUBLIC_ORIGIN
     && bootstrap.account_mode === "session"
-    && bootstrap.call_lifecycle === "foreground";
+    && bootstrap.call_lifecycle === "foreground"
+    && bootstrap.max_room_participants === PARTICIPANT_LIMIT;
 }
