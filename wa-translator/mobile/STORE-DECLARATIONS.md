@@ -50,11 +50,11 @@ behavior change.
   and aggregate usage totals last until the account is deleted; usage rows keep
   90 days or 200 rows, whichever is smaller. The product does not intentionally
   persist media, captions, chat content, or translated voice as conversation
-  history. A private abuse report contains only category, platform, time, and
-  an opaque public room reference. An internal non-invite room routing ID is
-  retained only so a moderator can close the active reported room. Both report
-  records expire after 30 days. Infrastructure security and error logs may be
-  retained by the providers.
+  history. A private abuse report keeps category, platform, time, and an opaque
+  public room reference for up to 30 days. Its internal non-invite room routing
+  ID and room-expiry value exist only while moderator closure can still work and
+  are deleted when that room expires, no later than 24 hours after creation.
+  Infrastructure security and error logs may be retained by the providers.
 - Room control: the host can close a room; otherwise its bearer link expires
   after 24 hours.
 - Safety/reporting: a live participant can submit one private category-only
