@@ -159,19 +159,22 @@ describe("typed chat relay", () => {
     // message on the same socket arrives normally.
     expect(delivered.original).toBe("after the blank");
     expect(delivered.seq).toBe(1_000_004);
+    empty.socket.close(1000, "done");
+    peer.socket.close(1000, "done");
 
-    const oversize = await join(path, "en");
+    // Validation of malformed senders gets an isolated room. The product
+    // contract never admits a third joined participant just for a test case.
+    const oversizePath = await createRoom();
+    const oversize = await join(oversizePath, "en");
     oversize.socket.send(JSON.stringify({
       type: "chat", text: "x".repeat(201), cid: 5
     }));
     expect((await oversize.closed).code).toBe(1008);
 
-    const badCid = await join(path, "en");
+    const badCidPath = await createRoom();
+    const badCid = await join(badCidPath, "en");
     badCid.socket.send(JSON.stringify({ type: "chat", text: "hi", cid: 1_000_000 }));
     expect((await badCid.closed).code).toBe(1008);
-
-    empty.socket.close(1000, "done");
-    peer.socket.close(1000, "done");
   });
 
   it("closes a socket that floods the room past the per-minute limit", async () => {
