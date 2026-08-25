@@ -17,6 +17,11 @@ on:
       - ".github/workflows/mobile-build.yml"
       - ".github/workflows/mobile-beta.yml"
   workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Exact 40-character commit SHA approved for release verification
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -26,6 +31,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify frozen release commit
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          EXPECTED_RELEASE_SHA: ${{ inputs.release_sha }}
+          DISPATCH_RELEASE_SHA: ${{ github.sha }}
+        run: |
+          if [[ ! "$EXPECTED_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "release_sha must be an exact lowercase 40-character commit SHA" >&2
+            exit 1
+          fi
+          if [[ "$DISPATCH_RELEASE_SHA" != "$EXPECTED_RELEASE_SHA" ]]; then
+            echo "Workflow dispatch ref resolves to ${DISPATCH_RELEASE_SHA}, expected frozen release ${EXPECTED_RELEASE_SHA}" >&2
+            exit 1
+          fi
+          actual="$(git rev-parse HEAD)"
+          if [[ "$actual" != "$EXPECTED_RELEASE_SHA" ]]; then
+            echo "Checked out ${actual}, expected frozen release ${EXPECTED_RELEASE_SHA}" >&2
+            exit 1
+          fi
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
@@ -51,6 +79,29 @@ jobs:
         working-directory: wa-translator/mobile
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify frozen release commit
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          EXPECTED_RELEASE_SHA: ${{ inputs.release_sha }}
+          DISPATCH_RELEASE_SHA: ${{ github.sha }}
+        run: |
+          if [[ ! "$EXPECTED_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "release_sha must be an exact lowercase 40-character commit SHA" >&2
+            exit 1
+          fi
+          if [[ "$DISPATCH_RELEASE_SHA" != "$EXPECTED_RELEASE_SHA" ]]; then
+            echo "Workflow dispatch ref resolves to ${DISPATCH_RELEASE_SHA}, expected frozen release ${EXPECTED_RELEASE_SHA}" >&2
+            exit 1
+          fi
+          actual="$(git rev-parse HEAD)"
+          if [[ "$actual" != "$EXPECTED_RELEASE_SHA" ]]; then
+            echo "Checked out ${actual}, expected frozen release ${EXPECTED_RELEASE_SHA}" >&2
+            exit 1
+          fi
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
@@ -86,6 +137,29 @@ jobs:
         working-directory: wa-translator/mobile
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify frozen release commit
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          EXPECTED_RELEASE_SHA: ${{ inputs.release_sha }}
+          DISPATCH_RELEASE_SHA: ${{ github.sha }}
+        run: |
+          if [[ ! "$EXPECTED_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "release_sha must be an exact lowercase 40-character commit SHA" >&2
+            exit 1
+          fi
+          if [[ "$DISPATCH_RELEASE_SHA" != "$EXPECTED_RELEASE_SHA" ]]; then
+            echo "Workflow dispatch ref resolves to ${DISPATCH_RELEASE_SHA}, expected frozen release ${EXPECTED_RELEASE_SHA}" >&2
+            exit 1
+          fi
+          actual="$(git rev-parse HEAD)"
+          if [[ "$actual" != "$EXPECTED_RELEASE_SHA" ]]; then
+            echo "Checked out ${actual}, expected frozen release ${EXPECTED_RELEASE_SHA}" >&2
+            exit 1
+          fi
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"

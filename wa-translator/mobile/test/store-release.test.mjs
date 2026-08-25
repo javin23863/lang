@@ -37,6 +37,20 @@ test("credential-free CI builds both native products", async () => {
   assert.doesNotMatch(workflow, /uses:\s+[^\n]+@(v\d+|main|master)\s*$/m);
   assert.doesNotMatch(workflow, /pull_request_target/);
   assert.doesNotMatch(workflow, /actions\/(?:checkout|setup-node|setup-java|upload-artifact)@v4/);
+  assert.match(workflow, /workflow_dispatch:\s*\n\s+inputs:\s*\n\s+release_sha:/,
+               "manual credential-free acceptance requires the frozen release SHA");
+  assert.equal((workflow.match(/ref: \$\{\{ github\.sha \}\}/g) || []).length, 3,
+               "every credential-free job checks out the immutable event commit");
+  assert.equal((workflow.match(/persist-credentials: false/g) || []).length, 3,
+               "credential-free checkout leaves no repository credential in git configuration");
+  assert.equal((workflow.match(/name: Verify frozen release commit/g) || []).length, 3);
+  assert.equal((workflow.match(/if: github\.event_name == 'workflow_dispatch'/g) || []).length, 3,
+               "exact-SHA verification runs only for deliberate manual acceptance");
+  assert.equal((workflow.match(/EXPECTED_RELEASE_SHA: \$\{\{ inputs\.release_sha \}\}/g) || []).length, 3);
+  assert.equal((workflow.match(/DISPATCH_RELEASE_SHA: \$\{\{ github\.sha \}\}/g) || []).length, 3);
+  assert.equal((workflow.match(/"\$DISPATCH_RELEASE_SHA" != "\$EXPECTED_RELEASE_SHA"/g) || []).length, 3);
+  assert.equal((workflow.match(/actual="\$\(git rev-parse HEAD\)"/g) || []).length, 3);
+  assert.equal((workflow.match(/"\$actual" != "\$EXPECTED_RELEASE_SHA"/g) || []).length, 3);
 });
 
 test("credential-gated Fastlane lanes stop at beta tracks", async () => {
