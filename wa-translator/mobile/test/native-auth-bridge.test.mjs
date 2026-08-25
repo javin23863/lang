@@ -30,6 +30,22 @@ test("stale native sessions clear themselves on auth failure or signed-out accou
   assert.match(bridge, /if \(clearSession\) await clearNativeSession\(\)/);
 });
 
+test("native-only bootstrap and handoff requests have explicit deadlines", async () => {
+  const bridge = await read("../src/mobile-bridge.ts");
+  assert.match(bridge, /const NATIVE_REQUEST_TIMEOUT_MS = 15_000/);
+  assert.match(bridge, /async function nativeFetchWithTimeout/);
+  assert.match(bridge, /const controller = new AbortController\(\)/);
+  assert.match(bridge, /setTimeout\(\(\) => controller\.abort\(\), NATIVE_REQUEST_TIMEOUT_MS\)/);
+  assert.match(bridge, /finally \{\s*clearTimeout\(timer\)/,
+               "deadline timers are cleared after every completed request");
+  assert.match(bridge,
+    /nativeFetchWithTimeout\(`\$\{PUBLIC_ORIGIN\}\/api\/v1\/mobile\/bootstrap`/,
+    "native startup cannot hang indefinitely on compatibility bootstrap");
+  assert.match(bridge,
+    /nativeFetchWithTimeout\(`\$\{PUBLIC_ORIGIN\}\/api\/v1\/auth\/handoff`/,
+    "returning from system OAuth cannot hang indefinitely on handoff exchange");
+});
+
 test("native auth keeps the raw binding on-device and exposes only its challenge", async () => {
   const bridge = await read("../src/mobile-bridge.ts");
   assert.match(bridge, /NATIVE_AUTH_BINDING_PREFIX = "lingua-relay\.native-auth-binding\.v3\."/);
