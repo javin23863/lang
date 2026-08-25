@@ -52,6 +52,8 @@ describe("permanent deployment surface", () => {
     expect(roomHtml).toContain('id="captions" role="log" aria-live="polite" aria-relevant="additions text"');
     expect(roomHtml).toContain('id="participantCount" aria-live="polite">0 / 2 people<');
     expect(roomHtml).not.toContain('id="participantCount" aria-live="polite">0 / 4 people<');
+    expect(roomHtml).toContain('<input id="termsAgree" type="checkbox">');
+    expect(roomHtml).not.toContain('<input id="termsAgree" type="checkbox" checked>');
 
     const roomCss = await exports.default.fetch(`${ORIGIN}/room.css`);
     expect(roomCss.status).toBe(200);
@@ -85,6 +87,10 @@ describe("permanent deployment surface", () => {
     expect(roomJsSource).not.toContain("if (isHost) startRingback()");
     expect(roomJsSource).toMatch(/if \(roomMode === 'voice' && m\.peers\.length\) \{[\s\S]*?connectCall\(\)/);
     expect(roomJsSource).toMatch(/if \(roomMode === 'voice' && !callTimerStart\) \{[\s\S]*?to: m\.id[\s\S]*?connectCall\(\)/);
+    expect(roomJsSource).toContain("const termsKey = 'lingua-relay.terms.2026-08-25';");
+    expect(roomJsSource).not.toContain("lingua-relay.terms.2026-08-14");
+    expect(roomJsSource).toContain("$('termsAgree').checked = localStorage.getItem(termsKey) === '1';");
+    expect(roomJsSource).toContain("if (roleChosen || !termsAccepted()");
 
     const worklet = await exports.default.fetch(`${ORIGIN}/static/pcm-worklet.js`);
     expect(worklet.status).toBe(200);
