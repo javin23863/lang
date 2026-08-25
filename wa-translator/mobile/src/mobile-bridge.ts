@@ -83,6 +83,11 @@ function nativeApiPath(path: string): string {
   return `${resolved}?binding=${encodeURIComponent(binding)}`;
 }
 
+async function clearNativeSession(): Promise<void> {
+  nativeSession = null;
+  await hostStorage.removeItem(NATIVE_SESSION_KEY).catch(() => {});
+}
+
 const sessionReady: Promise<void> = isNative ? hostStorage.getItem(NATIVE_SESSION_KEY)
   .then(async value => {
     if (isSessionToken(value)) {
@@ -102,19 +107,33 @@ if (isNative) {
     const resolved = typeof input === "string" ? new URL(input, location.href).toString() : input;
     let request = new Request(resolved, init);
     const url = new URL(request.url);
+    let attachedNativeSession = false;
     if (url.origin === PUBLIC_ORIGIN && SESSION_API_PATHS.has(url.pathname)
         && nativeSession && !request.headers.has("Authorization")) {
       const headers = new Headers(request.headers);
       headers.set("Authorization", `Bearer ${nativeSession}`);
       request = new Request(request, {headers});
+      attachedNativeSession = true;
     }
     const response = await nativeFetch(request);
-    if (response.ok && request.method === "POST"
-        && (url.pathname === "/api/v1/auth/logout"
-          || url.pathname === "/api/v1/account/delete")) {
-      nativeSession = null;
-      await hostStorage.removeItem(NATIVE_SESSION_KEY).catch(() => {});
+    let clearSession = response.ok && request.method === "POST"
+      && (url.pathname === "/api/v1/auth/logout"
+        || url.pathname === "/api/v1/account/delete");
+
+    // A stale native bearer must repair itself. Room creation returns 401 for an
+    // invalid/expired session; /api/v1/me deliberately returns a signed-out 200
+    // so browser callers can render providers without treating it as an error.
+    if (!clearSession && attachedNativeSession && response.status === 401) {
+      clearSession = true;
     }
+    if (!clearSession && attachedNativeSession && response.ok
+        && request.method === "GET" && url.pathname === "/api/v1/me") {
+      try {
+        const account = await response.clone().json() as {signed_in?: unknown};
+        if (account.signed_in === false) clearSession = true;
+      } catch { /* malformed account JSON is handled by the dashboard */ }
+    }
+    if (clearSession) await clearNativeSession();
     return response;
   };
 }
