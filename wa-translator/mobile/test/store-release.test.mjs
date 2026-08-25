@@ -9,6 +9,19 @@ import {
 
 const read = path => readFile(new URL(path, import.meta.url), "utf8");
 
+async function pngInfo(path) {
+  const data = await readFile(new URL(path, import.meta.url));
+  assert.equal(data.subarray(0, 8).toString("hex"), "89504e470d0a1a0a", `${path} is not PNG`);
+  assert.equal(data.subarray(12, 16).toString("ascii"), "IHDR", `${path} has no IHDR`);
+  return {
+    size: data.length,
+    width: data.readUInt32BE(16),
+    height: data.readUInt32BE(20),
+    bitDepth: data[24],
+    colorType: data[25],
+  };
+}
+
 test("credential-free CI builds both native products", async () => {
   const workflow = await read("../../../.github/workflows/mobile-build.yml");
   assert.match(workflow, /gradlew :app:bundleRelease/);
@@ -138,6 +151,26 @@ test("store listing and operator declarations are source controlled", async () =
   assert.match(declarations, /No advertising/);
   assert.match(declarations, /No transcript history/);
   assert.match(declarations, /Foreground only/);
+});
+
+test("Play listing has its mandatory icon and feature graphic", async () => {
+  const generator = await read("../scripts/generate-assets.py");
+  assert.match(generator, /PLAY_STORE/);
+  assert.match(generator, /featureGraphic\.png/);
+  assert.match(generator, /icon\.png/);
+
+  const icon = await pngInfo("../fastlane/metadata/android/en-US/images/icon.png");
+  assert.deepEqual(
+    {width: icon.width, height: icon.height, bitDepth: icon.bitDepth, colorType: icon.colorType},
+    {width: 512, height: 512, bitDepth: 8, colorType: 6},
+  );
+  assert.ok(icon.size <= 1024 * 1024, "Play listing icon exceeds 1 MiB");
+
+  const feature = await pngInfo("../fastlane/metadata/android/en-US/images/featureGraphic.png");
+  assert.deepEqual(
+    {width: feature.width, height: feature.height, bitDepth: feature.bitDepth, colorType: feature.colorType},
+    {width: 1024, height: 500, bitDepth: 8, colorType: 2},
+  );
 });
 
 test("both stores have two accepted-size phone screenshots", async () => {
