@@ -3,15 +3,22 @@ import { describe, expect, it } from "vitest";
 
 const ORIGIN = "https://room.test";
 
+function expectBaselineHeaders(response: Response): void {
+  expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
+  expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+}
+
 describe("permanent deployment surface", () => {
   it("exposes health and the shared installable client assets", async () => {
     const health = await exports.default.fetch(`${ORIGIN}/health`);
     expect(health.status).toBe(200);
     expect(await health.json()).toEqual({ status: "ok" });
     expect(health.headers.get("Cache-Control")).toBe("no-store");
+    expectBaselineHeaders(health);
 
     const manifest = await exports.default.fetch(`${ORIGIN}/manifest.webmanifest`);
     expect(manifest.status).toBe(200);
+    expectBaselineHeaders(manifest);
     expect(await manifest.json<any>()).toMatchObject({
       name: "Lingua Relay", short_name: "Lingua Relay", display: "standalone",
       start_url: "/", scope: "/", background_color: "#F4FBF9", theme_color: "#075E54",
@@ -20,6 +27,7 @@ describe("permanent deployment surface", () => {
 
     const dashboard = await exports.default.fetch(`${ORIGIN}/`);
     expect(dashboard.status).toBe(200);
+    expectBaselineHeaders(dashboard);
     expect(dashboard.headers.get("Content-Security-Policy")).toBe(
       "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self'; worker-src 'self'; manifest-src 'self'"
     );
@@ -28,6 +36,7 @@ describe("permanent deployment surface", () => {
 
     const room = await exports.default.fetch(`${ORIGIN}/room.html`);
     expect(room.status).toBe(200);
+    expectBaselineHeaders(room);
     expect(room.headers.get("Content-Security-Policy")).toBe(
       "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; media-src 'self' blob: data:; connect-src 'self' wss://room.test; worker-src 'self'"
     );
@@ -46,12 +55,14 @@ describe("permanent deployment surface", () => {
 
     const roomCss = await exports.default.fetch(`${ORIGIN}/room.css`);
     expect(roomCss.status).toBe(200);
+    expectBaselineHeaders(roomCss);
     expect(roomCss.headers.get("Content-Type")).toContain("text/css");
     expect(roomCss.headers.get("Cache-Control")).toBe("no-store");
     expect(await roomCss.text()).toContain("#stage{");
 
     const roomUiCss = await exports.default.fetch(`${ORIGIN}/room-ui.css`);
     expect(roomUiCss.status).toBe(200);
+    expectBaselineHeaders(roomUiCss);
     expect(roomUiCss.headers.get("Content-Type")).toContain("text/css");
     const roomUiSource = await roomUiCss.text();
     expect(roomUiSource).toContain("--accent:#64D4C3");
@@ -59,6 +70,7 @@ describe("permanent deployment surface", () => {
 
     const roomJs = await exports.default.fetch(`${ORIGIN}/room.js`);
     expect(roomJs.status).toBe(200);
+    expectBaselineHeaders(roomJs);
     expect(roomJs.headers.get("Content-Type")).toContain("text/javascript");
     expect(roomJs.headers.get("Cache-Control")).toBe("no-store");
     const roomJsSource = await roomJs.text();
@@ -69,27 +81,46 @@ describe("permanent deployment surface", () => {
 
     const worklet = await exports.default.fetch(`${ORIGIN}/static/pcm-worklet.js`);
     expect(worklet.status).toBe(200);
+    expectBaselineHeaders(worklet);
     expect(await worklet.text()).toContain("AudioWorkletProcessor");
 
     const dashboardCss = await exports.default.fetch(`${ORIGIN}/dashboard.css`);
     expect(dashboardCss.status).toBe(200);
+    expectBaselineHeaders(dashboardCss);
     expect(await dashboardCss.text()).toContain(".page{");
     const dashboardJs = await exports.default.fetch(`${ORIGIN}/dashboard.js`);
     expect(dashboardJs.status).toBe(200);
+    expectBaselineHeaders(dashboardJs);
     expect(await dashboardJs.text()).toContain("async function createRoom(mode)");
 
     // Both pages load the QR encoder as a plain asset, so a 404 here is a share
     // row whose code silently never draws.
     const qr = await exports.default.fetch(`${ORIGIN}/qr.js`);
     expect(qr.status).toBe(200);
+    expectBaselineHeaders(qr);
     expect(await qr.text()).toContain("LinguaQR");
 
     const serviceWorker = await exports.default.fetch(`${ORIGIN}/sw.js`);
     expect(serviceWorker.status).toBe(200);
+    expectBaselineHeaders(serviceWorker);
     expect(serviceWorker.headers.get("Service-Worker-Allowed")).toBe("/");
     const serviceWorkerJs = await serviceWorker.text();
     expect(serviceWorkerJs).toContain("cache: 'no-store'");
     expect(serviceWorkerJs).not.toContain("caches.open");
     expect(serviceWorkerJs).not.toContain("cache.put");
+  });
+
+  it("never caches dynamic auth, API, or room errors", async () => {
+    for (const request of [
+      new Request(`${ORIGIN}/api/v1/not-a-real-route`),
+      new Request(`${ORIGIN}/auth/not-a-provider/start`),
+      new Request(`${ORIGIN}/room/not-a-room`),
+      new Request(`${ORIGIN}/tts`, {method: "POST"}),
+    ]) {
+      const response = await exports.default.fetch(request);
+      expect(response.ok).toBe(false);
+      expect(response.headers.get("Cache-Control")).toBe("no-store");
+      expectBaselineHeaders(response);
+    }
   });
 });
