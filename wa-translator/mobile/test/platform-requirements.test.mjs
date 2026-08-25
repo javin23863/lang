@@ -25,6 +25,17 @@ test("Android AAB is inspected before CI artifact publication and Play upload", 
   assert.match(alignment, /alignment < 0x4000/);
 
   const verifier = await read("../scripts/verify-android-aab.sh");
+  assert.match(verifier, /bundletool_version="1\.18\.1"/,
+               "artifact verification pins the standalone bundletool release");
+  assert.match(verifier,
+    /bundletool_sha256="675786493983787ffa11550bdb7c0715679a44e1643f3ff980a529e9c822595c"/,
+    "the downloaded executable is accepted only at its pinned digest");
+  assert.match(verifier,
+    /google\/bundletool\/releases\/download\/\$bundletool_version\/bundletool-all-\$bundletool_version\.jar/,
+    "the verifier downloads Google's executable shadow JAR rather than the non-executable Maven library");
+  assert.match(verifier, /sha256sum -c -/);
+  assert.doesNotMatch(verifier, /\.gradle\/caches\/modules-2\/files-2\.1\/com\.android\.tools\.build\/bundletool/,
+                      "release verification cannot regress to the Maven library JAR");
   assert.match(verifier, /dump manifest/);
   assert.match(verifier, /com\.javin23863\.linguarelay/);
   assert.match(verifier, /android\.permission\.CAMERA/);
