@@ -2,4 +2,11 @@ www/
 build/
 *.ipa
 *.aab
-release.keystore
+*.xcarchive
+*.p8
+*.p12
+*.mobileprovision
+*.jks
+*.keystore
+google-play.json
+android/app/google-services.json
