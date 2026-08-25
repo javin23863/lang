@@ -1,195 +1,310 @@
-# Cloud caption room — implementation contract
+# Lingua Relay cloud architecture — implementation contract
 
-> STATUS 2026-08-14: the public Worker and one AP-routed Modal L4 are deployed
-> with a matched shared catalog. The deployed model-load and enabled-TTS
-> receipts are recorded in
-> [`MULTILINGUAL-PRODUCT-HANDOFF.md`](MULTILINGUAL-PRODUCT-HANDOFF.md).
-> A8 remains partial and A11 remains unmet until the required human-observable
-> receipt.
+> DEVELOPMENT STATUS — August 25, 2026: source is being hardened for Android
+> and iOS release. The last live deployment receipts are historical and remain
+> recorded in `wa-translator/cloudflare/DEPLOYMENT.md` and
+> `MULTILINGUAL-PRODUCT-HANDOFF.md`. Do not treat them as receipts for the
+> current branch. Release CI, signed native builds, deployment probes, relay
+> receipts, and store submission checks run only after the development pass is
+> complete.
 
 ## Product boundary
 
-The product is a private multilingual video room. WhatsApp only carries the
-invitation link. Inside the room, WebRTC carries each person's natural camera
-and microphone stream while one source transcription fans out to the unique
-base Languages of current listeners (maximum three targets).
+Lingua Relay is a private **two-person** multilingual communication product.
+The host signs in and creates one expiring room; the invited participant opens
+its bearer link without an account. A room can present as voice call, text chat,
+or video call, but all three surfaces use the same signed room and the same
+server-enforced two-participant limit.
 
-The shared catalog declares 100 M2M100 base text Languages, 122 BCP-47 Locale
-profiles, and six release-tested live-speech Languages: Arabic, German,
-English, Spanish, French and Japanese. A Locale maps to one base Language and
-never implies a dialect-specific ASR/MT model or quality claim.
+Inside a room:
 
-Translated speech is a separate listening mode, never the definition of a
-working room. Each participant controls their own device independently:
+- WebRTC carries natural microphone/camera media peer-to-peer and uses TURN only
+  when direct ICE cannot connect.
+- Cloud speech recognition produces phrase-level captions from microphone PCM.
+- M2M100 translates captions/chat into the remote participant's base language.
+- Optional translated voice speaks final translated phrases on the listener's
+  device. Natural remote audio is restored immediately if that feature fails.
+- Captions remain available independently of translated voice.
+- Conversation audio, video, captions, translated voice, and chat text are not
+  intentionally persisted as conversation history.
 
-- **Captions only** is the default. Natural incoming speech remains audible.
-- **Translated voice** locally mutes incoming natural speech and plays translated
-  phrases. It never changes what another participant hears.
-- An exact **Voice Profile** selects the voice heard on that device. The UI
-  offers female/male choices only where the selected target Locale declares
-  them; it never infers voice, gender or identity from a person. French has one
-  enabled female profile. Arabic and German are captions-only in this release.
-- Captions remain visible in every mode. A voice failure immediately restores
-  natural incoming audio and leaves captions running.
+The capability catalog remains authoritative for which languages/locales and
+voice profiles are actually selectable. Text-language count is not a claim of
+verified live-microphone or translated-voice quality for every language.
 
-"Real time" means phrase-level translated playback after a final transcript.
-It does not promise simultaneous voice conversion or imitation of a person's
-biometric voice.
-
-## Smallest production structure
+## Runtime structure
 
 ```text
-WhatsApp invitation
-        |
-        v
-Cloudflare Worker + static assets (always available)
-  - creates and validates 24-hour signed bearer room links
-  - returns a separate, domain-separated host-control bearer only to the
-    same-origin creator dashboard
-  - serves the installable phone and Windows host dashboard web app
-  - issues short-lived Cloudflare TURN credentials
-        |
-        | signed room token
-        v
-one Cloudflare Durable Object per room
-  - owns presence, WebRTC signalling and caption fan-out
-  - records a closed tombstone through room expiry and terminally closes
-    current browser sockets on host revocation
-  - terminates browser WebSockets and survives hibernation
-  - adds server-only credentials to Modal requests
-        |
-        | authenticated WebSocket / HTTP proxy
-        v
-Modal ASGI app (starts on demand)
-  - each microphone stream -> Whisper ASR once -> M2M100 captions to unique targets
-  - optional exact-profile Kokoro speech for English/Spanish/French;
-    Japanese is captions-only pending a pinned, license-reviewed frontend
-        |
-        v
-Browser WebRTC peer connection
-  - natural camera/microphone media remains peer-to-peer
-  - TURN relays encrypted WebRTC only when direct connection fails
+Host dashboard / Android / iOS
+  |
+  | OAuth session (host only)
+  v
+Cloudflare Worker
+  - account/session boundary
+  - room creation + signed 24-hour participant bearer
+  - separate host-control bearer
+  - mobile compatibility bootstrap
+  - static web/native-shared assets
+  - TURN credential proxy
+  - abuse/report endpoints
+  |
+  | room ID after signature verification
+  v
+Cloudflare Durable Object: Room
+  - exactly two joined participants
+  - presence leases and WebSocket signalling
+  - WebRTC signal relay
+  - caption/chat fan-out
+  - room-scoped TTS/report/TURN quotas
+  - host close / closed tombstone
+  - ephemeral compute connections
+  |
+  | server-authenticated compute requests
+  v
+Modal ASGI/L4 compute
+  - Whisper ASR
+  - M2M100 translation
+  - optional Kokoro TTS
+  - container-local admission controls
+  - horizontally configurable container ceiling
+
+Additional Durable Objects
+  - AbuseGate: bounded/rate-limited counters and one-time native handoffs
+  - ReportInbox: category-only abuse reports, bounded + 30-day retention
+  - UserDirectory: host profile, aggregate usage, capped recent usage rows
 ```
 
-Cloudflare is the permanent control plane; it does not run the neural models.
-During an active call its room Durable Object proxies microphone PCM to Modal so
-Modal credentials never enter browser code. Modal is a stateless compute adapter
-and may scale to zero when no room is active. The current Windows FastAPI host
-remains the local development adapter and is not required by the public URL.
+Cloudflare is the permanent control plane. Modal does not own room identity,
+presence, signalling, accounts, or natural WebRTC media. A Modal restart loses
+only decoder/compute state; the browser call and Durable Object room survive and
+the affected compute stream is recreated.
 
-The public browser-to-room WebSocket is the main interface under test. Cloud
-deployment adds signed-room validation and an allowed-origin check without
-forking the caption protocol. The Durable Object deterministically selected by
-room ID is the room module. It restores per-socket participant metadata from
-WebSocket attachments after hibernation and treats all ordinary memory as
-disposable. One shared protocol keeps the browser compatible with both the local
-and cloud adapters.
+## Account and authentication boundary
 
-## Repository shape
+Starting a room requires an OAuth-backed account. Joining does not.
+
+- Supported provider code paths are Google, Apple, and Facebook. A provider is
+  displayed only when its production credentials are configured.
+- No password is created or stored by Lingua Relay.
+- Browser sessions use a signed HttpOnly/Secure/SameSite session cookie.
+- Native sessions use an app-bound one-time OAuth handoff and are kept in native
+  secure storage. The native fetch bridge attaches the bearer only to the exact
+  public origin and the small account/room-creation endpoint allow-list.
+- Native session APIs require the installed-app origin in addition to a valid
+  session bearer.
+- The custom auth scheme is protected by a 256-bit app-held binding; seeing an
+  intercepted handoff is insufficient to exchange it.
+- Account deletion is available in-product and deletes the profile, aggregate
+  usage totals, and recent usage rows. An old signed session whose account has
+  been deleted is treated as signed out.
+
+Version 1.0 is non-monetized. There is no purchase control, StoreKit/Play
+Billing product, payment method, or stored credit balance in the active account
+contract.
+
+## Room identity and privacy
+
+A participant room token is an HMAC-signed bearer valid for 24 hours. Its room
+ID is random and its signature is verified before a Durable Object is selected.
+The host receives a separate domain-separated host-control bearer. Host control
+is never placed in the participant URL.
+
+Participant URLs contain only the signed room token and, when required, the
+presentation mode (`voice` or `chat`; video is the default). Personal/callee
+labels are not collected for new rooms and are deliberately stripped from new
+share, QR, and host-open URLs. Old links containing the retired bounded `n=`
+label may still parse for compatibility, but the current host workflow does not
+create or propagate them.
+
+The Room Durable Object stores only what is needed for room lifecycle and
+bounded usage/report controls. Browser participant metadata is kept in
+hibernation-safe WebSocket attachments. Captions and media are never written to
+Durable Object storage.
+
+## Two-person invariant
+
+Version 1.0 has one local participant and one remote participant—no group-room
+mode.
+
+The active Worker export enforces this through the `two-party-room.ts` wrapper,
+and the installed room client independently fails closed if a welcome message
+advertises a participant limit other than `2` or more than one remote peer.
+Host status and mobile bootstrap likewise expose a limit of `2`.
+
+The older base `worker.ts` Room implementation still contains its historical
+four-participant constant. It is not the active exported room contract; the
+wrapper enforces/re-writes the public boundary. This is recognized technical
+debt. Do not remove the wrapper or export the base Room directly until the base
+implementation itself has been migrated to the two-person invariant and the
+full room suite has been run.
+
+Room size and compute scale are separate concepts. Increasing Modal containers
+must never increase room participant count.
+
+## Compute capacity and cost controls
+
+Modal has one public L4-backed ASGI Function. Development defaults preserve the
+old cost envelope, but production horizontal scale is now deployment
+configuration rather than an application-source rewrite.
+
+Defaults:
 
 ```text
-wa-translator/
-  cloudflare/              Worker, static-asset configuration and Worker tests
-  capabilities.json        canonical Language/Locale/Capability/Voice Profile catalog
-  modal_app.py             Modal image, pinned models, limits and ASGI entrypoint
-  MULTILINGUAL-SOURCES.md  primary-source coverage/license/checksum decision record
-  windows/                 existing local adapter and its integration tests
-  windows/static/          one shared browser client, served by both adapters
+LINGUA_MODAL_STREAM_INPUTS=4
+LINGUA_MODAL_TTS_INPUTS=1
+LINGUA_MODAL_MAX_CONTAINERS=1
+LINGUA_MODAL_MIN_CONTAINERS=0
+LINGUA_MODAL_SCALEDOWN_WINDOW_S=60
+LINGUA_MODAL_ROUTING_REGION=ap-south
 ```
 
-No account system, framework rewrite, native mobile wrapper or custom domain is
-required for this free-first wave. A cryptographically signed room URL is valid
-for 24 hours and carries no personal data. Durable Object storage holds only the
-room expiry needed to reject stale tokens; presence, captions and media remain
-ephemeral.
+The source validates these settings at import/deploy time. Stream inputs are
+bounded to 2–16, short TTS/translate slots to 1–4, maximum containers to 1–64,
+the warm floor cannot exceed the maximum, and scale-down is bounded to
+30–3,600 seconds. The resolved stream/short-job limits are baked into the Modal
+image so remote `InputCapacity` cannot silently disagree with the local Modal
+concurrency decorator.
 
-## Runtime and cost controls
+`@modal.concurrent` permits the stream slots plus short-job slots and targets
+the stream-slot count. This leaves room for a short translation/TTS request and
+allows Modal to place new work elsewhere before a container has exhausted its
+long-lived stream reservation. Container-local admission remains the final
+burst guard.
 
-- Start with at most one Modal L4 container and four participants per room. The
-  container exposes four reserved stream inputs **across all rooms** plus one
-  bounded TTS input. If all global stream slots are in use, the Worker reports
-  an explicit capacity status to the affected speaker and drops only stale
-  caption PCM; natural peer media remains live. Each participant stream is
-  independent, so correctness never depends on two Modal WebSockets retaining
-  the same process. This is an explicit beta ceiling, not a scale claim.
-- The GPU is primarily for low-latency Whisper transcription and M2M100
-  CTranslate2 (`int8_float16`), and also accelerates Kokoro when a declared
-  Voice Profile is enabled. Japanese has documented upstream voices but remains
-  captions-only until its dictionary/runtime dependency is pinned and licensed.
-  Local CPU parity can read an explicitly
-  pre-provisioned cache for contract development only; it never downloads or
-  converts this model lane and is not a production-quality receipt.
-- Modal scales to zero after the last active connection. Model files use a
-  persistent Modal Volume so a container restart does not download them again.
-  A process restart loses in-memory decoder state; the Durable Object reconnects
-  the affected compute stream and the browser keeps natural media/captions UI
-  alive while it warms.
-- Cloudflare static assets and Worker requests stay on the free tier initially.
-- The room uses Cloudflare's hibernation WebSocket interface. An active outbound
-  Modal socket prevents hibernation only while translation compute is in use.
-- Joined browsers send a hibernation-safe presence heartbeat every 10 seconds.
-  A clean close or the visible Leave control releases the slot immediately; a
-  silent half-open mobile connection is removed at the next heartbeat or join
-  once its 90-second lease has elapsed. The four-person cap counts only live
-  leases, and an unjoined socket cannot occupy one of the eight pending slots
-  beyond the same 90-second attachment lease.
-- TURN credentials are short-lived; the long-lived TURN key and room-signing key
-  exist only as Cloudflare/Modal secrets and never enter git or the browser.
+A rejected caption stream reports explicit capacity status; the Worker retries
+with bounded backoff while natural WebRTC media remains independent and live.
+TTS/typed-translation work fails fast when its short-job slot is occupied.
 
-## Confirmed test seams
+Raising capacity is a release operation that requires measured GPU memory,
+caption latency, scale-out, recovery, and cost receipts. A nonzero
+`LINGUA_MODAL_MIN_CONTAINERS` is an explicit paid warm-capacity decision.
 
-The user confirmed these user-facing seams by approving the room controls and
-saying `begin`:
+## Mobile application structure
 
-1. **Room URL interface:** create, open, expire, revoke and reject a bearer room.
-2. **Host-control interface:** inspect and close exactly one room through a
-   same-origin, separate host bearer; the participant URL cannot close it.
-3. **Room WebSocket interface:** join, signal, stream microphone PCM and receive
-   room-scoped captions without cross-room leakage.
-4. **Participant listening interface:** captions-only default, independent voice
-   toggle, remote-audio routing, voice selection and failure recovery.
-5. **Deployment interface:** a permanent Cloudflare URL reaches a scale-to-zero
-   Modal backend without the Windows computer running.
+The Android and iOS products use Capacitor as a thin native shell around the
+shared bundled web client. The app does not point its WebView at the production
+site; core UI assets are bundled in the binary and the native bridge talks to
+the public API origin.
 
-Tests exercise these interfaces, not private helpers. External Cloudflare,
-Modal and TURN calls may be replaced only at their true network seams.
+Native responsibilities include:
 
-## Acceptance matrix
+- secure host/session storage;
+- OAuth browser-to-app handoff;
+- system share sheet;
+- foreground/background lifecycle events;
+- status-bar/safe-area integration;
+- microphone/camera platform permissions;
+- verified room links / associated domains.
 
-| ID | Acceptance row | Required receipt |
-|---|---|---|
-| A1 | A newly joined participant is in captions-only mode; natural remote audio/video is enabled and no translated audio starts. | Browser integration test plus visible two-tab receipt |
-| A2 | Either participant can enable or disable translated voice without changing the other participant's mode. Captions continue in both states. | Two-client browser integration test |
-| A3 | An exact selected Voice Profile resolves only to its catalog-declared Kokoro route. Female/male controls appear only when a matching profile exists; French remains female-only and unsupported languages remain captions-only. | Deterministic routing test plus pinned-profile WAV probes |
-| A4 | Enabling translated voice locally mutes incoming natural audio before translated playback; disabling it, playback failure, watchdog expiry, reconnect or peer leave restores natural audio. | Browser lifecycle tests |
-| A5 | Spoken output never feeds back into that participant's ASR stream; the WebRTC microphone track sent to the peer is not muted by that guard. | Existing echo-loop regression plus mode-specific browser test |
-| A6 | Fixed EN↔ES, EN→FR/DE/JA/AR and ES→FR M2M fixtures produce correctly attributed final captions through the public protocol. Partials remain latest-wins and finals are never dropped. | Pinned-M2M receipt endpoint, source fixtures and public stream probe |
-| A7 | Room IDs are 24-hour signed bearer tokens; forged, expired and cross-room signalling/caption attempts fail closed. The Worker verifies before selecting a Durable Object. Browser and TTS requests are origin/token/body limited, and Modal rejects any request without its server-only credential. | Python and Worker security tests |
-| A8 | The Cloudflare deployment serves a permanent HTTPS room creator and shareable `/room/<token>` URL while the Windows host is stopped. All clients for a room deterministically reach one Durable Object. A Modal process replacement reconnects only the independent compute streams and never declares the room dead or drops the natural WebRTC call. | Live URL, health and cold-start/replacement receipt |
-| A9 | WebRTC uses Cloudflare TURN credentials when direct ICE cannot connect; credentials are short-lived and no long-lived secret reaches client code or git. | Configuration test and relay-candidate browser receipt |
-| A10 | Phone layout at 360 CSS pixels exposes Share, Leave, microphone, camera, translated-voice mode and voice choice without horizontal overflow. | Browser viewport assertion and screenshot |
-| A11 | A real two-person Codex in-app-browser run shows video, carries natural audio in captions-only mode, displays supported multilingual captions, and audibly exercises only visible declared voice profiles. Automation alone cannot satisfy this row. | Human-observable acceptance receipt |
-| A12 | Modal has a one-container/four-participant beta ceiling, concurrent WebSocket configuration, scale-to-zero and persistent model cache. The Durable Object uses hibernation attachments and stores no media/caption history. Documentation states cold-start, short-utterance voice quality, licensing and cost ceilings. | Configuration assertions and deployment documentation |
-| A13 | The installed host dashboard creates, copies/shares, opens, persists and terminally closes a room. Host control is never in the participant URL; close disconnects current sockets and makes future page, preflight and WebSocket access fail through expiry. | Worker host-control tests, fresh-public-browser flow and Windows shortcut receipt |
+`PUBLIC_ORIGIN` in the mobile runtime is the source of truth for public API and
+room links. Native sync derives Android App Link and iOS Associated Domain hosts
+from that origin so a future branded-domain switch does not require manual host
+replacement in multiple platform files.
 
-## Deliberate ceilings
+The call lifecycle is foreground-only for version 1.0. Backgrounding a room
+closes signalling/peer/media resources; returning to the foreground creates one
+fresh connection. The generated client guards both still-CONNECTING socket
+teardown and stale scheduled reconnects so foreground restoration cannot create
+duplicate room sockets.
 
-- One active GPU container is the free-first beta. Multi-container compute comes
-  only after measured demand; room affinity already belongs to the Durable
-  Object and must never depend on Modal process stickiness.
-- Release live speech is limited to Arabic, German, English, Spanish, French
-  and Japanese. Caption text coverage and Locale profile count are not a claim
-  of full per-language conversational quality. Production TTS has three
-  Languages and seven profiles (English, Spanish and French); Japanese's
-  documented upstream voices are not release-enabled until its dictionary is
-  pinned and license-reviewed. The other catalog Languages are captions-only.
-- Voice identity is a selected synthesized style, not gender detection and not
-  voice cloning.
-- A `workers.dev` address and native Edge app-mode shortcut are sufficient. A
-  custom domain, account system and app-store wrapper are later distribution work.
-- The signed participant URL is deliberately replayable for up to 24 hours, but
-  its creator can revoke it from the device-local host dashboard. Single-use
-  participant invitations still require an account model.
-- Cloud deployment requires local Wrangler and Modal authentication. Code and
-  offline tests may be complete before those interactive account grants exist,
-  but A8, A9 and A11 remain visibly unmet until their live receipts exist.
+## Media and WebRTC lifecycle
+
+Camera and microphone permission are requested only from explicit user actions
+(Call/Accept, microphone, camera). Merely opening an invite does not trigger
+capture permission.
+
+One media stream owns current local tracks. The microphone control governs both
+the WebRTC sender and caption worklet. Translation playback pauses only the ASR
+feed to prevent speaker feedback; it does not mute the live microphone track
+sent to the other participant.
+
+If an OS/device ends an active microphone or camera track, the UI moves to the
+corresponding unavailable state instead of silently changing control state.
+
+RTCPeerConnection uses perfect-negotiation state per remote peer, refreshed TURN
+configuration, ICE restart on credential refresh, and explicit failure notes.
+Network/compute failures never silently convert a failed translated-voice path
+into muted natural audio.
+
+## Data retention
+
+Account data:
+
+- profile: derived user ID, provider, display name, email — until deletion;
+- aggregate usage totals — until deletion;
+- recent usage rows — 90 days, capped at 200 rows;
+- each usage row contains time, kind, units, and an opaque one-way room
+  reference; never the participant link or conversation content.
+
+Abuse reports:
+
+- category, platform, time, opaque public room reference, and an internal
+  non-invite routing ID needed for moderator closure;
+- no report free text, participant name, transcript, chat text, audio, video,
+  caption, screenshot, or participant bearer;
+- 30-day retention with a bounded inbox.
+
+Room lifecycle:
+
+- signed participant/host controls expire after 24 hours;
+- a host close persists a closed tombstone through that expiry;
+- presence is lease-based and expires after 90 seconds without activity;
+- long-lived infrastructure/security logs may exist under provider policies but
+  are not application conversation history.
+
+## Protocol/security controls
+
+Current fail-closed limits include:
+
+- 8 KiB normal control messages;
+- up to 64 KiB only for validated WebRTC signalling;
+- 32,000-byte PCM frames;
+- 300-character captions/TTS text;
+- 200-character typed chat;
+- bounded TTS request/response sizes;
+- eight pending browser sockets per room;
+- exactly two joined participants in the active product;
+- microphone byte-rate/burst limits;
+- bounded TTS/chat/TURN/report quotas;
+- short-lived TURN credentials;
+- server-only Modal and TURN secrets;
+- no long-lived secret in browser/native bundled JavaScript.
+
+Room pages receive camera/microphone permissions policy only where needed and a
+strict self-only script/style CSP in the launch wrapper. Dashboard/legal pages
+cannot request camera/microphone through the hardened response policy.
+
+## Acceptance gates before release
+
+The development branch is not a release receipt. Before Apple/Google launch,
+all of the following must be completed against the exact release commit and
+production configuration:
+
+| Gate | Required evidence |
+|---|---|
+| Two-person room | Browser/native tests show third participant rejected and all server/client limits report 2. |
+| Account lifecycle | Google + Apple (and Facebook if enabled) sign-in, native handoff, logout, deletion, deleted-session rejection. |
+| Native lifecycle | Real iOS/Android foreground/background, permission deny/regrant, device-loss and reconnect behavior. |
+| WebRTC | Two real devices carry natural audio/video; forced direct-ICE failure proves a selected `relay` candidate. |
+| Translation | Supported ASR/MT fixtures plus real two-person caption/chat flows; no unsupported quality claim. |
+| Translated voice | Only visible declared profiles play; failure restores natural audio. |
+| Compute | Exact deployment reports model revisions and, if capacity differs from defaults, load/scale/recovery/cost receipts. |
+| Privacy/account | Store declarations, privacy manifest/Data Safety answers, account deletion, abuse-report schema and retention agree. |
+| Store UI | Final phone layouts, safe areas, landscape, RTL, large text/accessibility, reduced motion and screenshots. |
+| Native packages | Signed AAB/IPA/archive verification, Android 16 KiB/native-library checks, entitlements, privacy manifest, app links. |
+| Support/legal | Production support contact and final public Privacy/Terms/Support URLs exist before submission. |
+
+## Deliberate version-1 ceilings
+
+- Exactly two room participants.
+- Foreground-only call lifecycle; no CallKit/ConnectionService background-call
+  promise yet.
+- No monetization or digital-goods purchase path.
+- No advertising, analytics SDK, transcript archive, or recording.
+- No group rooms.
+- No claim that every text language has tested microphone/voice quality.
+- A custom/branded domain is desirable before launch but is not invented in
+  source. When selected, the single public-origin configuration must be changed
+  and association/OAuth/store URLs revalidated.
+- Horizontal GPU capacity may be raised only with measured release receipts;
+  per-container limits remain bounded.
