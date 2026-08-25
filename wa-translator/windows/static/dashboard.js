@@ -77,7 +77,8 @@ async function refreshAccountIfUnavailable() {
   if (!account?.unavailable || accountRefreshing) return;
   accountRefreshing = true;
   try {
-    account = await accountPresenter.load();
+    const loaded = await accountPresenter.load();
+    account = await reconcileAccountRoomCustody(loaded);
     accountPresenter.render(account);
     applyAccountAvailability();
   } finally {
@@ -96,6 +97,27 @@ const roomController = window.LinguaDashboardRoomController.create({
   onRender: renderRoom,
   onClear: handleRoomClear,
 });
+
+async function reconcileAccountRoomCustody(snapshot) {
+  if (snapshot.signed_in) {
+    await roomController.restore();
+    return snapshot;
+  }
+  // A transport/backend outage cannot prove an account transition. Keep the
+  // encrypted bearer at rest, but do not restore or poll it until identity is known.
+  if (snapshot.unavailable) return snapshot;
+  try {
+    // A confirmed signed-out state must not inherit a prior account's local
+    // host-control bearer before another provider sign-in can be exposed.
+    await roomController.discard();
+    return snapshot;
+  } catch (_) {
+    // If secure-storage cleanup fails, fail closed on account transition:
+    // hide providers so another account cannot be signed in over stale admin state.
+    return {...snapshot, providers: [], unavailable: true};
+  }
+}
+
 const sharePresenter = window.LinguaDashboardShare.create({
   runtime,
   t,
@@ -172,21 +194,8 @@ async function boot() {
     return;
   }
   if (startupAuthFailed) setAuthStatus("auth.failed");
-  account = await accountPresenter.load();
-  // A confirmed signed-out state must not inherit a prior account's local
-  // host-control bearer. An account-service outage is different: preserve the
-  // encrypted local record, but do not restore or poll it until identity is known.
-  if (!account.signed_in && !account.unavailable) {
-    try {
-      await roomController.discard();
-    } catch (_) {
-      // If secure-storage cleanup fails, fail closed on account transition:
-      // hide providers so another account cannot be signed in over stale admin state.
-      account = {...account, providers: [], unavailable: true};
-    }
-  }
+  account = await reconcileAccountRoomCustody(await accountPresenter.load());
   accountPresenter.render(account);
   applyAccountAvailability();
-  if (account.signed_in) await roomController.restore();
 }
 boot();
