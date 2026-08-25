@@ -16,11 +16,58 @@ export { AbuseGate, ReportInbox, Room, UserDirectory };
 const NATIVE_HANDOFF_PATH = "/api/v1/auth/handoff";
 const MOBILE_BOOTSTRAP_PATH = "/api/v1/mobile/bootstrap";
 const NATIVE_REPORT_PATH = "/api/v1/reports";
+const BROWSER_OAUTH_START_PATTERN = /^\/auth\/(google|apple|facebook)\/start$/;
 const NATIVE_ORIGINS = new Set(["https://localhost", "capacitor://localhost"]);
 const ROOM_TOKEN_PATTERN = /^([A-Za-z0-9_-]{24})\.(\d{10})\.[A-Za-z0-9_-]{43}$/;
 const MOBILE_PROTOCOL = 2;
 const ROOM_RUNTIME_MARKER = '<script src="/app-runtime.js"></script>';
 const ROOM_PRODUCT_EVENTS = `${ROOM_RUNTIME_MARKER}\n<script src="/product-events.js"></script>\n<script src="/room-product-events.js"></script>`;
+
+async function browserOAuthAccountSwitchGuard(
+  request: Request, env: Env, ctx: ExecutionContext
+): Promise<Response | null> {
+  const url = new URL(request.url);
+  if (request.method !== "GET" || !BROWSER_OAUTH_START_PATTERN.test(url.pathname)) return null;
+
+  const probeUrl = new URL(request.url);
+  probeUrl.pathname = "/api/me";
+  probeUrl.search = "";
+  const headers = new Headers(request.headers);
+  headers.delete("Content-Length");
+  headers.delete("Content-Type");
+  const probe = await accountGuardEntry.fetch(new Request(probeUrl, {
+    method: "GET", headers, redirect: "manual"
+  }), env, ctx);
+  if (!probe.ok) return probe;
+
+  try {
+    const body = await probe.clone().json() as {signed_in?: unknown};
+    await probe.body?.cancel().catch(() => {});
+    if (body.signed_in !== true) return null;
+  } catch {
+    await probe.body?.cancel().catch(() => {});
+    return new Response("Session service unavailable", {
+      status: 503,
+      headers: {
+        "Cache-Control": "no-store",
+        "Referrer-Policy": "no-referrer",
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
+  }
+
+  // The dashboard retires device-local room administration as part of explicit
+  // logout. Starting a second OAuth identity while the first session is live
+  // would bypass that custody boundary and let the new account inherit it.
+  return new Response("Sign out before switching accounts", {
+    status: 409,
+    headers: {
+      "Cache-Control": "no-store",
+      "Referrer-Policy": "no-referrer",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
 
 async function v2MobileBootstrap(
   request: Request, env: Env, ctx: ExecutionContext
@@ -131,6 +178,8 @@ async function nativeReportAndBlock(
 }
 
 async function routeRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const oauthSwitch = await browserOAuthAccountSwitchGuard(request, env, ctx);
+  if (oauthSwitch) return oauthSwitch;
   const bootstrap = await v2MobileBootstrap(request, env, ctx);
   if (bootstrap) return bootstrap;
   const handoff = await upgradedNativeHandoff(request, env, ctx);

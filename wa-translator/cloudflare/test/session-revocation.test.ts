@@ -72,6 +72,35 @@ describe("server-side session revocation", () => {
     expect((await otherDevice.json<Snapshot>()).signed_in).toBe(true);
   });
 
+  it("requires explicit logout before a live browser session can start another OAuth account", async () => {
+    const session = await hostSessionV2("SwitchHostUser00000001");
+
+    const blocked = await exports.default.fetch(`${ORIGIN}/auth/google/start`, {
+      headers: {Cookie: `lr_s=${session}`},
+      redirect: "manual",
+    });
+    expect(blocked.status).toBe(409);
+    expect(blocked.headers.get("Cache-Control")).toBe("no-store");
+    expect(blocked.headers.get("Location")).toBeNull();
+    expect(blocked.headers.getSetCookie().some(value => value.startsWith("lr_oauth="))).toBe(false);
+
+    const logout = await exports.default.fetch(`${ORIGIN}/auth/logout`, {
+      method: "POST",
+      headers: {Origin: ORIGIN, Cookie: `lr_s=${session}`},
+    });
+    expect(logout.status).toBe(204);
+
+    // A revoked cookie must not strand the browser: it may start a fresh OAuth
+    // flow, while the dashboard's signed-out boot gate retires local room custody.
+    const allowed = await exports.default.fetch(`${ORIGIN}/auth/google/start`, {
+      headers: {Cookie: `lr_s=${session}`},
+      redirect: "manual",
+    });
+    expect(allowed.status).toBe(302);
+    expect(new URL(allowed.headers.get("Location")!).origin).toBe("https://accounts.google.com");
+    expect(allowed.headers.getSetCookie().some(value => value.startsWith("lr_oauth="))).toBe(true);
+  });
+
   it("revokes a v2 native bearer and keeps the signed-out response readable by the app", async () => {
     const session = await hostSessionV2("NativeLogoutUser000001");
     const logout = await exports.default.fetch(`${ORIGIN}/api/v1/auth/logout`, {
