@@ -39,7 +39,9 @@ const NATIVE_AUTH_PROVIDERS = ["google", "apple", "facebook"] as const;
 const SESSION_API_PATHS = new Set([
   "/api/v1/me", "/api/v1/rooms", "/api/v1/account/delete", "/api/v1/auth/logout"
 ]);
-const LOCAL_DARK_CONTENT = new Set(["privacy.html", "terms.html", "support.html"]);
+const LOCAL_DARK_CONTENT = new Set([
+  "privacy.html", "terms.html", "support.html", "delete-account.html"
+]);
 let nativeSession: string | null = null;
 const memoryAuthBindings = new Map<string, string>();
 const authChallenges = new Map<string, string>();
