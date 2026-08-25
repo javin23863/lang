@@ -36,6 +36,8 @@ describe("permanent deployment surface", () => {
     expect(roomHtml).toContain('<script src="/room.js"></script>');
     expect(roomHtml).not.toContain("<style>");
     expect(roomHtml).not.toContain("<script>\nconst $ =");
+    expect(roomHtml).toContain('id="status" role="status" aria-live="polite"');
+    expect(roomHtml).toContain('id="captions" role="log" aria-live="polite" aria-relevant="additions text"');
     expect(roomHtml).toContain('id="participantCount" aria-live="polite">0 / 2 people<');
     expect(roomHtml).not.toContain('id="participantCount" aria-live="polite">0 / 4 people<');
 
@@ -52,6 +54,8 @@ describe("permanent deployment surface", () => {
     const roomJsSource = await roomJs.text();
     expect(roomJsSource).toContain("const $ = (id) => document.getElementById(id);");
     expect(roomJsSource).toContain("async function connect()");
+    expect(roomJsSource).toContain("el.hidden = !text");
+    expect(roomJsSource).not.toContain("el.style.display");
 
     const worklet = await exports.default.fetch(`${ORIGIN}/static/pcm-worklet.js`);
     expect(worklet.status).toBe(200);
