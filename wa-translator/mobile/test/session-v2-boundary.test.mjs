@@ -31,9 +31,12 @@ test("shipping entrypoint publishes protocol 2 and never exposes legacy native s
 test("browser OAuth upgrades legacy callback cookies before they leave the service", async () => {
   const guard = await read("../../cloudflare/src/account-guard-entry.ts");
 
-  assert.match(guard, /const OAUTH_CALLBACK_PATTERN = \/\^\\\/auth\\\/\(google\|apple\|facebook\)\\\/callback\$\//);
-  assert.match(guard, /const sessionIndex = cookies\.findIndex\(value => \/\^lr_s=s1\\\.\//,
-               "only the internal legacy callback cookie is selected for upgrade");
+  assert.ok(guard.includes(
+    'const OAUTH_CALLBACK_PATTERN = /^\\/auth\\/(google|apple|facebook)\\/callback$/;'
+  ), "the outer boundary intercepts only supported OAuth callbacks");
+  assert.ok(guard.includes(
+    'const sessionIndex = cookies.findIndex(value => /^lr_s=s1\\./.test(value));'
+  ), "only the internal legacy callback cookie is selected for upgrade");
   assert.match(guard, /const legacy = await inspectSessionToken\(token, env\.ROOM_SIGNING_KEY\)/);
   assert.match(guard, /legacy\.version !== 1/);
   assert.match(guard, /await mintSessionV2\(legacy\.userId, env\.ROOM_SIGNING_KEY, legacy\.expiresAt\)/);
