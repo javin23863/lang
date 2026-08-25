@@ -7,6 +7,14 @@ behavior change.
 - Account required to START a call: the person who creates a room signs in with
   Google, Apple, or Facebook. No account is required to JOIN one — an invited
   participant opens the link and talks, with no sign-in and no account.
+- Private-invite interaction model: version 1.0 has no public posting, public
+  profile or user directory, people search, discovery feed, follower graph,
+  random matching, stranger pairing, or open-room browsing. Communication exists
+  only inside a private signed room invitation created by a signed-in host. The
+  room is limited to exactly two participants and expires no later than 24 hours.
+- Terms gate: first-time room entry uses an unchecked affirmative Terms checkbox.
+  Only a prior acceptance of the exact current Terms version may restore that
+  checkbox; acceptance of an older Terms version does not carry forward.
 - iOS login release gate: do not submit an iOS build while Google or Facebook is
   offered but the production Apple provider is not fully configured and visible
   as an equivalent sign-in option. The Worker intentionally hides providers
@@ -52,9 +60,10 @@ behavior change.
 - No analytics SDK.
 - No transcript history or call recording.
 - Camera and microphone access: user initiated, foreground only, during a room.
-- User-generated content: live speech/video and typed chat are sent to the
-  invited room; translated captions and optional synthesized audio are returned
-  in real time. Conversation content is not intentionally stored as history.
+- User-generated content: live speech/video and typed chat are sent only to the
+  invited private room; translated captions and optional synthesized audio are
+  returned in real time. Conversation content is not intentionally stored as
+  history and is not published to a feed or made discoverable to other users.
 - Cloud processing: Cloudflare carries room/signalling/account traffic; Modal
   performs speech recognition, translation, and optional voice synthesis.
 - Retention: the account profile (email, derived user ID, display name, provider)
@@ -68,9 +77,17 @@ behavior change.
   Infrastructure security and error logs may be retained by the providers.
 - Room control: the host can close a room; otherwise its bearer link expires
   after 24 hours.
-- Safety/reporting: a live participant can submit one private category-only
-  report and block the room on that device. No report accepts names, free text,
-  room links, transcripts, audio, video, captions, chat text, or screenshots.
+- Safety/reporting: a live participant can submit a private category-only report.
+  No report accepts names, free text, room links, transcripts, audio, video,
+  captions, chat text, or screenshots. In the installed app, once the report is
+  durably accepted, the backend immediately invalidates that private room so the
+  invitation cannot continue or be re-entered; the reporting client also leaves
+  and locally blocks the room. If immediate server closure is temporarily
+  unavailable after the durable report write, the report remains in the private
+  moderator queue and the reporting client still leaves/blocks locally. Because
+  version 1.0 has no persistent guest identity, cross-room messaging graph,
+  discovery, or matching, that private room is the complete service relationship
+  between the two participants.
 - App category: Social Networking (iOS) / Communication (Android).
 - Intended audience: general adult communication; not directed to children.
 - Encryption declaration: HTTPS/WebSocket TLS and platform cryptography only;
