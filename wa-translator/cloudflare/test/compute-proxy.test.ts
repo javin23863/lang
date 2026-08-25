@@ -146,11 +146,15 @@ describe("authenticated independent Modal compute proxy", () => {
 
     // The same listener can change languages in a two-person conversation.
     // The compute route must follow that current language rather than retain a
-    // stale target from before the change.
+    // stale target from before the change. The speaker also receives its own
+    // previous caption, so skip unrelated queued events while waiting for the
+    // listener's locale update.
     listener.socket.send(JSON.stringify({
       type: "set_locale", locale: "fr-FR", voice_profile: "fr-ff-siwis"
     }));
-    expect(await speaker.next()).toMatchObject({
+    let update = await speaker.next();
+    while (update.type !== "peer_update") update = await speaker.next();
+    expect(update).toMatchObject({
       type: "peer_update", id: listener.id, lang: "fr"
     });
     await new Promise(resolve => setTimeout(resolve, 600));
