@@ -10,7 +10,7 @@
     "assets": "python scripts/generate-assets.py",
     "screenshots": "python scripts/prepare-store-screenshots.py",
     "sync:platform": "node scripts/sync-platform-origin.mjs",
-    "sync": "npm run build:web && cap sync && npm run sync:platform",
+    "sync": "npm run build:web && cap sync && npm run sync:platform && node scripts/verify-synced-notices.mjs",
     "check": "npm run typecheck && npm run build:web && node --test test/*.test.mjs",
     "browser": "node ../tools/browser/run.mjs",
     "typecheck": "tsc --noEmit",
