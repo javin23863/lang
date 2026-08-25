@@ -7,6 +7,7 @@ const read = path => readFile(new URL(path, root), "utf8");
 
 test("public legal pages share current Lingua chrome and deletion remains discoverable", async () => {
   const css = await read("legal.css");
+  const legalRuntime = await read("legal-runtime.js");
   assert.match(css, /--canvas:#07110F/);
   assert.match(css, /--accent:#64D4C3/);
   assert.doesNotMatch(css, /#09141e/i, "retired launch palette is not used by legal surfaces");
@@ -16,16 +17,42 @@ test("public legal pages share current Lingua chrome and deletion remains discov
     assert.match(html, /<meta name="theme-color" content="#07110F">/,
                  `${page} matches the shared dark native/browser chrome`);
     assert.match(html, /Lingua Relay/);
+    assert.match(html, /id="legalBack"/,
+                 `${page} exposes one validated return-navigation target`);
+    assert.match(html, /<script src="legal-runtime\.js"><\/script>/,
+                 `${page} shares the legal return validator`);
+    assert.doesNotMatch(html, /Buy credits/i,
+                        `${page} does not advertise the retired purchase preview`);
   }
+
+  // A legal-page return may restore the call shell but can never become an
+  // open redirect or restore the retired personal-label query parameter.
+  assert.match(legalRuntime, /\?m=\(\?:voice\|chat\)/);
+  assert.match(legalRuntime, /&m=\(\?:voice\|chat\)/);
+  assert.doesNotMatch(legalRuntime, /\bn\b.*(?:voice|chat)/,
+                      "legal return validation never accepts a personal-label parameter");
+  assert.doesNotMatch(legalRuntime, /https?:\/\//,
+                      "legal return navigation accepts no absolute origin");
 
   const privacy = await read("privacy.html");
   assert.match(privacy, /delete your account at any time/i);
   assert.match(privacy, /Usage rows are kept for 90 days/);
+  assert.match(privacy, /does not sell credits or accept in-app payments/i);
+  assert.doesNotMatch(privacy, /credit balance/i);
+
+  const terms = await read("terms.html");
+  assert.match(terms, /Version 1\.0 does not sell credits or accept in-app payments/);
+  assert.doesNotMatch(terms, /disabled/i,
+                      "terms no longer describe an intentionally dead purchase control");
 
   const support = await read("support.html");
   assert.match(support, /<h2 id="delete">Delete your account<\/h2>/,
                "the external account-deletion destination remains directly addressable");
   assert.match(support, /choose Delete account/);
+  assert.match(support, /href="index\.html">Lingua Relay<\/a>/,
+               "account deletion guidance is portable across web and bundled native origins");
+  assert.doesNotMatch(support, /spoken-translation-cloudflare\.workers\.dev/,
+                      "support content is not pinned to the temporary development hostname");
   assert.match(support, /do not put your email address or other account identifiers/i,
                "access-loss requests never direct private account data into the public tracker");
   assert.match(support, /dedicated private product-support contact must be published/i,
