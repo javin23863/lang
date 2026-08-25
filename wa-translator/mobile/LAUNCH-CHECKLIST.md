@@ -5,10 +5,11 @@ Historical deployment receipts elsewhere in the repository may describe older
 four-person experiments. Version 1.0 is a **two-person product**: one local
 participant and one remote participant.
 
-The development pass intentionally does **not** run GitHub Actions/CI or signed
-release workflows. Checked build/automation items below mean the source/config
-for that gate exists; the exact release commit must run the full verification
-matrix after development is declared complete.
+Automatic PR GitHub Actions may run during development and are useful diagnostic
+evidence, but they do **not** satisfy final release acceptance because pull-request
+runs check GitHub's synthetic merge ref. Checked build/automation items below mean
+the source/config for that gate exists; the exact frozen release commit must run
+the full credential-free matrix deliberately before signed beta/device gates.
 
 ## Product contract
 
