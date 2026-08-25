@@ -52,7 +52,7 @@ grep -q '<script src="/room.js"></script>' <<<"$room" || {
   echo "Android artifact check: room is missing external room.js." >&2
   exit 1
 }
-if grep -q '<style>' <<<"$room" || grep -q '<script>[[:space:]]*const \$ =' <<<"$room"; then
+if grep -q '<style>' <<<"$room" || grep -q '<script>' <<<"$room"; then
   echo "Android artifact check: room still contains inline implementation." >&2
   exit 1
 fi
