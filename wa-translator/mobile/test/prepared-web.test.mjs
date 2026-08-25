@@ -7,7 +7,8 @@ const root = new URL("../www/", import.meta.url);
 test("prepared mobile web bundle contains the app, runtime, and local worklet", async () => {
   for (const path of [
     "index.html", "room.html", "app-runtime.js", "mobile-bridge.js", "qr.js",
-    "privacy.html", "terms.html", "support.html", "static/pcm-worklet.js"
+    "dashboard.css", "dashboard.js", "privacy.html", "terms.html", "support.html",
+    "static/pcm-worklet.js"
   ]) await access(new URL(path, root));
 
   for (const name of ["index.html", "room.html"]) {
@@ -17,6 +18,9 @@ test("prepared mobile web bundle contains the app, runtime, and local worklet", 
     assert.ok(bridge >= 0 && runtime > bridge, `${name} loads native bridge before runtime`);
     assert.doesNotMatch(html, /server\.url|window\.location\s*=\s*["']https:\/\//);
   }
+  const dashboard = await readFile(new URL("index.html", root), "utf8");
+  assert.match(dashboard, /<link rel="stylesheet" href="\/dashboard\.css">/);
+  assert.match(dashboard, /<script src="\/dashboard\.js"><\/script>/);
 });
 
 test("phone video status reserves the local preview area", async () => {
