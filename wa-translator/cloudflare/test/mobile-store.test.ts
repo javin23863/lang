@@ -64,7 +64,6 @@ describe("mobile store interface", () => {
       call_lifecycle: "foreground",
       room_ttl_seconds: 86400,
       max_room_participants: 2,
-      compute_capacity: { global_streams: 4, state: "beta-limited" },
       endpoints: {
         capabilities: "/api/v1/capabilities",
         rooms: "/api/v1/rooms",
@@ -174,10 +173,12 @@ describe("mobile store interface", () => {
     });
     expect(account.status).toBe(200);
     expect(account.headers.get("Access-Control-Allow-Origin")).toBe(NATIVE_ORIGIN);
-    expect(await account.json()).toMatchObject({
+    const accountBody = await account.json<Record<string, unknown>>();
+    expect(accountBody).toMatchObject({
       signed_in: true,
       user: {name: "Test Host", email: "host@example.test", provider: "google"}
     });
+    expect(accountBody).not.toHaveProperty("credits");
 
     const created = await exports.default.fetch(`${PUBLIC_ORIGIN}/api/v1/rooms`, {
       method: "POST",
@@ -239,6 +240,7 @@ describe("mobile store interface", () => {
       expect(html).toContain("Lingua Relay");
       expect(html).not.toContain("TODO");
       expect(html).not.toContain("development");
+      expect(html).not.toContain("Buy credits");
     }
   });
 });
