@@ -121,9 +121,13 @@ export default {
           || !appleClientSecretIsValid(form.get("client_secret"))) {
         return new Response("invalid_client", { status: 401 });
       }
-      return form.get("code") === "fixture-apple"
-        ? Response.json({ id_token: appleIdToken() })
-        : new Response("invalid_grant", { status: 400 });
+      if (form.get("code") === "fixture-apple") {
+        return Response.json({ id_token: appleIdToken() });
+      }
+      if (form.get("code") === "fixture-apple-no-email") {
+        return Response.json({ id_token: appleIdToken({email: undefined}) });
+      }
+      return new Response("invalid_grant", { status: 400 });
     }
     return new Response("Not Found", { status: 404 });
   }
