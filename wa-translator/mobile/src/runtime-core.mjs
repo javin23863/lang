@@ -2,9 +2,14 @@ export const PUBLIC_ORIGIN =
   "https://spoken-translation-room.spoken-translation-cloudflare.workers.dev";
 export const MOBILE_PROTOCOL = 1;
 export const MOBILE_BUILD = 1;
+export const MOBILE_AUTH_COMPLETE_PATH = "/mobile-auth-complete";
 
 const ROOM_TOKEN_PATTERN =
   /^[A-Za-z0-9_-]{24}\.\d{10}\.[A-Za-z0-9_-]{43}$/;
+const SESSION_TOKEN_PATTERN =
+  /^s1\.[A-Za-z0-9_-]{22}\.\d{10}\.[A-Za-z0-9_-]{43}$/;
+const NATIVE_HANDOFF_PATTERN =
+  /^nh1\.[A-Za-z0-9_-]{22}\.\d{10}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/;
 
 const VERSIONED_PATHS = new Map([
   ["/api/capabilities", "/api/v1/capabilities"],
@@ -14,14 +19,25 @@ const VERSIONED_PATHS = new Map([
   ["/api/room-control/close", "/api/v1/room-control/close"],
   ["/api/turn", "/api/v1/turn"],
   ["/api/reports", "/api/v1/reports"],
+  ["/api/me", "/api/v1/me"],
+  ["/api/account/delete", "/api/v1/account/delete"],
+  ["/auth/logout", "/api/v1/auth/logout"],
   ["/tts", "/api/v1/tts"]
 ]);
 
 const ROOM_MODES = ["voice", "chat", "video"];
+const NATIVE_AUTH_PROVIDERS = new Set(["google", "apple", "facebook"]);
 
 /** @param {string | null | undefined} value */
 function roomMode(value) {
   return value && ROOM_MODES.includes(value) ? value : "video";
+}
+
+/** @param {string | null | undefined} value */
+function roomName(value) {
+  const name = String(value || "").trim();
+  if (!name || name.length > 40 || /[\u0000-\u001f\u007f]/.test(name)) return "";
+  return name;
 }
 
 /** @param {string} value */
@@ -31,11 +47,37 @@ export function parseRoomLink(value) {
     if (url.origin !== PUBLIC_ORIGIN || url.hash) return null;
     const match = url.pathname.match(/^\/room\/([^/]+)$/);
     if (!match || !ROOM_TOKEN_PATTERN.test(match[1])) return null;
-    // `m` picks which room shell opens and is the only parameter our own links
-    // carry; anything else means this link was not minted for this app.
-    const keys = [...url.searchParams.keys()];
-    if (keys.length > 1 || keys.some(key => key !== "m")) return null;
-    return {token: match[1], mode: roomMode(url.searchParams.get("m"))};
+    // Only the room shell and an optional human-readable voice-call label are
+    // accepted. Duplicate or unrelated parameters fail closed.
+    const entries = [...url.searchParams.entries()];
+    if (entries.some(([key]) => key !== "m" && key !== "n")
+        || entries.filter(([key]) => key === "m").length > 1
+        || entries.filter(([key]) => key === "n").length > 1) return null;
+    const mode = roomMode(url.searchParams.get("m"));
+    const rawName = url.searchParams.get("n");
+    const name = rawName === null ? "" : roomName(rawName);
+    if (rawName !== null && (!name || mode !== "voice")) return null;
+    return name ? {token: match[1], mode, name} : {token: match[1], mode};
+  } catch {
+    return null;
+  }
+}
+
+/** @param {string} value */
+export function parseNativeAuthLink(value) {
+  try {
+    const url = new URL(value);
+    if (url.origin !== PUBLIC_ORIGIN || url.pathname !== MOBILE_AUTH_COMPLETE_PATH
+        || url.search) return null;
+    const params = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash);
+    const entries = [...params.entries()];
+    if (entries.length !== 1) return null;
+    if (entries[0][0] === "auth" && entries[0][1] === "failed") return {error: "failed"};
+    if (entries[0][0] !== "handoff" || !NATIVE_HANDOFF_PATTERN.test(entries[0][1])) return null;
+    const parts = entries[0][1].split(".");
+    const expiresAt = Number(parts[2]);
+    if (!Number.isSafeInteger(expiresAt) || expiresAt <= Math.floor(Date.now() / 1000)) return null;
+    return {handoff: entries[0][1]};
   } catch {
     return null;
   }
@@ -46,9 +88,19 @@ export function isRoomToken(value) {
   return ROOM_TOKEN_PATTERN.test(String(value || ""));
 }
 
+/** @param {unknown} value */
+export function isSessionToken(value) {
+  const token = String(value || "");
+  if (!SESSION_TOKEN_PATTERN.test(token)) return false;
+  const expiresAt = Number(token.split(".")[2]);
+  return Number.isSafeInteger(expiresAt) && expiresAt > Math.floor(Date.now() / 1000);
+}
+
 /** @param {string} path @param {boolean} native */
 export function apiPath(path, native) {
   if (!native) return path;
+  const auth = path.match(/^\/auth\/([a-z]{1,20})\/start$/);
+  if (auth && NATIVE_AUTH_PROVIDERS.has(auth[1])) return `/auth/native/${auth[1]}/start`;
   const versioned = VERSIONED_PATHS.get(path);
   if (!versioned) throw new Error(`Unsupported native API path: ${path}`);
   return versioned;
@@ -60,12 +112,15 @@ export function websocketPath(token, native) {
   return `${native ? "/ws/v1/" : "/ws/"}${token}`;
 }
 
-/** @param {string} token @param {string} [mode] */
-export function roomPageUrl(token, mode) {
+/** @param {string} token @param {string} [mode] @param {string} [name] */
+export function roomPageUrl(token, mode, name) {
   if (!isRoomToken(token)) throw new Error("Invalid room token");
-  const page = `room.html?room=${encodeURIComponent(token)}`;
+  const params = new URLSearchParams({room: token});
   const resolved = roomMode(mode);
-  return resolved === "video" ? page : `${page}&m=${resolved}`;
+  if (resolved !== "video") params.set("m", resolved);
+  const resolvedName = resolved === "voice" ? roomName(name) : "";
+  if (resolvedName) params.set("n", resolvedName);
+  return `room.html?${params.toString()}`;
 }
 
 /**
