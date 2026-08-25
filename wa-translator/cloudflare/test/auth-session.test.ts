@@ -34,10 +34,21 @@ async function signIn(
 ): Promise<{ response: Response; session: string | null }> {
   const started = await start(provider);
   const state = new URL(started.headers.get("Location")!).searchParams.get("state")!;
-  const response = await exports.default.fetch(
-    `${ORIGIN}/auth/${provider}/callback?code=${code}&state=${encodeURIComponent(state)}`,
-    { headers: { Cookie: cookieHeader(started) }, redirect: "manual" }
-  );
+  const callback = `${ORIGIN}/auth/${provider}/callback`;
+  const response = provider === "apple"
+    ? await exports.default.fetch(callback, {
+        method: "POST",
+        headers: {
+          Cookie: cookieHeader(started),
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: new URLSearchParams({code, state}).toString(),
+        redirect: "manual"
+      })
+    : await exports.default.fetch(
+        `${callback}?code=${code}&state=${encodeURIComponent(state)}`,
+        { headers: { Cookie: cookieHeader(started) }, redirect: "manual" }
+      );
   return { response, session: cookieValue(response, "lr_s") };
 }
 
@@ -158,18 +169,36 @@ describe("OAuth sign-in, session, and the room-creation gate", () => {
     });
   });
 
-  it("offers only providers it holds credentials for", async () => {
+  it("signs in through Apple's form_post callback and ES256 client secret", async () => {
+    const started = await start("apple");
+    expect(started.status).toBe(302);
+    const target = new URL(started.headers.get("Location")!);
+    expect(target.origin + target.pathname).toBe("https://appleid.apple.com/auth/authorize");
+    expect(target.searchParams.get("redirect_uri")).toBe(`${ORIGIN}/auth/apple/callback`);
+    expect(target.searchParams.get("scope")).toBe("name email");
+    expect(target.searchParams.get("response_mode")).toBe("form_post");
+
+    const { session } = await signIn("apple", "fixture-apple");
+    const account = await snapshot(session);
+    expect(account.signed_in).toBe(true);
+    expect(account.user).toEqual({
+      // Apple does not place the person's name in the ID token. Until the
+      // optional first-login `user` field is consumed, email is the safe label.
+      name: "relay-user@privaterelay.appleid.com",
+      email: "relay-user@privaterelay.appleid.com",
+      provider: "apple"
+    });
+  });
+
+  it("offers every fully configured provider and no dead unknown route", async () => {
     const account = await snapshot();
     expect(account.signed_in).toBe(false);
-    expect(account.providers).toEqual(["google", "facebook"]);
+    expect(account.providers).toEqual(["google", "facebook", "apple"]);
     expect(account.user).toBeUndefined();
 
-    // Apple has no credentials in this environment: no button, no dead route.
-    const apple = await start("apple");
-    expect(apple.status).toBe(404);
-    expect(setCookies(apple)).toEqual([]);
     const unknown = await start("myspace");
     expect(unknown.status).toBe(404);
+    expect(setCookies(unknown)).toEqual([]);
   });
 
   it("gates room creation on a session, and origin before that", async () => {
