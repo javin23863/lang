@@ -22,6 +22,7 @@ const SIGNATURE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const NONCE_PATTERN = /^[A-Za-z0-9_-]{22}$/;
 const SESSION_PATTERN = /^s1\.[A-Za-z0-9_-]{22}\.\d{10}\.[A-Za-z0-9_-]{43}$/;
 const PROVIDERS = new Set(["google", "apple", "facebook"]);
+const APPLE_CALLBACK_BODY_BYTES = 8192;
 const NATIVE_SESSION_PATHS = new Map([
   ["/api/v1/rooms", "/api/rooms"],
   ["/api/v1/me", "/api/me"],
@@ -264,6 +265,45 @@ async function readLimited(
   return output;
 }
 
+async function appleDisplayName(request: Request, provider: string): Promise<string | null> {
+  if (provider !== "apple" || request.method !== "POST") return null;
+  const raw = await readLimited(request.clone().body, APPLE_CALLBACK_BODY_BYTES);
+  if (!raw) return null; // the base callback owns the canonical oversize failure
+  const form = new URLSearchParams(new TextDecoder().decode(raw));
+  const value = form.get("user");
+  if (!value || value.length > 2048) return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const name = (parsed as Record<string, unknown>).name;
+    if (!name || typeof name !== "object" || Array.isArray(name)) return null;
+    const record = name as Record<string, unknown>;
+    const first = typeof record.firstName === "string" ? record.firstName.trim() : "";
+    const last = typeof record.lastName === "string" ? record.lastName.trim() : "";
+    const combined = [first, last].filter(Boolean).join(" ");
+    if (!combined || combined.length > 80 || /[\u0000-\u001f\u007f]/.test(combined)) return null;
+    return combined;
+  } catch {
+    return null;
+  }
+}
+
+async function applyAppleDisplayName(env: Env, userId: string, name: string): Promise<void> {
+  try {
+    const response = await env.USERS.get(env.USERS.idFromName(userId)).fetch(
+      new Request("https://users.internal/profile-name", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({name}),
+      })
+    );
+    await response.body?.cancel().catch(() => {});
+  } catch {
+    // The provider identity and account are already valid. A display-name patch
+    // failure must not turn successful authentication into an unusable account.
+  }
+}
+
 function withNativeSession(request: Request, targetPath?: string): Request {
   const authorization = request.headers.get("Authorization") || "";
   const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
@@ -313,12 +353,20 @@ async function nativeAuthStart(request: Request, env: Env, provider: string): Pr
 async function nativeAuthCallback(
   request: Request, env: Env, ctx: ExecutionContext, provider: string
 ): Promise<Response> {
+  // Apple sends `user` only on the first authorization. Read only its display
+  // name from a bounded clone; the base callback still owns state, code/token,
+  // issuer/audience/expiry validation and the account's actual identity.
+  const appleName = await appleDisplayName(request, provider);
   const challenge = nativeMarkerChallenge(request, provider);
-  if (!challenge) return routeWorker(request, env, ctx);
-
   const upstream = await routeWorker(request, env, ctx);
   const session = extractSession(upstream.headers);
   const userId = session ? sessionUserId(session) : null;
+  if (userId && appleName) await applyAppleDisplayName(env, userId, appleName);
+
+  // With no native marker this was a normal browser callback; return the base
+  // response unchanged after applying optional first-login display metadata.
+  if (!challenge) return upstream;
+
   // Never persist the browser session minted by the shared callback into the
   // system browser. Native receives only the app-bound, one-time handoff.
   const headers = privateHeaders(upstream.headers);
