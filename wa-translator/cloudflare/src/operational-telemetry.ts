@@ -1,0 +1,118 @@
+const SAFE_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]);
+
+export type RouteClass =
+  | "health"
+  | "bootstrap"
+  | "auth"
+  | "account"
+  | "room"
+  | "report"
+  | "translation"
+  | "asset"
+  | "api"
+  | "other";
+
+type FailureResult = "client_error" | "rate_limited" | "server_error";
+
+export interface OperationalFailureRecord {
+  event: "edge.request.failure";
+  request_id: string;
+  route_class: RouteClass;
+  method: string;
+  status: number;
+  result: FailureResult;
+  duration_ms: number;
+}
+
+export interface OperationalExceptionRecord {
+  event: "edge.request.exception";
+  request_id: string;
+  route_class: RouteClass;
+  method: string;
+  error_type: string;
+  duration_ms: number;
+}
+
+function methodClass(method: string): string {
+  const normalized = String(method || "").toUpperCase();
+  return SAFE_METHODS.has(normalized) ? normalized : "OTHER";
+}
+
+function boundedDuration(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return Math.min(86_400_000, Math.round(value));
+}
+
+function safeErrorType(error: unknown): string {
+  const value = error instanceof Error ? error.name : "UnknownError";
+  return /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(value) ? value : "Error";
+}
+
+export function routeClassForRequest(request: Request): RouteClass {
+  let path = "/";
+  try { path = new URL(request.url).pathname; } catch { return "other"; }
+
+  if (path === "/health") return "health";
+  if (path === "/api/v1/mobile/bootstrap") return "bootstrap";
+  if (path.startsWith("/auth/") || path.startsWith("/api/v1/auth/")) return "auth";
+  if (path === "/api/me" || path === "/api/v1/me" || path.startsWith("/api/account")) return "account";
+  if (path === "/api/reports" || path === "/api/v1/reports") return "report";
+  if (path === "/tts" || path.startsWith("/api/translate") || path.startsWith("/api/v1/translate")) {
+    return "translation";
+  }
+  if (path.startsWith("/room/") || path === "/room.html"
+      || path === "/api/room" || path === "/api/rooms"
+      || path === "/api/v1/room" || path === "/api/v1/rooms") return "room";
+  if (path.startsWith("/static/") || /\.(?:css|js|json|svg|png|webmanifest|html)$/.test(path)) return "asset";
+  if (path.startsWith("/api/")) return "api";
+  return "other";
+}
+
+export function operationalFailureRecord(
+  request: Request, status: number, requestId: string, durationMs: number
+): OperationalFailureRecord {
+  return {
+    event: "edge.request.failure",
+    request_id: requestId,
+    route_class: routeClassForRequest(request),
+    method: methodClass(request.method),
+    status,
+    result: status === 429 ? "rate_limited" : status >= 500 ? "server_error" : "client_error",
+    duration_ms: boundedDuration(durationMs),
+  };
+}
+
+export function operationalExceptionRecord(
+  request: Request, error: unknown, requestId: string, durationMs: number
+): OperationalExceptionRecord {
+  return {
+    event: "edge.request.exception",
+    request_id: requestId,
+    route_class: routeClassForRequest(request),
+    method: methodClass(request.method),
+    error_type: safeErrorType(error),
+    duration_ms: boundedDuration(durationMs),
+  };
+}
+
+export function logOperationalFailure(record: OperationalFailureRecord): void {
+  // Deliberately log the fixed record only. Never attach request URL, headers,
+  // account identity, room bearer, message/caption text, or exception message.
+  if (record.status >= 500) console.error(JSON.stringify(record));
+  else console.warn(JSON.stringify(record));
+}
+
+export function logOperationalException(record: OperationalExceptionRecord): void {
+  console.error(JSON.stringify(record));
+}
+
+export function withFailureRequestId(response: Response, requestId: string): Response {
+  if (response.status < 400) return response;
+  const headers = new Headers(response.headers);
+  headers.set("X-Lingua-Request-ID", requestId);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
