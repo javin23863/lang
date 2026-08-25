@@ -7,14 +7,15 @@ export { Room };
 const NATIVE_ORIGINS = new Set(["https://localhost", "capacitor://localhost"]);
 const NATIVE_OAUTH_COOKIE = "lr_native_oauth";
 const OAUTH_STATE_COOKIE = "lr_oauth";
-const NATIVE_HANDOFF_PREFIX = "nh1";
-const NATIVE_HANDOFF_PURPOSE = "native-handoff.v1";
+const NATIVE_HANDOFF_PREFIX = "nh2";
+const NATIVE_HANDOFF_PURPOSE = "native-handoff.v2";
 const NATIVE_HANDOFF_TTL_SECONDS = 90;
 const SESSION_PREFIX = "s1";
 const SESSION_PURPOSE = "session.v1";
 const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 const SESSION_COOKIE = "lr_s";
 const MOBILE_APP_ID = "com.javin23863.linguarelay";
+const MOBILE_AUTH_SCHEME = MOBILE_APP_ID;
 const USER_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
 const SIGNATURE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const NONCE_PATTERN = /^[A-Za-z0-9_-]{22}$/;
@@ -94,6 +95,15 @@ function canonicalBase64url(value: string): Uint8Array | null {
   }
 }
 
+function validNativeBinding(value: string): boolean {
+  const decoded = canonicalBase64url(value);
+  return decoded?.byteLength === 32;
+}
+
+async function bindingChallenge(binding: string): Promise<string> {
+  return base64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(binding)));
+}
+
 async function hmacKey(secret: string, usage: ("sign" | "verify")[]): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     "raw", new TextEncoder().encode(secret),
@@ -117,28 +127,32 @@ async function signSession(userId: string, secret: string): Promise<{token: stri
   return {token: `${SESSION_PREFIX}.${userId}.${expiresAt}.${base64url(signature)}`, expiresAt};
 }
 
-async function signNativeHandoff(userId: string, secret: string): Promise<string> {
-  if (!USER_ID_PATTERN.test(userId) || !signingSecretIsValid(secret)) {
+async function signNativeHandoff(
+  userId: string, provider: string, challenge: string, secret: string
+): Promise<string> {
+  if (!USER_ID_PATTERN.test(userId) || !PROVIDERS.has(provider)
+      || !SIGNATURE_PATTERN.test(challenge) || !signingSecretIsValid(secret)) {
     throw new Error("native handoff signing unavailable");
   }
   const expiresAt = Math.floor(Date.now() / 1000) + NATIVE_HANDOFF_TTL_SECONDS;
   const nonce = base64url(crypto.getRandomValues(new Uint8Array(16)));
-  const payload = `${NATIVE_HANDOFF_PURPOSE}.${userId}.${expiresAt}.${nonce}`;
+  const payload = `${NATIVE_HANDOFF_PURPOSE}.${provider}.${userId}.${expiresAt}.${nonce}.${challenge}`;
   const signature = await crypto.subtle.sign(
     "HMAC", await hmacKey(secret, ["sign"]), new TextEncoder().encode(payload)
   );
-  return `${NATIVE_HANDOFF_PREFIX}.${userId}.${expiresAt}.${nonce}.${base64url(signature)}`;
+  return `${NATIVE_HANDOFF_PREFIX}.${provider}.${userId}.${expiresAt}.${nonce}.${challenge}.${base64url(signature)}`;
 }
 
 async function verifyNativeHandoff(
   token: string, secret: string
-): Promise<{userId: string; nonce: string} | null> {
+): Promise<{userId: string; nonce: string; provider: string; challenge: string} | null> {
   if (!signingSecretIsValid(secret)) return null;
   const parts = token.split(".");
-  if (parts.length !== 5) return null;
-  const [prefix, userId, expiresRaw, nonce, signature] = parts;
-  if (prefix !== NATIVE_HANDOFF_PREFIX || !USER_ID_PATTERN.test(userId)
-      || !/^\d{10}$/.test(expiresRaw) || !NONCE_PATTERN.test(nonce)
+  if (parts.length !== 7) return null;
+  const [prefix, provider, userId, expiresRaw, nonce, challenge, signature] = parts;
+  if (prefix !== NATIVE_HANDOFF_PREFIX || !PROVIDERS.has(provider)
+      || !USER_ID_PATTERN.test(userId) || !/^\d{10}$/.test(expiresRaw)
+      || !NONCE_PATTERN.test(nonce) || !SIGNATURE_PATTERN.test(challenge)
       || !SIGNATURE_PATTERN.test(signature)) return null;
   const expiresAt = Number(expiresRaw);
   if (!Number.isSafeInteger(expiresAt) || expiresAt <= Math.floor(Date.now() / 1000)) return null;
@@ -147,9 +161,11 @@ async function verifyNativeHandoff(
   const valid = await crypto.subtle.verify(
     "HMAC", await hmacKey(secret, ["verify"]),
     signatureBytes.buffer as ArrayBuffer,
-    new TextEncoder().encode(`${NATIVE_HANDOFF_PURPOSE}.${userId}.${expiresRaw}.${nonce}`)
+    new TextEncoder().encode(
+      `${NATIVE_HANDOFF_PURPOSE}.${provider}.${userId}.${expiresRaw}.${nonce}.${challenge}`
+    )
   );
-  return valid ? {userId, nonce} : null;
+  return valid ? {userId, nonce, provider, challenge} : null;
 }
 
 function readCookie(request: Request, name: string): string | null {
@@ -162,8 +178,15 @@ function readCookie(request: Request, name: string): string | null {
   return null;
 }
 
-function nativeMarkerCookie(provider: string): string {
-  return `${NATIVE_OAUTH_COOKIE}=${provider}; HttpOnly; Secure; SameSite=None; Path=/auth; Max-Age=600`;
+function nativeMarkerCookie(provider: string, challenge: string): string {
+  return `${NATIVE_OAUTH_COOKIE}=${provider}.${challenge}; HttpOnly; Secure; SameSite=None; Path=/auth; Max-Age=600`;
+}
+
+function nativeMarkerChallenge(request: Request, provider: string): string | null {
+  const marker = readCookie(request, NATIVE_OAUTH_COOKIE) || "";
+  const parts = marker.split(".");
+  return parts.length === 2 && parts[0] === provider && SIGNATURE_PATTERN.test(parts[1])
+    ? parts[1] : null;
 }
 
 function clearNativeMarkerCookie(): string {
@@ -172,6 +195,10 @@ function clearNativeMarkerCookie(): string {
 
 function clearOauthStateCookie(): string {
   return `${OAUTH_STATE_COOKIE}=; HttpOnly; Secure; SameSite=None; Path=/auth; Max-Age=0`;
+}
+
+function nativeAuthReturn(provider: string, fragment: string): string {
+  return `${MOBILE_AUTH_SCHEME}://auth/${provider}#${fragment}`;
 }
 
 function extractSession(headers: Headers): string | null {
@@ -233,38 +260,46 @@ async function nativeAuthStart(request: Request, env: Env, provider: string): Pr
   if (request.method !== "GET" || !PROVIDERS.has(provider)) {
     return new Response("Not Found", {status: 404, headers: privateHeaders()});
   }
+  const entries = [...new URL(request.url).searchParams.entries()];
+  const binding = entries.length === 1 && entries[0][0] === "binding" ? entries[0][1] : "";
+  if (!validNativeBinding(binding)) {
+    return new Response("Invalid native authentication binding", {
+      status: 400, headers: privateHeaders()
+    });
+  }
+  const challenge = await bindingChallenge(binding);
   const headers = privateHeaders();
   headers.set("Location", `${expectedOrigin(request, env)}/auth/${provider}/start`);
-  headers.append("Set-Cookie", nativeMarkerCookie(provider));
+  headers.append("Set-Cookie", nativeMarkerCookie(provider, challenge));
   return new Response(null, {status: 302, headers});
 }
 
 async function nativeAuthCallback(
   request: Request, env: Env, ctx: ExecutionContext, provider: string
 ): Promise<Response> {
-  if (readCookie(request, NATIVE_OAUTH_COOKIE) !== provider) {
-    return routeWorker(request, env, ctx);
-  }
+  const challenge = nativeMarkerChallenge(request, provider);
+  if (!challenge) return routeWorker(request, env, ctx);
+
   const upstream = await routeWorker(request, env, ctx);
   const session = extractSession(upstream.headers);
   const userId = session ? sessionUserId(session) : null;
   // Never persist the browser session minted by the shared callback into the
-  // system browser. Native receives only the short handoff below.
+  // system browser. Native receives only the app-bound, one-time handoff.
   const headers = privateHeaders(upstream.headers);
   headers.delete("Set-Cookie");
   headers.delete("Content-Length");
   headers.append("Set-Cookie", clearOauthStateCookie());
   headers.append("Set-Cookie", clearNativeMarkerCookie());
   if (!userId) {
-    headers.set("Location", `${expectedOrigin(request, env)}/mobile-auth-complete#auth=failed`);
+    headers.set("Location", nativeAuthReturn(provider, "auth=failed"));
     return new Response(null, {status: 302, headers});
   }
   try {
-    const handoff = await signNativeHandoff(userId, env.ROOM_SIGNING_KEY);
-    headers.set("Location", `${expectedOrigin(request, env)}/mobile-auth-complete#handoff=${handoff}`);
+    const handoff = await signNativeHandoff(userId, provider, challenge, env.ROOM_SIGNING_KEY);
+    headers.set("Location", nativeAuthReturn(provider, `handoff=${handoff}`));
     return new Response(null, {status: 302, headers});
   } catch {
-    headers.set("Location", `${expectedOrigin(request, env)}/mobile-auth-complete#auth=failed`);
+    headers.set("Location", nativeAuthReturn(provider, "auth=failed"));
     return new Response(null, {status: 302, headers});
   }
 }
@@ -294,19 +329,23 @@ async function nativeHandoffExchange(request: Request, env: Env): Promise<Respon
     request, new Response("Request body is too large", {status: 413, headers: privateHeaders()})
   );
   let handoff = "";
+  let binding = "";
   try {
     const parsed = JSON.parse(new TextDecoder().decode(raw)) as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
     const record = parsed as Record<string, unknown>;
-    if (Object.keys(record).length !== 1 || typeof record.handoff !== "string") throw new Error();
+    if (Object.keys(record).length !== 2 || typeof record.handoff !== "string"
+        || typeof record.binding !== "string" || !validNativeBinding(record.binding)) throw new Error();
     handoff = record.handoff;
+    binding = record.binding;
   } catch {
     return nativeCors(
       request, new Response("Invalid handoff", {status: 400, headers: privateHeaders()})
     );
   }
   const verified = await verifyNativeHandoff(handoff, env.ROOM_SIGNING_KEY);
-  if (!verified || !await consumeNativeHandoff(env, verified.nonce)) return nativeCors(
+  if (!verified || await bindingChallenge(binding) !== verified.challenge
+      || !await consumeNativeHandoff(env, verified.nonce)) return nativeCors(
     request, new Response("Invalid handoff", {status: 401, headers: privateHeaders()})
   );
   // A handoff issued before account deletion must not recreate a usable native
@@ -341,19 +380,9 @@ function appleAssociation(env: Env): Response {
       appID: `${teamId}.${MOBILE_APP_ID}`,
       components: [
         {"/": "/room/*", comment: "Private Lingua Relay rooms"},
-        {"/": "/mobile-auth-complete", comment: "Lingua Relay native authentication return"},
       ],
     }]
   }}, {headers: {"Cache-Control": "public, max-age=3600"}});
-}
-
-function mobileAuthComplete(request: Request): Response {
-  if (request.method !== "GET") return new Response("Method Not Allowed", {
-    status: 405, headers: privateHeaders()
-  });
-  const headers = privateHeaders();
-  headers.set("Content-Type", "text/plain; charset=utf-8");
-  return new Response("Authentication completed. Return to Lingua Relay.", {headers});
 }
 
 async function nativeSessionApi(
@@ -384,7 +413,6 @@ export default {
       return nativeAuthCallback(request, env, ctx, callback[1]);
     }
 
-    if (url.pathname === "/mobile-auth-complete") return mobileAuthComplete(request);
     if (url.pathname === "/.well-known/apple-app-site-association") {
       return appleAssociation(env);
     }
