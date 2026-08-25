@@ -40,6 +40,7 @@ const SESSION_API_PATHS = new Set([
 const LOCAL_DARK_CONTENT = new Set(["privacy.html", "terms.html", "support.html"]);
 let nativeSession: string | null = null;
 const memoryAuthBindings = new Map<string, string>();
+const handledAuthHandoffs = new Set<string>();
 
 function base64url(bytes: Uint8Array): string {
   let binary = "";
@@ -175,6 +176,11 @@ async function routeAppLink(value: string | undefined): Promise<void> {
   const auth = parseNativeAuthLink(value);
   if (auth) {
     if ("handoff" in auth && typeof auth.handoff === "string") {
+      // A cold start can surface the same URL through both getLaunchUrl() and
+      // appUrlOpen. The handoff is one-time, so process a given value once or a
+      // successful first exchange can be followed by a misleading failure.
+      if (handledAuthHandoffs.has(auth.handoff)) return;
+      handledAuthHandoffs.add(auth.handoff);
       await acceptNativeHandoff(auth.provider, auth.handoff);
     } else {
       clearAuthBinding(auth.provider);
