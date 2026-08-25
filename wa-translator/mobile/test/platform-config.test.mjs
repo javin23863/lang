@@ -4,7 +4,7 @@ import test from "node:test";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
-test("Android declares foreground media and verified room/auth links", async () => {
+test("Android declares foreground media, verified rooms, and app-scheme auth return", async () => {
   const manifest = await read("../android/app/src/main/AndroidManifest.xml");
   const filePaths = await read("../android/app/src/main/res/xml/file_paths.xml");
   const gradle = await read("../android/app/build.gradle");
@@ -21,7 +21,9 @@ test("Android declares foreground media and verified room/auth links", async () 
   assert.match(manifest, /android:scheme="https"/);
   assert.match(manifest, /android:host="spoken-translation-room\.spoken-translation-cloudflare\.workers\.dev"/);
   assert.match(manifest, /android:pathPrefix="\/room\/"/);
-  assert.match(manifest, /android:path="\/mobile-auth-complete"/);
+  assert.match(manifest, /android:scheme="com\.javin23863\.linguarelay"/);
+  assert.match(manifest, /android:host="auth"/);
+  assert.doesNotMatch(manifest, /android:path="\/mobile-auth-complete"/);
   assert.match(variables, /compileSdkVersion = 36/);
   assert.match(variables, /targetSdkVersion = 36/);
   assert.match(gradle, /LINGUA_ANDROID_KEYSTORE/);
@@ -32,7 +34,7 @@ test("Android declares foreground media and verified room/auth links", async () 
   assert.doesNotMatch(filePaths, /<external-path/);
 });
 
-test("iOS declares foreground media, universal links, and privacy manifest", async () => {
+test("iOS declares foreground media, universal rooms, app-scheme auth, and privacy manifest", async () => {
   const info = await read("../ios/App/App/Info.plist");
   const entitlements = await read("../ios/App/App/App.entitlements");
   const privacy = await read("../ios/App/App/PrivacyInfo.xcprivacy");
@@ -41,6 +43,8 @@ test("iOS declares foreground media, universal links, and privacy manifest", asy
 
   assert.match(info, /<key>NSCameraUsageDescription<\/key>/);
   assert.match(info, /<key>NSMicrophoneUsageDescription<\/key>/);
+  assert.match(info, /<key>CFBundleURLTypes<\/key>/);
+  assert.match(info, /<string>com\.javin23863\.linguarelay<\/string>/);
   assert.doesNotMatch(info, /<key>UIBackgroundModes<\/key>/);
   assert.doesNotMatch(info, /NSAllowsArbitraryLoads/);
   assert.match(entitlements, /applinks:spoken-translation-room\.spoken-translation-cloudflare\.workers\.dev/);
