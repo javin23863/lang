@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
-  MOBILE_AUTH_COMPLETE_PATH, MOBILE_BUILD, MOBILE_PROTOCOL, PARTICIPANT_LIMIT, PUBLIC_ORIGIN,
+  MOBILE_AUTH_SCHEME, MOBILE_BUILD, MOBILE_PROTOCOL, PARTICIPANT_LIMIT, PUBLIC_ORIGIN,
   apiPath, createSecureHostStorage, isSessionToken, parseNativeAuthLink, parseRoomLink,
   roomPageUrl, validateBootstrap, websocketPath,
 } from "../src/runtime-core.mjs";
@@ -12,9 +12,10 @@ const TOKEN = "Abcdefghijklmnopqrstuvwx.1786750205.ABCDEFGHIJKLMNOPQRSTUVWXYZabc
 const FUTURE = Math.floor(Date.now() / 1000) + 600;
 const USER = "TestHostUser0123456789";
 const NONCE = "ABCDEFGHIJKLMNOPQRSTUV";
-const SIGNATURE = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq";
-const HANDOFF = `nh1.${USER}.${FUTURE}.${NONCE}.${SIGNATURE}`;
-const SESSION = `s1.${USER}.${FUTURE}.${SIGNATURE}`;
+const CHALLENGE = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq";
+const SIGNATURE = "BCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqr";
+const HANDOFF = `nh2.google.${USER}.${FUTURE}.${NONCE}.${CHALLENGE}.${SIGNATURE}`;
+const SESSION = `s1.${USER}.${FUTURE}.${CHALLENGE}`;
 
 test("deep links accept only exact signed public room URLs", () => {
   assert.deepEqual(
@@ -50,26 +51,32 @@ test("a deep link carries its mode and bounded voice-call label", () => {
   assert.equal(parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?m=voice&n=A&n=B`), null);
 });
 
-test("native auth completion accepts only the verified handoff shape", () => {
+test("native auth completion accepts only the app scheme and matching provider", () => {
   assert.deepEqual(
-    parseNativeAuthLink(`${PUBLIC_ORIGIN}${MOBILE_AUTH_COMPLETE_PATH}#handoff=${HANDOFF}`),
-    {handoff: HANDOFF}
+    parseNativeAuthLink(`${MOBILE_AUTH_SCHEME}://auth/google#handoff=${HANDOFF}`),
+    {handoff: HANDOFF, provider: "google"}
   );
   assert.deepEqual(
-    parseNativeAuthLink(`${PUBLIC_ORIGIN}${MOBILE_AUTH_COMPLETE_PATH}#auth=failed`),
-    {error: "failed"}
+    parseNativeAuthLink(`${MOBILE_AUTH_SCHEME}://auth/google#auth=failed`),
+    {error: "failed", provider: "google"}
   );
   assert.equal(parseNativeAuthLink(
-    `https://attacker.test${MOBILE_AUTH_COMPLETE_PATH}#handoff=${HANDOFF}`
+    `https://attacker.test/mobile-auth-complete#handoff=${HANDOFF}`
   ), null);
   assert.equal(parseNativeAuthLink(
-    `${PUBLIC_ORIGIN}${MOBILE_AUTH_COMPLETE_PATH}?handoff=${HANDOFF}`
+    `${PUBLIC_ORIGIN}/mobile-auth-complete#handoff=${HANDOFF}`
   ), null);
   assert.equal(parseNativeAuthLink(
-    `${PUBLIC_ORIGIN}${MOBILE_AUTH_COMPLETE_PATH}#handoff=${HANDOFF}&extra=1`
+    `${MOBILE_AUTH_SCHEME}://auth/apple#handoff=${HANDOFF}`
+  ), null);
+  assert.equal(parseNativeAuthLink(
+    `${MOBILE_AUTH_SCHEME}://auth/google?handoff=${HANDOFF}`
+  ), null);
+  assert.equal(parseNativeAuthLink(
+    `${MOBILE_AUTH_SCHEME}://auth/google#handoff=${HANDOFF}&extra=1`
   ), null);
   assert.equal(isSessionToken(SESSION), true);
-  assert.equal(isSessionToken(`s1.${USER}.1.${SIGNATURE}`), false);
+  assert.equal(isSessionToken(`s1.${USER}.1.${CHALLENGE}`), false);
 });
 
 test("native traffic stays on the versioned backend seam", () => {
