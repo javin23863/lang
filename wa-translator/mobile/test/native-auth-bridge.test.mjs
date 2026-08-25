@@ -53,11 +53,20 @@ test("native auth keeps the raw binding on-device and exposes only its challenge
                "a legacy in-flight proof is not deleted until secure storage really has it");
 });
 
-test("native one-time handoffs remain idempotent and retire their proof after every terminal attempt", async () => {
+test("native one-time handoffs remain idempotent with a bounded replay cache and retire their proof", async () => {
   const bridge = await read("../src/mobile-bridge.ts");
+  assert.match(bridge, /const MAX_HANDLED_AUTH_HANDOFFS = 16/,
+               "custom-scheme spam cannot grow the process-lifetime replay set without bound");
   assert.match(bridge, /const handledAuthHandoffs = new Set<string>\(\)/);
-  assert.match(bridge, /if \(handledAuthHandoffs\.has\(auth\.handoff\)\) return/);
-  assert.match(bridge, /handledAuthHandoffs\.add\(auth\.handoff\)/);
+  assert.match(bridge, /function rememberAuthHandoff\(handoff: string\): boolean/);
+  assert.match(bridge, /if \(handledAuthHandoffs\.has\(handoff\)\) return false/,
+               "duplicate cold-start delivery stays idempotent");
+  assert.match(bridge, /while \(handledAuthHandoffs\.size >= MAX_HANDLED_AUTH_HANDOFFS\)/);
+  assert.match(bridge, /handledAuthHandoffs\.values\(\)\.next\(\)\.value/,
+               "the oldest replay entry is evicted before another is retained");
+  assert.match(bridge, /handledAuthHandoffs\.delete\(oldest\)/);
+  assert.match(bridge, /if \(!rememberAuthHandoff\(auth\.handoff\)\) return/,
+               "the app-link path uses the bounded replay helper rather than mutating the set directly");
   assert.match(bridge, /const binding = await readAuthBinding\(provider\)/,
                "cold return reloads the same app-held proof before exchanging the handoff");
   assert.match(bridge, /async function retireAuthBinding\(provider: string\): Promise<void>/);
