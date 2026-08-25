@@ -49,6 +49,15 @@ registered Lingua Relay app scheme using a short-lived, app-bound, one-time
 handoff. The installed app keeps the raw proof and native session in platform
 secure storage.
 
+New external browser/native sessions use the `s2` format: user ID, original
+expiry, a random 128-bit issuance nonce, and a domain-separated HMAC. Two logins
+for the same account at the same instant therefore remain different credentials
+and can be revoked independently. The shipping edge temporarily accepts valid
+legacy `s1` sessions for migration, but newly exposed browser cookies and native
+handoff sessions must be `s2`. A verified `s2` may be translated to an internal
+legacy representation only while calling the pre-v2 Worker; revocation always
+hashes the exact external credential rather than that internal representation.
+
 A valid session is not sufficient by itself: protected account mutations and
 room creation also require that the corresponding `UserDirectory` account still
 exists and that the exact session has not been revoked by logout. Successful
@@ -90,7 +99,10 @@ Public room invitations use verified Android App Links / iOS Universal Links.
 Authentication return uses the app-only custom scheme. Native compatibility
 bootstrap must match the canonical public origin, account/session mode,
 foreground lifecycle, protocol/build requirements, and `max_room_participants:
-2` before the installed app proceeds.
+2` before the installed app proceeds. Session-v2 issuance is a breaking native
+compatibility change, so Version 1.0's current installed-client bootstrap
+protocol is `2`; pre-v2 clients must fail closed rather than enter OAuth with an
+unsupported session response format.
 
 The final branded production origin is an operator/configuration gate and must
 not be invented in source. Production Worker configuration, native association
@@ -151,9 +163,10 @@ a substitute for the final exact-head signed and physical-device acceptance.
 
 `wa-translator/cloudflare/src/worker.ts` still contains the pre-Version-1.0
 four-person implementation. Shipping Wrangler entrypoints go through
-`account-guard-entry.ts` → `launch-entry.ts` → `mobile-entry.ts` and export the
-strict two-person `Room` wrapper; installed clients independently fail closed on
-a different participant contract. Do not deploy the base `worker.ts` `Room`
-directly. Moving the invariant into the base class and deleting the wrapper
-layers is post-P0 structural cleanup that should be done only with the complete
-room regression suite available to run.
+`session-issuance-entry.ts` → `account-guard-entry.ts` → `launch-entry.ts` →
+`mobile-entry.ts` and export the strict two-person `Room` wrapper; installed
+clients independently fail closed on a different participant/protocol contract.
+Do not deploy the base `worker.ts` `Room` directly. Moving the invariants into
+the base class and deleting the wrapper layers is post-P0 structural cleanup
+that should be done only with the complete room/auth regression suite available
+to run.
