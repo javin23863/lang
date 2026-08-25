@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const ROOT = new URL("../", import.meta.url);
-const SECRET_KEY = /(SECRET|SIGNING_KEY|ADMIN_TOKEN|CLIENT_SECRET|API_KEY)$/;
+const SECRET_KEY = /(?:SECRET|SIGNING_KEY|ADMIN_TOKEN|CLIENT_SECRET|API_KEY|TOKEN|PASSWORD|PRIVATE_KEY|CREDENTIAL|CERT(?:IFICATE)?|KEYSTORE)$/i;
 const EXPECTED_BINDINGS = ["ABUSE", "REPORTS", "ROOMS", "USERS"];
 
 async function readJsonc(name) {
@@ -76,6 +76,16 @@ for (const config of [production, staging]) {
   for (const value of Object.values(config.vars || {})) {
     assert.ok(!String(value).includes("local-dev-only-"), "shipping configs contain no local credential placeholders");
   }
+}
+
+// Keep the credential-key denylist itself under regression. These representative
+// names are all unsafe in committed shipping vars even when a future config has
+// not started using them yet.
+for (const key of [
+  "ACCESS_TOKEN", "DATABASE_PASSWORD", "APPLE_PRIVATE_KEY", "DEPLOY_CREDENTIAL",
+  "CLIENT_CERTIFICATE", "ANDROID_KEYSTORE",
+]) {
+  assert.match(key, SECRET_KEY, `credential guard recognizes ${key}`);
 }
 
 console.log("Environment config check: development, staging, and production are isolated and shipping configs contain no committed credential values.");
