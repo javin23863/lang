@@ -78,6 +78,13 @@ describe("permanent deployment surface", () => {
     expect(roomJsSource).toContain("async function connect()");
     expect(roomJsSource).toContain("el.hidden = !text");
     expect(roomJsSource).not.toContain("el.style.display");
+    expect(roomJsSource).toContain("const title = 'gate.title';");
+    expect(roomJsSource).toContain("const join = 'gate.join';");
+    expect(roomJsSource).toContain("setCallState('stage.waiting')");
+    expect(roomJsSource).not.toContain("setCallState('call.ringing')");
+    expect(roomJsSource).not.toContain("if (isHost) startRingback()");
+    expect(roomJsSource).toMatch(/if \(roomMode === 'voice' && m\.peers\.length\) \{[\s\S]*?connectCall\(\)/);
+    expect(roomJsSource).toMatch(/if \(roomMode === 'voice' && !callTimerStart\) \{[\s\S]*?to: m\.id[\s\S]*?connectCall\(\)/);
 
     const worklet = await exports.default.fetch(`${ORIGIN}/static/pcm-worklet.js`);
     expect(worklet.status).toBe(200);
