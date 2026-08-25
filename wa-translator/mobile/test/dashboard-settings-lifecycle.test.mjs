@@ -28,9 +28,12 @@ test("prepared native dashboard isolates settings and lifecycle coordination", a
   assert.match(dashboard, /window\.LinguaDashboardLifecycle\.create/);
   assert.match(dashboard, /lifecycle\.install\(\)/);
   assert.match(dashboard, /await lifecycle\.ready\(\)/);
+  assert.match(dashboard, /roomController\.refresh\(\)/);
+  assert.match(dashboard, /refreshAccountIfUnavailable\(\)/);
   assert.doesNotMatch(dashboard, /navigator\.serviceWorker\.register/);
   assert.match(lifecycle, /navigator\.serviceWorker\.register\("\/sw\.js"\)/);
-  assert.match(lifecycle, /document\.addEventListener\("visibilitychange"/);
+  assert.match(lifecycle, /document\.addEventListener\("visibilitychange", recoverWhenUsable\)/);
+  assert.match(lifecycle, /window\.addEventListener\("online", recoverWhenUsable\)/);
   assert.match(lifecycle, /document\.visibilityState === "visible"/);
   assert.match(lifecycle, /await runtime\.ready\(\)/);
 });

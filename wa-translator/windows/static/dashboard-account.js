@@ -28,9 +28,10 @@
         if (!response.ok) throw new Error("account unavailable");
         return await response.json();
       } catch (_) {
-        // A failed account snapshot still produces a usable signed-out screen;
-        // it never strands the app in its loading state.
-        return {signed_in: false, providers: []};
+        // Distinguish transport/backend failure from an authenticated "signed
+        // out" snapshot. The UI can then show a connection state instead of
+        // misrepresenting an outage as a logout.
+        return {signed_in: false, providers: [], unavailable: true};
       }
     }
 

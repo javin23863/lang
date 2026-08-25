@@ -17,10 +17,15 @@ test("prepared native dashboard isolates account/auth presentation", async () =>
   assert.match(dashboard, /window\.LinguaDashboardAccount\.create/);
   assert.match(dashboard, /accountPresenter\.load\(\)/);
   assert.match(dashboard, /accountPresenter\.render\(account\)/);
+  assert.match(dashboard, /refreshAccountIfUnavailable/);
+  assert.match(dashboard, /account\?\.unavailable/);
+  assert.match(dashboard, /setAuthStatus\("home\.needsUpdate"\)/);
   assert.doesNotMatch(dashboard, /dashboardFetch\(runtime\.apiUrl\("\/api\/me"\)/,
     "account snapshot fetching belongs to the account boundary");
 
   assert.match(account, /dashboardFetch\(runtime\.apiUrl\("\/api\/me"\)/);
+  assert.match(account, /unavailable: true/,
+    "transport failures stay distinct from an authenticated signed-out snapshot");
   assert.match(account, /document\.body\.dataset\.auth = account\.signed_in \? "in" : "out"/);
   for (const marker of ["signInGoogle", "signInApple", "signInFacebook"]) {
     assert.ok(account.includes(marker), `account presenter keeps ${marker}`);

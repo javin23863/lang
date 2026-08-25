@@ -6,7 +6,9 @@ const accountPresenter = window.LinguaDashboardAccount.create({
   runtime, fetch: dashboardFetch, t, byId: $
 });
 const roomModel = window.LinguaDashboardRoomModel.create(runtime);
+const startupAuthFailed = new URLSearchParams(location.search).get("auth") === "failed";
 let account = null;
+let accountRefreshing = false;
 // Every visible line is stored as its key, never as finished text, so a
 // language switch can re-render the screen the person is already looking at.
 let stateKey = "home.noRoom", stateParams = null, noticeKey = "", noticeParams = null;
@@ -63,6 +65,26 @@ function setAuthStatus(key) {
   $("authStatus").textContent = authStatusKey ? t(authStatusKey) : "";
 }
 
+function applyAccountAvailability() {
+  if (account?.unavailable) {
+    setAuthStatus("home.needsUpdate");
+  } else if (authStatusKey === "home.needsUpdate") {
+    setAuthStatus(startupAuthFailed ? "auth.failed" : "");
+  }
+}
+
+async function refreshAccountIfUnavailable() {
+  if (!account?.unavailable || accountRefreshing) return;
+  accountRefreshing = true;
+  try {
+    account = await accountPresenter.load();
+    accountPresenter.render(account);
+    applyAccountAvailability();
+  } finally {
+    accountRefreshing = false;
+  }
+}
+
 const roomController = window.LinguaDashboardRoomController.create({
   runtime,
   fetch: dashboardFetch,
@@ -88,7 +110,10 @@ const sharePresenter = window.LinguaDashboardShare.create({
 const settingsPresenter = window.LinguaDashboardSettings.create({runtime, byId: $});
 const lifecycle = window.LinguaDashboardLifecycle.create({
   runtime,
-  onVisible: roomController.refresh,
+  onVisible: () => {
+    roomController.refresh();
+    refreshAccountIfUnavailable();
+  },
 });
 
 async function deleteAccount() {
@@ -146,9 +171,10 @@ async function boot() {
     setBusy(true);
     return;
   }
-  if (new URLSearchParams(location.search).get("auth") === "failed") setAuthStatus("auth.failed");
+  if (startupAuthFailed) setAuthStatus("auth.failed");
   account = await accountPresenter.load();
   accountPresenter.render(account);
+  applyAccountAvailability();
   await roomController.restore();
 }
 boot();

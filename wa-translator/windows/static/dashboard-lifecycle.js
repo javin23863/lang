@@ -6,10 +6,13 @@
       throw new TypeError("dashboard lifecycle dependencies are required");
     }
 
+    function recoverWhenUsable() {
+      if (document.visibilityState === "visible") onVisible();
+    }
+
     function install() {
-      document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible") onVisible();
-      });
+      document.addEventListener("visibilitychange", recoverWhenUsable);
+      window.addEventListener("online", recoverWhenUsable);
       if (!runtime.isNative && "serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sw.js").catch(() => {});
       }
