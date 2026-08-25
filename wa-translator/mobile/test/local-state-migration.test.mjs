@@ -22,6 +22,7 @@ test("installed upgrades preserve only intentional local compatibility seams", a
 
   assert.match(roomModel, /return MODES\.has\(value\) \? value : "video"/,
     "rooms saved before mode support keep the historical video behavior");
-  assert.match(roomModel, /return valid\(value\) \? value : null/,
-    "malformed old room state fails closed rather than entering room control");
+  assert.match(roomModel,
+    /async function load\(\) \{[\s\S]*?const value = JSON\.parse\(persisted\);[\s\S]*?if \(valid\(value\)\) return value;[\s\S]*?await runtime\.forgetHostRoom\(\);[\s\S]*?return null;\n    \}/,
+    "malformed old room state fails closed and is purged rather than entering room control");
 });
