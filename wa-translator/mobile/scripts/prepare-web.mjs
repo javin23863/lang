@@ -7,9 +7,24 @@ const SOURCE = path.resolve(MOBILE, "..", "windows", "static");
 const WWW = path.resolve(MOBILE, "www");
 const FOUR_PERSON_FALLBACK = 'id="participantCount" aria-live="polite">0 / 4 people<';
 const TWO_PERSON_FALLBACK = 'id="participantCount" aria-live="polite">0 / 2 people<';
+const ROOM_STYLE_PATTERN = /<style>\n([\s\S]*?)\n<\/style>/;
+const ROOM_SCRIPT_PATTERN = /<script>\n(const \$ = \(id\) => document\.getElementById\(id\);[\s\S]*?)\n<\/script>\n<\/body>/;
 
 if (path.dirname(WWW) !== MOBILE || path.basename(WWW) !== "www") {
   throw new Error(`Refusing unsafe mobile web target: ${WWW}`);
+}
+
+function decomposeRoom(source) {
+  const style = source.match(ROOM_STYLE_PATTERN);
+  const script = source.match(ROOM_SCRIPT_PATTERN);
+  if (!style || !script) throw new Error("room source decomposition seam is missing");
+  return {
+    html: source
+      .replace(style[0], '<link rel="stylesheet" href="/room.css">')
+      .replace(script[0], '<script src="/room.js"></script>\n</body>'),
+    css: `${style[1]}\n`,
+    js: `${script[1]}\n`,
+  };
 }
 
 await rm(WWW, { recursive: true, force: true });
@@ -27,6 +42,10 @@ for (const name of ["index.html", "room.html"]) {
   if (!html.includes(marker)) throw new Error(`${name} is missing the app runtime seam`);
   html = html.replace(marker, `<script src="/mobile-bridge.js"></script>${marker}`);
   if (name === "room.html") {
+    const room = decomposeRoom(html);
+    html = room.html;
+    await writeFile(path.join(WWW, "room.css"), room.css, "utf8");
+    await writeFile(path.join(WWW, "room.js"), room.js, "utf8");
     if (!html.includes(FOUR_PERSON_FALLBACK) && !html.includes(TWO_PERSON_FALLBACK)) {
       throw new Error("room.html is missing the participant-count fallback seam");
     }
