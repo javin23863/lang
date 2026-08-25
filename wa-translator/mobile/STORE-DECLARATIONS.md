@@ -3,7 +3,8 @@
 Use these answers when creating the Play Console and App Store Connect records.
 They describe version 1.0 and must be reviewed again whenever SDKs or product
 behavior change. Current platform-policy rationale is pinned separately in
-`STORE-PRIVACY-SOURCES.md` and must be rechecked before a later submission.
+`STORE-PRIVACY-SOURCES.md` and `STORE-RATING-SOURCES.md` and must be rechecked
+before a later submission.
 
 - Account required to START a call: the person who creates a room signs in with
   one of the OAuth providers enabled for that release. The source supports Google
@@ -122,11 +123,21 @@ behavior change. Current platform-policy rationale is pinned separately in
   discovery, or matching, that private room is the complete service relationship
   between the two participants.
 - App category: Social Networking (iOS) / Communication (Android).
-- Intended audience: general adult communication; not directed to children.
+- Rating questionnaire facts: Apple `Messaging and Chat` is Yes; Social Media,
+  Unrestricted Web Access, and Advertising are No for version 1.0. Google's
+  `Online Interaction or Content Exchange` is Yes. Store-generated ratings must
+  come from the complete current questionnaires rather than a guessed number.
+- Intended audience: general communication; not designed for children under 13.
+  The product has no adult-only age gate, so do not describe it as 18+ based on
+  this source. Do not opt into the Apple Kids category or Play child target-age
+  bands unless the product contract, safety/privacy requirements, and launch
+  audience are intentionally changed. The exact non-child Play target-age bands
+  remain an owner/operator console decision.
 - Encryption declaration: HTTPS/WebSocket TLS and platform cryptography only;
   review Apple export-compliance answers before submission.
-- Content rating: camera/video communication and user-generated conversation;
-  complete each store questionnaire truthfully rather than copying a number.
+- Content rating: camera/video communication and private user-to-user conversation
+  are declared through each store's current questionnaire. Do not copy a numeric
+  rating into metadata before App Store Connect / Google IARC assigns it.
 
 The app must not claim all text languages have verified live microphone or
 translated-voice support. The in-app capability catalog is the source of truth.
