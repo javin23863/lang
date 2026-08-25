@@ -14,6 +14,7 @@ describe("installed host dashboard client", () => {
     const api = await (await exports.default.fetch(`${ORIGIN}/dashboard-api.js`)).text();
     const account = await (await exports.default.fetch(`${ORIGIN}/dashboard-account.js`)).text();
     const roomModel = await (await exports.default.fetch(`${ORIGIN}/dashboard-room-model.js`)).text();
+    const share = await (await exports.default.fetch(`${ORIGIN}/dashboard-share.js`)).text();
     const css = await (await exports.default.fetch(`${ORIGIN}/dashboard.css`)).text();
 
     for (const id of [
@@ -36,17 +37,16 @@ describe("installed host dashboard client", () => {
     expect(html).toContain('<script src="/dashboard-api.js"></script>');
     expect(html).toContain('<script src="/dashboard-account.js"></script>');
     expect(html).toContain('<script src="/dashboard-room-model.js"></script>');
+    expect(html).toContain('<script src="/dashboard-share.js"></script>');
     expect(html).toContain('<script src="/qr.js" defer></script>');
     expect(html).toContain('<link rel="stylesheet" href="/dashboard.css">');
     expect(html).toContain('<script src="/dashboard.js"></script>');
     const dashboardTag = html.indexOf('<script src="/dashboard.js"></script>');
-    expect(html.indexOf('<script src="/dashboard-api.js"></script>')).toBeLessThan(dashboardTag);
-    expect(html.indexOf('<script src="/dashboard-account.js"></script>')).toBeLessThan(dashboardTag);
-    expect(html.indexOf('<script src="/dashboard-room-model.js"></script>')).toBeLessThan(dashboardTag);
+    for (const asset of ["dashboard-api", "dashboard-account", "dashboard-room-model", "dashboard-share"]) {
+      expect(html.indexOf(`<script src="/${asset}.js"></script>`)).toBeLessThan(dashboardTag);
+    }
     expect(html).not.toContain("<style>");
 
-    // Account/auth rendering is a feature boundary rather than dashboard boot
-    // code. It still uses the shared deadline client and provider contract.
     expect(script).toContain("window.LinguaDashboardAccount.create");
     expect(script).toContain("accountPresenter.load()");
     expect(script).toContain("accountPresenter.render(account)");
@@ -59,8 +59,6 @@ describe("installed host dashboard client", () => {
     expect(account).toContain('document.body.dataset.auth = account.signed_in ? "in" : "out"');
     expect(account).not.toContain("new AbortController()");
 
-    // Capability URL normalization and persisted host-room validation live in
-    // one room-model boundary. Dashboard orchestration never reimplements them.
     expect(script).toContain("window.LinguaDashboardRoomModel.create(runtime)");
     expect(script).toContain("roomModel.inviteUrl(room)");
     expect(script).toContain("roomModel.valid(value)");
@@ -72,16 +70,26 @@ describe("installed host dashboard client", () => {
     expect(roomModel).toContain('typeof value.host_control === "string"');
     expect(roomModel).toContain("Number.isSafeInteger(value.expires_at)");
 
-    expect(script).toContain("https://wa.me/?text=");
-    expect(script).toContain("https://line.me/R/share?text=");
-    expect(script).not.toContain("social-plugins.line.me");
-    expect(script).toContain("window.LinguaQR.svg(roomUrl(currentRoom))");
+    // Invite copying, system sharing, app handoff, and QR rendering are one
+    // feature boundary. The coordinator only wires controls to that presenter.
+    expect(script).toContain("window.LinguaDashboardShare.create");
+    expect(script).toContain('$("copyBtn").onclick = sharePresenter.copy');
+    expect(script).toContain('$("shareBtn").onclick = sharePresenter.systemShare');
+    expect(script).toContain('$("waBtn").onclick = sharePresenter.whatsapp');
+    expect(script).toContain('$("lineBtn").onclick = sharePresenter.line');
+    expect(script).toContain('$("qrBtn").onclick = sharePresenter.toggleQr');
+    expect(script).not.toContain("https://wa.me/?text=");
+    expect(script).not.toContain("navigator.clipboard");
+    expect(share).toContain("https://wa.me/?text=");
+    expect(share).toContain("https://line.me/R/share?text=");
+    expect(share).not.toContain("social-plugins.line.me");
+    expect(share).toContain("navigator.clipboard");
+    expect(share).toContain("window.LinguaQR.svg(roomUrl(room))");
+
     expect(script).toContain('dashboardFetch(runtime.apiUrl("/api/rooms")');
     expect(script).toContain('dashboardFetch(runtime.apiUrl("/api/room-control")');
     expect(script).toContain('dashboardFetch(runtime.apiUrl("/api/room-control/close")');
 
-    // Request deadlines live in one dedicated boundary rather than being
-    // reimplemented by each dashboard feature.
     expect(script).toContain("const dashboardFetch = window.LinguaDashboardApi.fetch");
     expect(script).not.toContain("new AbortController()");
     expect(api).toContain("const REQUEST_TIMEOUT_MS = 15_000");
@@ -137,7 +145,6 @@ describe("installed host dashboard client", () => {
     expect(runtime).toContain("localStorage");
     expect(runtime).toContain("navigator.share");
     expect(runtime).toContain('"auth.signOutFailed": "Could not sign out. Try again."');
-    expect(script).toContain("navigator.clipboard");
     expect(runtime).toContain('window.open("about:blank", "_blank")');
     expect(runtime).toContain("opened.opener = null");
     expect(css).toContain(".room[hidden]{display:none}");
