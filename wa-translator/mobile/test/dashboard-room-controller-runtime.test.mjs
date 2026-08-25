@@ -189,3 +189,24 @@ test("account teardown invalidates a room creation that is already in flight", a
   assert.equal(h.events.some(entry => entry.name === "room.create.result"), false,
     "teardown is not misreported as a create failure or success");
 });
+
+test("startup restore blocks new room creation until persisted control is resolved", async () => {
+  const pendingRestore = deferred();
+  let requests = 0;
+  const h = harness(async () => {
+    requests++;
+    return response(200, {...CREATED_ROOM});
+  });
+  h.model.load = async () => pendingRestore.promise;
+
+  const restoreResult = h.controller.restore();
+  assert.equal(h.controller.isBusy(), true);
+  assert.equal(await h.controller.create("video"), false,
+    "a create tap cannot bypass the unresolved saved-room replacement decision");
+  assert.equal(requests, 0, "no second server room is created during startup restore");
+
+  pendingRestore.resolve(null);
+  assert.equal(await restoreResult, null);
+  assert.equal(h.controller.isBusy(), false);
+  assert.deepEqual(h.busy.slice(-2), [true, false]);
+});

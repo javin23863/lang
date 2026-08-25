@@ -186,23 +186,31 @@
     }
 
     async function restore() {
+      if (busy) return null;
       const targetGeneration = invalidationGeneration;
-      const restored = await model.load();
-      if (invalidationGeneration !== targetGeneration) return null;
-      room = restored;
-      if (room && room.expires_at * 1000 > Date.now()) {
-        onRender(room, "ready", 0);
-        startPolling();
-        refresh();
-        return room;
-      }
-      if (room) {
-        await model.forget();
+      let refreshAfterRestore = false;
+      setBusy(true);
+      try {
+        const restored = await model.load();
         if (invalidationGeneration !== targetGeneration) return null;
-        room = null;
-        onClear("expired", "home.roomExpired");
+        room = restored;
+        if (room && room.expires_at * 1000 > Date.now()) {
+          onRender(room, "ready", 0);
+          startPolling();
+          refreshAfterRestore = true;
+          return room;
+        }
+        if (room) {
+          await model.forget();
+          if (invalidationGeneration !== targetGeneration) return null;
+          room = null;
+          onClear("expired", "home.roomExpired");
+        }
+        return null;
+      } finally {
+        setBusy(false);
+        if (refreshAfterRestore && room) refresh();
       }
-      return null;
     }
 
     async function discard() {
