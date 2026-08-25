@@ -16,8 +16,13 @@ test("every Wrangler entrypoint crosses v2 issuance and live-account authority b
   }
   assert.match(issuance,
     /import accountGuardEntry, \{ AbuseGate, ReportInbox, Room, UserDirectory \} from "\.\/account-guard-entry"/,
-    "the shipping session boundary delegates every non-handoff route to the account guard");
-  assert.match(issuance, /return handoff \|\| accountGuardEntry\.fetch\(request, env, ctx\)/);
+    "the shipping session boundary delegates through the account guard");
+  assert.match(issuance, /const NATIVE_REPORT_PATH = "\/api\/v1\/reports"/,
+               "the installed report route is handled at the outer safety boundary");
+  assert.match(issuance, /const report = await nativeReportAndBlock\(request, env, ctx\)/,
+               "native report success is given a server-side room-block step");
+  assert.match(issuance, /return report \|\| accountGuardEntry\.fetch\(request, env, ctx\)/,
+               "all routes not consumed by explicit outer boundaries still cross account authority");
   assert.match(guard, /ROOM_CREATE_PATHS = new Set\(\["\/api\/rooms", "\/api\/v1\/rooms"\]\)/);
   assert.match(guard,
     /url\.pathname\.startsWith\("\/api\/v1\/"\) \? "\/api\/v1\/me" : "\/api\/me"/,

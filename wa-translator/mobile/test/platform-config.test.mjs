@@ -57,14 +57,21 @@ test("iOS declares foreground media, universal rooms, app-scheme auth, and priva
   assert.match(privacy, /NSPrivacyTracking[\s\S]*<false\/>/);
   assert.match(privacy, /NSPrivacyCollectedDataTypeOtherUserContent/);
   assert.match(privacy, /NSPrivacyCollectedDataTypePurposeAppFunctionality/);
-  // The account entries are linked by definition; the user-content entry is the
-  // one that must stay unlinked, so this assertion is scoped to that entry.
+  // Category-only abuse reports are not account-linked; account/profile and
+  // aggregate usage entries are linked by definition.
   assert.match(
     privacy,
     /NSPrivacyCollectedDataTypeOtherUserContent<\/string>\s*<key>NSPrivacyCollectedDataTypeLinked<\/key>\s*<false\/>/
   );
-  assert.match(privacy, /NSPrivacyCollectedDataTypeEmailAddress[\s\S]*?NSPrivacyCollectedDataTypeLinked<\/key>\s*<true\/>/);
-  assert.match(privacy, /NSPrivacyCollectedDataTypeUserID[\s\S]*?NSPrivacyCollectedDataTypeLinked<\/key>\s*<true\/>/);
+  for (const type of [
+    "Name", "EmailAddress", "UserID", "OtherUsageData",
+  ]) {
+    assert.match(
+      privacy,
+      new RegExp(`NSPrivacyCollectedDataType${type}[\\s\\S]*?NSPrivacyCollectedDataTypeLinked<\\/key>\\s*<true\\/>`),
+      `${type} must reflect linked retained account data`,
+    );
+  }
   assert.doesNotMatch(privacy, /NSPrivacyCollectedDataTypeTracking<\/key>\s*<true\/>/);
   assert.match(project, /CODE_SIGN_ENTITLEMENTS = App\/App\.entitlements;/);
   assert.match(project, /PrivacyInfo\.xcprivacy in Resources/);
@@ -79,7 +86,7 @@ test("iOS declares foreground media, universal rooms, app-scheme auth, and priva
   assert.match(appDelegate, /\.defaultToSpeaker/);
 });
 
-test("Capacitor sync derives native association hosts from runtime configuration", async () => {
+test("Capacitor sync derives native association hosts and verifies legal material", async () => {
   const script = await read("../scripts/sync-platform-origin.mjs");
   const packageJson = JSON.parse(await read("../package.json"));
   assert.match(script, /import \{ MOBILE_AUTH_SCHEME, PUBLIC_ORIGIN \} from "\.\.\/src\/runtime-core\.mjs"/);
@@ -87,8 +94,11 @@ test("Capacitor sync derives native association hosts from runtime configuration
   assert.match(script, /iOS associated-domain host/);
   assert.match(script, /iOS auth-return URL scheme/);
   assert.equal(packageJson.scripts["sync:platform"], "node scripts/sync-platform-origin.mjs");
-  assert.match(packageJson.scripts.sync, /cap sync && npm run sync:platform$/,
-               "association generation runs after Capacitor has modified native projects");
+  assert.match(
+    packageJson.scripts.sync,
+    /cap sync && npm run sync:platform && node scripts\/verify-synced-notices\.mjs$/,
+    "association generation and native notice verification must run after Capacitor modifies platform projects",
+  );
 });
 
 test("store icon source and generated platform icons exist", async () => {
