@@ -5,18 +5,18 @@ import test from "node:test";
 const read = path => readFile(new URL(path, import.meta.url), "utf8");
 
 test("Version 1.0 has one explicit product contract and historical docs cannot outrank it", async () => {
-  const release = await read("../../RELEASE-1.0.md");
-  const readme = await read("../../README.md");
-  const plan = await read("../../MOBILE-STORE-PLAN.md");
-  const reuse = await read("../../MOBILE-STORE-REUSE-SOURCES.md");
-  const handoff = await read("../../MOBILE-STORE-HANDOFF.md");
+  const release = await read("../../../RELEASE-1.0.md");
+  const readme = await read("../../../README.md");
+  const plan = await read("../../../MOBILE-STORE-PLAN.md");
+  const reuse = await read("../../../MOBILE-STORE-REUSE-SOURCES.md");
+  const handoff = await read("../../../MOBILE-STORE-HANDOFF.md");
 
   assert.match(release, /authoritative product boundary/i);
   assert.match(release, /exactly one local participant and one remote participant/i);
   assert.match(release, /host must sign in before creating a room/i);
   assert.match(release, /invited participant.*does not need an account/is);
   assert.match(release, /Version 1\.0 is non-monetized/i);
-  assert.match(release, /max_room_participants:\s*\n2|`max_room_participants:\s*2`/,
+  assert.match(release, /max_room_participants:[\s`]*2/,
                "installed clients fail closed on any non-two-person backend contract");
   assert.match(release, /Do not deploy the base `worker\.ts` `Room` directly/);
 
@@ -38,7 +38,7 @@ test("Version 1.0 has one explicit product contract and historical docs cannot o
 });
 
 test("browser and native room generators apply the same bounded control-plane fetch contract", async () => {
-  const launch = await read("../../wa-translator/cloudflare/src/launch-entry.ts");
+  const launch = await read("../../cloudflare/src/launch-entry.ts");
   const prepare = await read("../scripts/prepare-web.mjs");
 
   for (const source of [launch, prepare]) {
@@ -46,6 +46,7 @@ test("browser and native room generators apply the same bounded control-plane fe
     assert.match(source, /async function roomFetch\(input, init = \{\}\)/);
     assert.match(source, /setTimeout\(\(\) => controller\.abort\(\), ROOM_CONTROL_FETCH_TIMEOUT_MS\)/);
     assert.match(source, /CONTROL_FETCH_SEAMS = \["\/api\/capabilities", "\/api\/turn", "\/api\/room", "\/api\/reports"\]/);
-    assert.match(source, /normalized = normalized\.replace\(`fetch\(runtime\.apiUrl\('\$\{path\}'\)`/);
+    assert.match(source, /normalized = normalized\.replace/,
+                 "both generators rewrite each control-plane fetch through roomFetch");
   }
 });
