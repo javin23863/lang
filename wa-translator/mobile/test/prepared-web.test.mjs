@@ -9,7 +9,7 @@ test("prepared mobile web bundle contains the app, runtime, legal pages, and loc
     "index.html", "room.html", "room.css", "room-ui.css", "room.js",
     "app-runtime.js", "mobile-bridge.js", "qr.js",
     "dashboard.css", "dashboard.js", "privacy.html", "terms.html", "support.html",
-    "delete-account.html", "legal-runtime.js", "static/pcm-worklet.js"
+    "delete-account.html", "legal-runtime.js", "third-party-notices.txt", "static/pcm-worklet.js"
   ]) await access(new URL(path, root));
 
   for (const name of ["index.html", "room.html"]) {
@@ -29,6 +29,19 @@ test("prepared mobile web bundle contains the app, runtime, legal pages, and loc
     assert.match(html, /<script src="legal-runtime\.js"><\/script>/,
                  `${name} keeps safe return-navigation behavior in the native bundle`);
   }
+});
+
+test("prepared mobile bundle carries production third-party legal material", async () => {
+  const notices = await readFile(new URL("third-party-notices.txt", root), "utf8");
+  assert.match(notices, /Lingua Relay third-party notices/);
+  assert.match(notices, /@capacitor\/core@8\.5\.0/);
+  assert.match(notices, /@aparajita\/capacitor-secure-storage@8\.0\.0/);
+  assert.match(notices, /Apache License/);
+  assert.match(notices, /MIT License/);
+  assert.doesNotMatch(notices, /@capacitor\/cli@8\.5\.0/,
+                      "development-only Capacitor CLI is not redistributed in the app notice");
+  assert.doesNotMatch(notices, /typescript@7\.0\.2/,
+                      "development-only TypeScript is not redistributed in the app notice");
 });
 
 test("phone video status reserves the local preview area", async () => {

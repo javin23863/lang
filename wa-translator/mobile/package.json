@@ -6,7 +6,7 @@
   "engines": {"node": ">=22"},
   "scripts": {
     "build:bridge": "esbuild src/mobile-bridge.ts --bundle --format=iife --platform=browser --target=es2022 --outfile=www/mobile-bridge.js",
-    "build:web": "node scripts/prepare-web.mjs && npm run build:bridge",
+    "build:web": "node scripts/prepare-web.mjs && node scripts/generate-third-party-notices.mjs && npm run build:bridge",
     "assets": "python scripts/generate-assets.py",
     "screenshots": "python scripts/prepare-store-screenshots.py",
     "sync:platform": "node scripts/sync-platform-origin.mjs",
