@@ -28,6 +28,10 @@ matrix after development is declared complete.
 - [x] The retired `POST /rooms` HTML-form creator is disabled; `/api/rooms` and
   its native versioned adapter are the only host room-creation contract.
 - [x] Account deletion is available in the app and removes account-held data.
+- [x] Successful logout/account deletion also removes the device-local saved
+  host-control bearer so a later account on a shared device cannot inherit room
+  administration. Already-issued participant rooms remain independent until
+  their normal expiry.
 - [x] Version 1.0 is non-monetized: no purchase surface, stored credit balance,
   StoreKit product, or Google Play Billing product is part of the active app.
 - [x] New participant/share/QR/native room URLs contain only the signed room
@@ -49,6 +53,9 @@ matrix after development is declared complete.
   OAuth callback during the compatibility transition.
 - [x] A native auth proof is retired after terminal success or failure; duplicate
   cold-launch delivery of the same handoff is idempotent.
+- [x] The process-local duplicate-handoff cache is capped at 16 entries and
+  evicts the oldest entry, so externally delivered custom-scheme traffic cannot
+  grow authentication replay state without bound.
 - [x] Wrong-method provider callback requests use the base `405` path without
   consuming the native marker/state for a legitimate callback still in flight.
 - [x] The exchanged native session is stored in platform secure storage and is
@@ -137,6 +144,12 @@ matrix after development is declared complete.
 - [x] iOS privacy manifest is source controlled and declares no tracking.
 - [x] No advertising or analytics SDK is included in version 1.0.
 - [x] No transcript history or call recording is intentionally stored.
+- [x] OAuth display metadata is stripped of C0/C1 controls and Unicode bidi
+  override/isolate formatting before storage, while international text remains
+  supported and provider/subject-derived account identity is never rewritten.
+- [x] Once an account Durable Object exists, its derived user ID and provider are
+  immutable; later provider refreshes that omit presentation claims preserve the
+  account's prior non-empty name/email instead of erasing them.
 - [x] Active account responses/storage retire the zero-only legacy credits field;
   successful profile reads/writes and usage writes all remove it.
 - [x] Abuse reporting is category-only and excludes names, room links, message
