@@ -4,7 +4,7 @@ import test from "node:test";
 
 const read = path => readFile(new URL(path, import.meta.url), "utf8");
 
-test("native launch chrome matches the dashboard and room surfaces", async () => {
+test("native launch chrome matches dashboard, room, and legal surfaces", async () => {
   const config = await read("../capacitor.config.ts");
   const bridge = await read("../src/mobile-bridge.ts");
   const plist = await read("../ios/App/App/Info.plist");
@@ -19,6 +19,14 @@ test("native launch chrome matches the dashboard and room surfaces", async () =>
   assert.match(bridge, /import \{ StatusBar, Style \} from "@capacitor\/status-bar"/);
   assert.match(bridge, /roomPage \? Style\.Dark : Style\.Light/,
                "the always-dark call room uses light status-bar foreground content");
+  assert.match(bridge,
+    /LOCAL_DARK_CONTENT = new Set\(\["privacy\.html", "terms\.html", "support\.html"\]\)/,
+    "standalone dark legal pages are known before native navigation");
+  assert.match(bridge, /LOCAL_DARK_CONTENT\.has\(page\)[\s\S]*?Style\.Dark/,
+               "dashboard-to-legal navigation switches foreground contrast before leaving");
+  assert.match(bridge,
+    /document\.addEventListener\("click", prepareLocalContentChrome, \{capture: true\}\)/,
+    "the chrome transition observes local legal links before navigation");
   assert.match(bridge, /if \(state\.isActive\) void applyNativeChrome\(\)/,
                "returning from system UI reapplies the current page chrome");
 
