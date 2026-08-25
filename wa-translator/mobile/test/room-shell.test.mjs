@@ -75,6 +75,18 @@ test("native room shell is decomposed, accessible, bridge-enabled and two-person
   assert.match(js, /if \(roomMode === 'voice' && !callTimerStart\) \{[\s\S]*?to: m\.id[\s\S]*?connectCall\(\)/,
                "peer_join connects voice mode when the other person arrives later");
 
+  // Terms acceptance is affirmative and version-bound. A fresh install cannot
+  // inherit the canonical source's historical pre-check, and only acceptance
+  // recorded for the current legal text may restore the checkbox later.
+  assert.match(html, /<input id="termsAgree" type="checkbox">/);
+  assert.doesNotMatch(html, /<input id="termsAgree" type="checkbox" checked>/);
+  assert.match(js, /const termsKey = 'lingua-relay\.terms\.2026-08-25';/);
+  assert.doesNotMatch(js, /lingua-relay\.terms\.2026-08-14/);
+  assert.match(js, /\$\('termsAgree'\)\.checked = localStorage\.getItem\(termsKey\) === '1'/,
+               "only a prior affirmative acceptance of this exact Terms version is restored");
+  assert.match(js, /if \(roleChosen \|\| !termsAccepted\(\)/,
+               "joining remains fail-closed while the current agreement is unchecked");
+
   assert.match(html, /id="participantCount" aria-live="polite">0 \/ 2 people</,
                "the first rendered room shell matches the two-person contract");
   assert.doesNotMatch(html, /id="participantCount" aria-live="polite">0 \/ 4 people</,
