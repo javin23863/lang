@@ -15,6 +15,8 @@ describe("installed host dashboard client", () => {
     const account = await (await exports.default.fetch(`${ORIGIN}/dashboard-account.js`)).text();
     const roomModel = await (await exports.default.fetch(`${ORIGIN}/dashboard-room-model.js`)).text();
     const share = await (await exports.default.fetch(`${ORIGIN}/dashboard-share.js`)).text();
+    const settings = await (await exports.default.fetch(`${ORIGIN}/dashboard-settings.js`)).text();
+    const lifecycle = await (await exports.default.fetch(`${ORIGIN}/dashboard-lifecycle.js`)).text();
     const css = await (await exports.default.fetch(`${ORIGIN}/dashboard.css`)).text();
 
     for (const id of [
@@ -34,16 +36,17 @@ describe("installed host dashboard client", () => {
 
     expect(html).toContain('aria-live="polite"');
     expect(html).toContain('<script src="/app-runtime.js"></script>');
-    expect(html).toContain('<script src="/dashboard-api.js"></script>');
-    expect(html).toContain('<script src="/dashboard-account.js"></script>');
-    expect(html).toContain('<script src="/dashboard-room-model.js"></script>');
-    expect(html).toContain('<script src="/dashboard-share.js"></script>');
     expect(html).toContain('<script src="/qr.js" defer></script>');
     expect(html).toContain('<link rel="stylesheet" href="/dashboard.css">');
     expect(html).toContain('<script src="/dashboard.js"></script>');
     const dashboardTag = html.indexOf('<script src="/dashboard.js"></script>');
-    for (const asset of ["dashboard-api", "dashboard-account", "dashboard-room-model", "dashboard-share"]) {
-      expect(html.indexOf(`<script src="/${asset}.js"></script>`)).toBeLessThan(dashboardTag);
+    for (const asset of [
+      "dashboard-api", "dashboard-account", "dashboard-room-model", "dashboard-share",
+      "dashboard-settings", "dashboard-lifecycle",
+    ]) {
+      const tag = `<script src="/${asset}.js"></script>`;
+      expect(html).toContain(tag);
+      expect(html.indexOf(tag)).toBeLessThan(dashboardTag);
     }
     expect(html).not.toContain("<style>");
 
@@ -70,8 +73,6 @@ describe("installed host dashboard client", () => {
     expect(roomModel).toContain('typeof value.host_control === "string"');
     expect(roomModel).toContain("Number.isSafeInteger(value.expires_at)");
 
-    // Invite copying, system sharing, app handoff, and QR rendering are one
-    // feature boundary. The coordinator only wires controls to that presenter.
     expect(script).toContain("window.LinguaDashboardShare.create");
     expect(script).toContain('$("copyBtn").onclick = sharePresenter.copy');
     expect(script).toContain('$("shareBtn").onclick = sharePresenter.systemShare');
@@ -85,6 +86,22 @@ describe("installed host dashboard client", () => {
     expect(share).not.toContain("social-plugins.line.me");
     expect(share).toContain("navigator.clipboard");
     expect(share).toContain("window.LinguaQR.svg(roomUrl(room))");
+
+    // Language selection and page lifecycle no longer live in the feature
+    // coordinator. Both boundaries keep the same runtime behavior.
+    expect(script).toContain("window.LinguaDashboardSettings.create");
+    expect(script).toContain("settingsPresenter.install");
+    expect(script).not.toContain("new Intl.DisplayNames");
+    expect(settings).toContain("new Intl.DisplayNames");
+    expect(settings).toContain('runtime.i18n.use(byId("appLocaleSel").value)');
+    expect(settings).toContain("runtime.i18n.onChange");
+    expect(script).toContain("window.LinguaDashboardLifecycle.create");
+    expect(script).toContain("lifecycle.install()");
+    expect(script).toContain("await lifecycle.ready()");
+    expect(script).not.toContain('navigator.serviceWorker.register("/sw.js")');
+    expect(lifecycle).toContain('navigator.serviceWorker.register("/sw.js")');
+    expect(lifecycle).toContain('document.addEventListener("visibilitychange"');
+    expect(lifecycle).toContain('document.visibilityState === "visible"');
 
     expect(script).toContain('dashboardFetch(runtime.apiUrl("/api/rooms")');
     expect(script).toContain('dashboardFetch(runtime.apiUrl("/api/room-control")');
@@ -140,7 +157,6 @@ describe("installed host dashboard client", () => {
     expect(script).toContain("const requestedMode = roomModel.normalizeMode(mode)");
     expect(script).toContain("room.mode = requestedMode");
     expect(html).toContain('id="appLocaleSel"');
-    expect(script).toContain("runtime.i18n.use($(\"appLocaleSel\").value)");
     const runtime = await (await exports.default.fetch(`${ORIGIN}/app-runtime.js`)).text();
     expect(runtime).toContain("localStorage");
     expect(runtime).toContain("navigator.share");
