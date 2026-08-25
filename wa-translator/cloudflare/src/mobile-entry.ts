@@ -66,7 +66,9 @@ async function twoPartyBootstrap(
   if (!response.ok || request.method !== "GET") return response;
   const body = await response.json<Record<string, unknown>>();
   body.max_room_participants = PARTICIPANT_LIMIT;
-  return Response.json(body, {status: response.status, headers: response.headers});
+  const headers = new Headers(response.headers);
+  headers.delete("Content-Length");
+  return Response.json(body, {status: response.status, headers});
 }
 
 function base64url(bytes: ArrayBuffer | Uint8Array): string {
@@ -250,6 +252,7 @@ async function nativeAuthCallback(
   // system browser. Native receives only the short handoff below.
   const headers = privateHeaders(upstream.headers);
   headers.delete("Set-Cookie");
+  headers.delete("Content-Length");
   headers.append("Set-Cookie", clearOauthStateCookie());
   headers.append("Set-Cookie", clearNativeMarkerCookie());
   if (!userId) {
