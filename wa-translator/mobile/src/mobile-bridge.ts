@@ -5,7 +5,8 @@ import { SecureStorage } from "@aparajita/capacitor-secure-storage";
 
 import {
   MOBILE_BUILD, PUBLIC_ORIGIN, apiPath, createSecureHostStorage, isRoomToken,
-  parseRoomLink, roomPageUrl, validateBootstrap, websocketPath,
+  isSessionToken, parseNativeAuthLink, parseRoomLink, roomPageUrl,
+  validateBootstrap, websocketPath,
 } from "./runtime-core.mjs";
 
 declare global {
@@ -21,13 +22,56 @@ declare global {
       setItem(key: string, value: string): Promise<void>;
       removeItem(key: string): Promise<void>;
       share(value: {title: string; text: string; url: string}): Promise<boolean>;
-      openRoom(token: string, mode?: string): boolean;
+      openRoom(token: string, mode?: string, name?: string): boolean;
     };
   }
 }
 
 const isNative = Capacitor.isNativePlatform();
 const hostStorage = createSecureHostStorage(SecureStorage);
+const nativeFetch = window.fetch.bind(window);
+const NATIVE_SESSION_KEY = "lingua-relay.native-session.v1";
+const SESSION_API_PATHS = new Set([
+  "/api/v1/me", "/api/v1/rooms", "/api/v1/account/delete", "/api/v1/auth/logout"
+]);
+let nativeSession: string | null = null;
+
+const sessionReady: Promise<void> = isNative ? hostStorage.getItem(NATIVE_SESSION_KEY)
+  .then(async value => {
+    if (isSessionToken(value)) {
+      nativeSession = value;
+      return;
+    }
+    if (value) await hostStorage.removeItem(NATIVE_SESSION_KEY);
+  })
+  .catch(() => {}) : Promise.resolve();
+
+if (isNative) {
+  // The bundled WebView is intentionally cookie-independent. Only account and
+  // room-creation calls receive the native session bearer; room/TURN/TTS calls
+  // already carry their own room-scoped Authorization credentials.
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    await sessionReady;
+    const resolved = typeof input === "string" ? new URL(input, location.href).toString() : input;
+    let request = new Request(resolved, init);
+    const url = new URL(request.url);
+    if (url.origin === PUBLIC_ORIGIN && SESSION_API_PATHS.has(url.pathname)
+        && nativeSession && !request.headers.has("Authorization")) {
+      const headers = new Headers(request.headers);
+      headers.set("Authorization", `Bearer ${nativeSession}`);
+      request = new Request(request, {headers});
+    }
+    const response = await nativeFetch(request);
+    if (response.ok && request.method === "POST"
+        && (url.pathname === "/api/v1/auth/logout"
+          || url.pathname === "/api/v1/account/delete")) {
+      nativeSession = null;
+      await hostStorage.removeItem(NATIVE_SESSION_KEY).catch(() => {});
+    }
+    return response;
+  };
+}
+
 const compatibilityReady = isNative ? (async () => {
   const info = await App.getInfo();
   const build = Number.parseInt(info.build, 10);
@@ -43,15 +87,41 @@ const compatibilityReady = isNative ? (async () => {
   return true;
 })() : Promise.resolve(true);
 
-function openRoom(token: string, mode?: string): boolean {
+function openRoom(token: string, mode?: string, name?: string): boolean {
   if (!isRoomToken(token)) return false;
-  window.location.replace(roomPageUrl(token, mode));
+  window.location.replace(roomPageUrl(token, mode, name));
   return true;
 }
 
-function routeAppLink(value: string | undefined): void {
-  const link = value ? parseRoomLink(value) : null;
-  if (link) openRoom(link.token, link.mode);
+async function acceptNativeHandoff(handoff: string): Promise<void> {
+  try {
+    const response = await nativeFetch(`${PUBLIC_ORIGIN}/api/v1/auth/handoff`, {
+      method: "POST",
+      headers: {Accept: "application/json", "Content-Type": "application/json"},
+      body: JSON.stringify({handoff}),
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error("handoff refused");
+    const body = await response.json() as {session?: unknown};
+    if (!isSessionToken(body.session)) throw new Error("invalid native session");
+    nativeSession = String(body.session);
+    await hostStorage.setItem(NATIVE_SESSION_KEY, nativeSession);
+    window.location.replace("index.html");
+  } catch {
+    window.location.replace("index.html?auth=failed");
+  }
+}
+
+async function routeAppLink(value: string | undefined): Promise<void> {
+  if (!value) return;
+  const auth = parseNativeAuthLink(value);
+  if (auth) {
+    if ("handoff" in auth) await acceptNativeHandoff(auth.handoff);
+    else window.location.replace("index.html?auth=failed");
+    return;
+  }
+  const link = parseRoomLink(value);
+  if (link) openRoom(link.token, link.mode, "name" in link ? link.name : undefined);
 }
 
 window.LinguaNative = {
@@ -76,9 +146,9 @@ window.LinguaNative = {
 };
 
 if (isNative) {
-  App.addListener("appUrlOpen", event => routeAppLink(event.url));
+  App.addListener("appUrlOpen", event => { void routeAppLink(event.url); });
   App.addListener("appStateChange", state => {
     window.dispatchEvent(new CustomEvent("lingua-app-state", { detail: state }));
   });
-  App.getLaunchUrl().then(value => routeAppLink(value?.url)).catch(() => {});
+  App.getLaunchUrl().then(value => { void routeAppLink(value?.url); }).catch(() => {});
 }
