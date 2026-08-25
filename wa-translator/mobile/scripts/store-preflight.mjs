@@ -87,6 +87,18 @@ async function legalSurface(path) {
   const text = await response.text();
   requireCondition(text.includes("Lingua Relay") && !/TODO|development placeholder/i.test(text),
     `${path} is not a production legal/support surface`);
+  return text;
+}
+
+async function deletionSurface() {
+  const path = "/delete-account.html";
+  const text = await legalSurface(path);
+  requireCondition(/Delete your Lingua Relay account/i.test(text),
+    `${path} does not identify the account deletion pathway`);
+  requireCondition(/do not need the mobile app/i.test(text),
+    `${path} does not confirm deletion is available outside the installed app`);
+  requireCondition(/Open Lingua Relay account controls/i.test(text),
+    `${path} does not link to browser account controls`);
 }
 
 export async function runPreflight(platform, environment = process.env) {
@@ -95,7 +107,9 @@ export async function runPreflight(platform, environment = process.env) {
   const nativeOrigin = platform === "android" ? "https://localhost" : "capacitor://localhost";
   validateBootstrap(await liveJson("/api/v1/mobile/bootstrap", nativeOrigin));
   validateProviderSnapshot(await liveJson("/api/v1/me", nativeOrigin), platform);
-  await Promise.all([legalSurface("/privacy"), legalSurface("/terms"), legalSurface("/support")]);
+  await Promise.all([
+    legalSurface("/privacy"), legalSurface("/terms"), legalSurface("/support"), deletionSurface(),
+  ]);
 
   if (platform === "ios") {
     validateAppleAssociation(
