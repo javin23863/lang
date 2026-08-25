@@ -42,16 +42,34 @@
     check();
   }
 
+  function roomIsActive() {
+    const gate = document.getElementById("roleGate");
+    return Boolean(gate?.hidden);
+  }
+
+  function presentNetworkState(state) {
+    document.body.dataset.network = state;
+    emit("network.state", {state});
+    if (!roomIsActive()) return;
+    const status = document.getElementById("status");
+    const t = window.LinguaRuntime?.t;
+    if (!status || typeof t !== "function") return;
+    const key = state === "offline" ? "status.reconnecting" : "status.rejoining";
+    status.textContent = t(key);
+    status.hidden = false;
+  }
+
   function install() {
     document.getElementById("joinBtn")?.addEventListener("click", () => {
       emit("room.join.intent", {mode});
     });
     observePairReady();
     observeFirstTranslation();
+    document.body.dataset.network = navigator.onLine === false ? "offline" : "online";
   }
 
-  window.addEventListener("offline", () => emit("network.state", {state: "offline"}));
-  window.addEventListener("online", () => emit("network.state", {state: "online"}));
+  window.addEventListener("offline", () => presentNetworkState("offline"));
+  window.addEventListener("online", () => presentNetworkState("online"));
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", install, {once: true});
