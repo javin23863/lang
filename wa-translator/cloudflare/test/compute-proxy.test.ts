@@ -132,41 +132,36 @@ describe("authenticated independent Modal compute proxy", () => {
     listener.socket.close(1000, "done");
   });
 
-  it("transcribes once and fans out only unique current listener base languages", async () => {
+  it("transcribes once for the other person's current base language", async () => {
     const room = await createRoom();
-    const spanish = await open(room, "es");
-    const french = await open(room, "fr");
-    await spanish.next(); // peer_join French
+    const listener = await open(room, "es");
     const speaker = await open(room, "en");
-    await spanish.next(); // peer_join English
-    await french.next(); // peer_join English
+    await listener.next(); // peer_join English
 
     speaker.socket.send(new Uint8Array(3200).buffer);
-    expect(await spanish.next()).toMatchObject({
+    expect(await listener.next()).toMatchObject({
       type: "caption", speaker: speaker.id,
-      translations: { es: "hola", fr: "translated-fr" },
-    });
-    expect(await french.next()).toMatchObject({
-      type: "caption", speaker: speaker.id,
-      translations: { es: "hola", fr: "translated-fr" },
+      translations: { es: "hola" },
     });
 
-    // A same-base Spanish locale does not create a second `es` target.
-    const mexicanSpanish = await open(room, "es", "es-MX");
-    await spanish.next();
-    await french.next();
-    await speaker.next();
+    // The same listener can change languages in a two-person conversation.
+    // The compute route must follow that current language rather than retain a
+    // stale target from before the change.
+    listener.socket.send(JSON.stringify({
+      type: "set_locale", locale: "fr-FR", voice_profile: "fr-ff-siwis"
+    }));
+    expect(await speaker.next()).toMatchObject({
+      type: "peer_update", id: listener.id, lang: "fr"
+    });
     await new Promise(resolve => setTimeout(resolve, 600));
     speaker.socket.send(new Uint8Array(3200).buffer);
-    expect(await spanish.next()).toMatchObject({
+    expect(await listener.next()).toMatchObject({
       type: "caption", speaker: speaker.id,
-      translations: { es: "hola", fr: "translated-fr" },
+      translations: { fr: "translated-fr" },
     });
 
     speaker.socket.close(1000, "done");
-    spanish.socket.close(1000, "done");
-    french.socket.close(1000, "done");
-    mexicanSpanish.socket.close(1000, "done");
+    listener.socket.close(1000, "done");
   });
 
   it("closes oversized microphone frames", async () => {
