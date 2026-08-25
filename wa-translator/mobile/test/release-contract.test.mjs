@@ -18,6 +18,16 @@ test("Version 1.0 has one explicit product contract and historical docs cannot o
   assert.match(release, /Version 1\.0 is non-monetized/i);
   assert.match(release, /max_room_participants:[\s`]*2/,
                "installed clients fail closed on any non-two-person backend contract");
+  assert.match(release, /New external browser\/native sessions use the `s2` format/i,
+               "the release contract requires independently issued external sessions");
+  assert.match(release, /random 128-bit issuance nonce/i);
+  assert.match(release, /temporarily accepts valid legacy `s1` sessions/i,
+               "legacy sessions are migration compatibility, not the issuance contract");
+  assert.match(release, /protocol is `2`/,
+               "the installed-client compatibility boundary changes with the new session format");
+  assert.match(release,
+    /`session-issuance-entry\.ts` → `account-guard-entry\.ts` → `launch-entry\.ts` →\s*`mobile-entry\.ts`/,
+    "the documented shipping chain includes the v2 issuance boundary");
   assert.match(release, /Do not deploy the base `worker\.ts` `Room` directly/);
 
   assert.match(readme, /RELEASE-1\.0\.md/,
