@@ -7,8 +7,10 @@ export const MOBILE_AUTH_SCHEME = "com.javin23863.linguarelay";
 
 const ROOM_TOKEN_PATTERN =
   /^[A-Za-z0-9_-]{24}\.\d{10}\.[A-Za-z0-9_-]{43}$/;
-const SESSION_TOKEN_PATTERN =
+const SESSION_V1_PATTERN =
   /^s1\.[A-Za-z0-9_-]{22}\.\d{10}\.[A-Za-z0-9_-]{43}$/;
+const SESSION_V2_PATTERN =
+  /^s2\.[A-Za-z0-9_-]{22}\.\d{10}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/;
 const NATIVE_HANDOFF_PATTERN =
   /^nh2\.(google|apple|facebook)\.[A-Za-z0-9_-]{22}\.\d{10}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}\.[A-Za-z0-9_-]{43}$/;
 const MAX_DEEP_LINK_CHARS = 1024;
@@ -105,7 +107,7 @@ export function isRoomToken(value) {
 /** @param {unknown} value */
 export function isSessionToken(value) {
   const token = String(value || "");
-  if (!SESSION_TOKEN_PATTERN.test(token)) return false;
+  if (!SESSION_V1_PATTERN.test(token) && !SESSION_V2_PATTERN.test(token)) return false;
   const expiresAt = Number(token.split(".")[2]);
   return Number.isSafeInteger(expiresAt) && expiresAt > Math.floor(Date.now() / 1000);
 }
