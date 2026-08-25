@@ -32,6 +32,7 @@ const VERSIONED_PATHS = new Map([
 const ROOM_MODES = ["voice", "chat", "video"];
 const NATIVE_AUTH_PROVIDERS = new Set(["google", "apple", "facebook"]);
 
+/** @param {unknown} value */
 function boundedLink(value) {
   return typeof value === "string" && value.length > 0 && value.length <= MAX_DEEP_LINK_CHARS;
 }
