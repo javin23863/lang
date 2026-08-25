@@ -3,8 +3,9 @@ import { readFile, stat } from "node:fs/promises";
 import test from "node:test";
 
 import {
-  APP_ID, PUBLIC_ORIGIN, normalizeFingerprint, validateAndroidAssociation,
-  validateAppleAssociation, validateBootstrap, validateProviderSnapshot,
+  APP_ID, PUBLIC_ORIGIN, normalizeFingerprint, releaseBuildNumber,
+  validateAndroidAssociation, validateAppleAssociation, validateBootstrap,
+  validateProviderSnapshot,
 } from "../scripts/store-preflight.mjs";
 
 const read = path => readFile(new URL(path, import.meta.url), "utf8");
@@ -89,7 +90,7 @@ test("credential-gated Fastlane lanes stop at beta tracks", async () => {
   ]) assert.match(workflow, new RegExp(secret));
 });
 
-test("store preflight rejects live backend, provider, and association drift", () => {
+test("store preflight rejects live backend, build, provider, and association drift", () => {
   const bootstrap = {
     protocol: 1,
     minimum_client_build: 1,
@@ -98,9 +99,14 @@ test("store preflight rejects live backend, provider, and association drift", ()
     call_lifecycle: "foreground",
     max_room_participants: 2,
   };
-  assert.equal(validateBootstrap(bootstrap), true);
-  assert.throws(() => validateBootstrap({...bootstrap, max_room_participants: 4}), /two-person/);
-  assert.throws(() => validateBootstrap({...bootstrap, public_origin: "https://attacker.test"}),
+  assert.equal(releaseBuildNumber("android", {LINGUA_ANDROID_VERSION_CODE: "123"}), 123);
+  assert.equal(releaseBuildNumber("ios", {LINGUA_IOS_BUILD_NUMBER: "456"}), 456);
+  assert.throws(() => releaseBuildNumber("android", {}), /build number/);
+  assert.equal(validateBootstrap(bootstrap, 123), true);
+  assert.throws(() => validateBootstrap({...bootstrap, minimum_client_build: 124}, 123),
+    /requires mobile build 124/);
+  assert.throws(() => validateBootstrap({...bootstrap, max_room_participants: 4}, 123), /two-person/);
+  assert.throws(() => validateBootstrap({...bootstrap, public_origin: "https://attacker.test"}, 123),
     /public origin/);
 
   assert.equal(validateProviderSnapshot({providers: ["google"]}, "android"), true);
@@ -144,9 +150,9 @@ test("store listing and operator declarations are source controlled", async () =
   assert.match(declarations, /production Apple provider is not fully configured and visible/);
   assert.match(declarations, /Room capacity: exactly two participants total/);
   assert.match(declarations, /No password is ever created, collected, or stored/);
-  // A live-looking dead purchase button is a store review finding. The
-  // declaration has to say the control is disabled and collects nothing.
-  assert.match(declarations, /Buy credits\s*\n?\s*control is DISABLED and collects nothing/);
+  assert.match(declarations, /Monetization: version 1\.0 has no purchase surface/);
+  assert.doesNotMatch(declarations, /Buy credits/i,
+                      "the shipping declarations cannot resurrect the retired purchase preview");
   assert.match(declarations, /Account deletion: available in the app/);
   assert.match(declarations, /No advertising/);
   assert.match(declarations, /No transcript history/);
