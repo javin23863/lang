@@ -52,19 +52,24 @@ jobs:
       - name: Set unique Android version
         shell: bash
         run: |
-          # Google Play caps versionCode at 2,100,000,000. Raw Unix seconds are
-          # already close to that ceiling in 2026, so use minutes since 2020 and
-          # reserve one decimal digit for workflow retries. This remains
-          # monotonic and leaves centuries of headroom instead of roughly a decade.
-          epoch_seconds="$(date -u +%s)"
-          epoch_2020=1577836800
+          # Earlier development lanes used raw Unix seconds as versionCode. A
+          # compact epoch would move backwards if any such beta reached Play.
+          # Start above every pre-switch 2026 epoch-seconds value, then advance
+          # by workflow run number with two digits reserved for retries. This is
+          # monotonic across the strategy migration and allows about two million
+          # release workflow runs before Google's 2,100,000,000 ceiling.
+          migration_base=1900000000
+          run_number="${GITHUB_RUN_NUMBER}"
           attempt="${GITHUB_RUN_ATTEMPT}"
-          if [[ ! "$attempt" =~ ^[1-9]$ ]]; then
-            echo "Android release supports workflow attempts 1-9; found ${attempt}" >&2
+          if [[ ! "$run_number" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Android release run number is invalid: ${run_number}" >&2
             exit 1
           fi
-          build_minutes=$(( (epoch_seconds - epoch_2020) / 60 ))
-          version_code=$(( build_minutes * 10 + attempt ))
+          if [[ ! "$attempt" =~ ^[1-9][0-9]?$ ]]; then
+            echo "Android release supports workflow attempts 1-99; found ${attempt}" >&2
+            exit 1
+          fi
+          version_code=$(( migration_base + run_number * 100 + attempt ))
           if (( version_code < 1 || version_code > 2100000000 )); then
             echo "Android versionCode ${version_code} is outside Google Play's accepted range" >&2
             exit 1
