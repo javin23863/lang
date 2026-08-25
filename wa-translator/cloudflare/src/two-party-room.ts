@@ -24,6 +24,7 @@ const RoomBase = WorkerRoom as unknown as new (...args: any[]) => RoomBaseShape;
 type SocketAttachment = { joined?: unknown; lastSeenAt?: unknown } | null;
 type RoomUsage = { callMs: number; chat: number; tts: number };
 type UsageKind = "call" | "chat" | "tts";
+type UsageSnapshot = { usage: RoomUsage; wasPending: boolean };
 
 const EMPTY_USAGE: RoomUsage = {callMs: 0, chat: 0, tts: 0};
 
@@ -100,6 +101,18 @@ export class Room extends RoomBase {
     await this.ctx.storage.put("usage", usage);
   }
 
+  private async claimUsageSnapshot(): Promise<UsageSnapshot | null> {
+    return this.ctx.storage.transaction(async transaction => {
+      const existing = await transaction.get<RoomUsage>(USAGE_PENDING_KEY);
+      if (existing) return {usage: {...existing}, wasPending: true};
+      const active = await transaction.get<RoomUsage>("usage");
+      if (!active || usageEmpty(active)) return null;
+      await transaction.put(USAGE_PENDING_KEY, {...active});
+      await transaction.put("usage", {...EMPTY_USAGE});
+      return {usage: {...active}, wasPending: false};
+    });
+  }
+
   private flushUsage(): Promise<void> {
     // Last-socket close and host close can arrive close together. Serialize the
     // delivery side so one pending snapshot cannot be sent twice by concurrent
@@ -117,63 +130,63 @@ export class Room extends RoomBase {
     const owner = await this.ctx.storage.get<string>("owner");
     if (!owner) return;
 
-    // Move one immutable snapshot out of the active counter before any network
-    // hop. New room activity can then continue accumulating under `usage` while
-    // a failed account write leaves `usagePendingV1` durable for the next flush.
-    const pending = await this.ctx.storage.transaction(async transaction => {
-      const existing = await transaction.get<RoomUsage>(USAGE_PENDING_KEY);
-      if (existing) return {...existing};
-      const active = await transaction.get<RoomUsage>("usage");
-      if (!active || usageEmpty(active)) return null;
-      await transaction.put(USAGE_PENDING_KEY, {...active});
-      await transaction.put("usage", {...EMPTY_USAGE});
-      return {...active};
-    });
-    if (!pending) return;
-    if (usageEmpty(pending)) {
-      await this.ctx.storage.delete(USAGE_PENDING_KEY);
-      return;
-    }
-
     const roomRef = await roomUsageRef(this.ctx.id.name || "");
     const stub = this.env.USERS.get(this.env.USERS.idFromName(owner));
-    const deliveries: Array<[UsageKind, number]> = [
-      ["call", pending.callMs > 0 ? Math.ceil(pending.callMs / 60_000) : 0],
-      ["chat", pending.chat],
-      ["tts", pending.tts],
-    ];
 
-    for (const [kind, units] of deliveries) {
-      if (units <= 0) continue;
-      let response: Response;
-      try {
-        response = await stub.fetch(new Request("https://users.internal/usage", {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({kind, units, room_ref: roomRef}),
-        }));
-      } catch {
-        return; // pending storage remains intact for the next close/expiry flush
-      }
-      const status = response.status;
-      await response.body?.cancel().catch(() => {});
-
-      // A missing profile is authoritative account deletion, not a transient
-      // delivery failure. Drop both pending and newly accumulated counters so
-      // room activity can never recreate usage for an erased account.
-      if (status === 404) {
-        await this.ctx.storage.transaction(async transaction => {
-          await transaction.delete(USAGE_PENDING_KEY);
-          await transaction.put("usage", {...EMPTY_USAGE});
-        });
+    // At most two snapshots are relevant to one flush: an older durable backlog
+    // plus the active counters that accumulated while that backlog was waiting.
+    // A fresh snapshot created during this very delivery stays active for the
+    // next normal close; we never chase a live room in an unbounded loop.
+    for (let pass = 0; pass < 2; pass++) {
+      const snapshot = await this.claimUsageSnapshot();
+      if (!snapshot) return;
+      const pending = snapshot.usage;
+      if (usageEmpty(pending)) {
+        await this.ctx.storage.delete(USAGE_PENDING_KEY);
+        if (snapshot.wasPending && pass === 0) continue;
         return;
       }
-      if (status < 200 || status >= 300) return;
 
-      if (kind === "call") pending.callMs = 0;
-      else pending[kind] = 0;
-      if (usageEmpty(pending)) await this.ctx.storage.delete(USAGE_PENDING_KEY);
-      else await this.ctx.storage.put(USAGE_PENDING_KEY, {...pending});
+      const deliveries: Array<[UsageKind, number]> = [
+        ["call", pending.callMs > 0 ? Math.ceil(pending.callMs / 60_000) : 0],
+        ["chat", pending.chat],
+        ["tts", pending.tts],
+      ];
+
+      for (const [kind, units] of deliveries) {
+        if (units <= 0) continue;
+        let response: Response;
+        try {
+          response = await stub.fetch(new Request("https://users.internal/usage", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({kind, units, room_ref: roomRef}),
+          }));
+        } catch {
+          return; // pending storage remains intact for the next close/expiry flush
+        }
+        const status = response.status;
+        await response.body?.cancel().catch(() => {});
+
+        // A missing profile is authoritative account deletion, not a transient
+        // delivery failure. Drop both pending and newly accumulated counters so
+        // room activity can never recreate usage for an erased account.
+        if (status === 404) {
+          await this.ctx.storage.transaction(async transaction => {
+            await transaction.delete(USAGE_PENDING_KEY);
+            await transaction.put("usage", {...EMPTY_USAGE});
+          });
+          return;
+        }
+        if (status < 200 || status >= 300) return;
+
+        if (kind === "call") pending.callMs = 0;
+        else pending[kind] = 0;
+        if (usageEmpty(pending)) await this.ctx.storage.delete(USAGE_PENDING_KEY);
+        else await this.ctx.storage.put(USAGE_PENDING_KEY, {...pending});
+      }
+
+      if (!snapshot.wasPending) return;
     }
   }
 
