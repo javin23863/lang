@@ -67,6 +67,9 @@ const GOOGLE_CODES = {
   "fixture-google-second-account": () => Response.json({
     id_token: googleIdToken({ sub: "google-subject-2", email: "other@example.test", name: "Other" })
   }),
+  "fixture-google-unsafe-name": () => Response.json({
+    id_token: googleIdToken({ name: "Host\u202e\u0007Admin" })
+  }),
   "fixture-google-foreign-audience": () => Response.json({
     id_token: googleIdToken({ aud: "some-other-client-id" })
   }),
