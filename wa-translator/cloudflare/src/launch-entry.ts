@@ -34,6 +34,21 @@ const NATIVE_AUTH_START_PATTERN = /^\/auth\/native\/(google|apple|facebook)\/sta
 const MODAL_UPSTREAM_TIMEOUT_MS = 30_000;
 const TURN_UPSTREAM_TIMEOUT_MS = 10_000;
 const OAUTH_UPSTREAM_TIMEOUT_MS = 20_000;
+const NATIVE_PREFLIGHT_METHODS = new Map([
+  ["/api/v1/mobile/bootstrap", "GET"],
+  ["/api/v1/auth/handoff", "POST"],
+  ["/api/v1/capabilities", "GET"],
+  ["/api/v1/rooms", "POST"],
+  ["/api/v1/room", "GET"],
+  ["/api/v1/room-control", "GET"],
+  ["/api/v1/room-control/close", "POST"],
+  ["/api/v1/turn", "GET"],
+  ["/api/v1/reports", "POST"],
+  ["/api/v1/tts", "POST"],
+  ["/api/v1/me", "GET"],
+  ["/api/v1/account/delete", "POST"],
+  ["/api/v1/auth/logout", "POST"],
+]);
 
 type RoomAssets = { shell: string; css: string; js: string };
 
@@ -216,6 +231,23 @@ async function hardenResponse(request: Request, response: Response): Promise<Res
   });
 }
 
+async function nativePreflight(
+  request: Request, env: Env, ctx: ExecutionContext
+): Promise<Response | null> {
+  const url = new URL(request.url);
+  if (request.method !== "OPTIONS" || !url.pathname.startsWith("/api/v1/")) return null;
+  const allowed = NATIVE_PREFLIGHT_METHODS.get(url.pathname);
+  if (!allowed) return new Response("Not Found", {status: 404});
+  const requested = (request.headers.get("Access-Control-Request-Method") || "").toUpperCase();
+  if (requested !== allowed) return new Response("Method Not Allowed", {status: 405});
+
+  const response = await mobileEntry.fetch(request, env, ctx);
+  if (response.status !== 204) return response;
+  const headers = new Headers(response.headers);
+  headers.set("Access-Control-Allow-Methods", `${allowed}, OPTIONS`);
+  return new Response(null, {status: 204, headers});
+}
+
 export default {
   async fetch(request, env, ctx): Promise<Response> {
     const url = new URL(request.url);
@@ -223,8 +255,10 @@ export default {
     if (asset && request.method === "GET") return asset;
     const challengeStart = nativeAuthChallengeStart(request, env);
     if (challengeStart) return hardenResponse(request, challengeStart);
-    return hardenResponse(request, await mobileEntry.fetch(
-      request, boundedUpstreamEnv(env), ctx
-    ));
+
+    const boundedEnv = boundedUpstreamEnv(env);
+    const preflight = await nativePreflight(request, boundedEnv, ctx);
+    if (preflight) return hardenResponse(request, preflight);
+    return hardenResponse(request, await mobileEntry.fetch(request, boundedEnv, ctx));
   },
 } satisfies ExportedHandler<Env>;
