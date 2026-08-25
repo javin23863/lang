@@ -38,7 +38,7 @@ describe("mobile store interface", () => {
     )).toBe(true);
   });
 
-  it("publishes one versioned, no-store mobile bootstrap contract", async () => {
+  it("publishes one versioned, no-store two-person mobile bootstrap contract", async () => {
     const response = await exports.default.fetch(`${PUBLIC_ORIGIN}/api/v1/mobile/bootstrap`, {
       headers: { Origin: NATIVE_ORIGIN }
     });
@@ -54,7 +54,7 @@ describe("mobile store interface", () => {
       account_mode: "session",
       call_lifecycle: "foreground",
       room_ttl_seconds: 86400,
-      max_room_participants: 4,
+      max_room_participants: 2,
       compute_capacity: { global_streams: 4, state: "beta-limited" },
       endpoints: {
         capabilities: "/api/v1/capabilities",
@@ -103,7 +103,7 @@ describe("mobile store interface", () => {
     expect(denied.headers.get("Access-Control-Allow-Origin")).toBeNull();
   });
 
-  it("returns OAuth to the app with a short-lived handoff, then issues the native session", async () => {
+  it("returns OAuth to the app with a one-time handoff, then issues the native session", async () => {
     const nativeStart = await exports.default.fetch(`${PUBLIC_ORIGIN}/auth/native/google/start`, {
       redirect: "manual"
     });
@@ -132,18 +132,21 @@ describe("mobile store interface", () => {
       `^${PUBLIC_ORIGIN.replaceAll(".", "\\.")}\/mobile-auth-complete#handoff=nh1\\.`
     ));
     expect(completion).not.toContain("s1.");
+    expect(setCookies(callback).some(cookie => cookie.startsWith("lr_s="))).toBe(false);
     const handoff = new URL(completion).hash.slice("#handoff=".length);
 
-    const exchanged = await exports.default.fetch(`${PUBLIC_ORIGIN}/api/v1/auth/handoff`, {
+    const exchange = () => exports.default.fetch(`${PUBLIC_ORIGIN}/api/v1/auth/handoff`, {
       method: "POST",
       headers: {Origin: NATIVE_ORIGIN, "Content-Type": "application/json"},
       body: JSON.stringify({handoff})
     });
+    const exchanged = await exchange();
     expect(exchanged.status).toBe(200);
     expect(exchanged.headers.get("Access-Control-Allow-Origin")).toBe(NATIVE_ORIGIN);
     expect(exchanged.headers.get("Cache-Control")).toBe("no-store");
     const {session} = await exchanged.json<{session: string}>();
     expect(session).toMatch(/^s1\.[A-Za-z0-9_-]{22}\.\d{10}\.[A-Za-z0-9_-]{43}$/);
+    expect((await exchange()).status).toBe(401);
 
     const account = await exports.default.fetch(`${PUBLIC_ORIGIN}/api/v1/me`, {
       headers: {Origin: NATIVE_ORIGIN, Authorization: `Bearer ${session}`}
