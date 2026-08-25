@@ -17,6 +17,9 @@ test("prepared native dashboard centralizes deadlines and real result telemetry"
 
   assert.match(api, /const REQUEST_TIMEOUT_MS = 15_000/);
   assert.match(api, /const controller = new AbortController\(\)/);
+  assert.match(api, /const callerSignal = init\.signal/);
+  assert.match(api, /callerSignal\.addEventListener\("abort", abortFromCaller, \{once: true\}\)/);
+  assert.match(api, /callerSignal\.removeEventListener\("abort", abortFromCaller\)/);
   assert.match(api, /setTimeout\(\(\) => controller\.abort\(\), REQUEST_TIMEOUT_MS\)/);
   assert.match(api, /clearTimeout\(timer\)/);
   assert.match(api, /Object\.defineProperty\(window, "LinguaDashboardApi"/);

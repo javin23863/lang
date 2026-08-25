@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  failureCodeForStatus,
   operationalExceptionRecord,
   operationalFailureRecord,
   routeClassForRequest,
@@ -24,6 +25,7 @@ describe("privacy-safe operational telemetry", () => {
       method: "POST",
       status: 503,
       result: "server_error",
+      result_code: "http.unavailable",
       duration_ms: 13,
     });
 
@@ -32,6 +34,21 @@ describe("privacy-safe operational telemetry", () => {
     expect(serialized).not.toContain(querySecret);
     expect(serialized).not.toContain("room.example");
     expect(serialized).not.toContain("Authorization");
+  });
+
+  it("uses stable coarse result codes suitable for dashboards without response bodies", () => {
+    expect(failureCodeForStatus(400)).toBe("http.bad_request");
+    expect(failureCodeForStatus(401)).toBe("http.unauthorized");
+    expect(failureCodeForStatus(403)).toBe("http.forbidden");
+    expect(failureCodeForStatus(404)).toBe("http.not_found");
+    expect(failureCodeForStatus(408)).toBe("http.timeout");
+    expect(failureCodeForStatus(409)).toBe("http.conflict");
+    expect(failureCodeForStatus(429)).toBe("http.rate_limited");
+    expect(failureCodeForStatus(502)).toBe("http.bad_gateway");
+    expect(failureCodeForStatus(503)).toBe("http.unavailable");
+    expect(failureCodeForStatus(504)).toBe("http.gateway_timeout");
+    expect(failureCodeForStatus(418)).toBe("http.client_error");
+    expect(failureCodeForStatus(599)).toBe("http.server_error");
   });
 
   it("records exception type but never exception message content", () => {
@@ -72,6 +89,7 @@ describe("privacy-safe operational telemetry", () => {
       route_class: "report",
       method: "OTHER",
       result: "rate_limited",
+      result_code: "http.rate_limited",
       duration_ms: 0,
     });
   });

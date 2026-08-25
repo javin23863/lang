@@ -13,6 +13,19 @@ export type RouteClass =
   | "other";
 
 type FailureResult = "client_error" | "rate_limited" | "server_error";
+export type FailureCode =
+  | "http.bad_request"
+  | "http.unauthorized"
+  | "http.forbidden"
+  | "http.not_found"
+  | "http.conflict"
+  | "http.timeout"
+  | "http.rate_limited"
+  | "http.client_error"
+  | "http.bad_gateway"
+  | "http.unavailable"
+  | "http.gateway_timeout"
+  | "http.server_error";
 
 export interface OperationalFailureRecord {
   event: "edge.request.failure";
@@ -21,6 +34,7 @@ export interface OperationalFailureRecord {
   method: string;
   status: number;
   result: FailureResult;
+  result_code: FailureCode;
   duration_ms: number;
 }
 
@@ -46,6 +60,22 @@ function boundedDuration(value: number): number {
 function safeErrorType(error: unknown): string {
   const value = error instanceof Error ? error.name : "UnknownError";
   return /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(value) ? value : "Error";
+}
+
+export function failureCodeForStatus(status: number): FailureCode {
+  switch (status) {
+    case 400: return "http.bad_request";
+    case 401: return "http.unauthorized";
+    case 403: return "http.forbidden";
+    case 404: return "http.not_found";
+    case 408: return "http.timeout";
+    case 409: return "http.conflict";
+    case 429: return "http.rate_limited";
+    case 502: return "http.bad_gateway";
+    case 503: return "http.unavailable";
+    case 504: return "http.gateway_timeout";
+    default: return status >= 500 ? "http.server_error" : "http.client_error";
+  }
 }
 
 export function routeClassForRequest(request: Request): RouteClass {
@@ -78,6 +108,7 @@ export function operationalFailureRecord(
     method: methodClass(request.method),
     status,
     result: status === 429 ? "rate_limited" : status >= 500 ? "server_error" : "client_error",
+    result_code: failureCodeForStatus(status),
     duration_ms: boundedDuration(durationMs),
   };
 }
