@@ -4,7 +4,7 @@ import test from "node:test";
 
 const read = path => readFile(new URL(path, import.meta.url), "utf8");
 
-test("abuse report routing metadata expires with the room", async () => {
+test("abuse report routing metadata expires with the room and malformed routing fails closed", async () => {
   const wrapper = await read("../../cloudflare/src/report-inbox.ts");
   const launch = await read("../../cloudflare/src/launch-entry.ts");
 
@@ -12,8 +12,12 @@ test("abuse report routing metadata expires with the room", async () => {
                "the existing Durable Object class/migration is wrapped rather than replaced");
   assert.match(wrapper, /delete retained\.room_id/);
   assert.match(wrapper, /delete retained\.room_expires/);
-  assert.match(wrapper, /expires <= nowSeconds/,
-               "routing fields are removed as soon as their room expiry is reached");
+  assert.match(wrapper, /const MAX_ROUTING_LIFETIME_SECONDS = 24 \* 60 \* 60/,
+               "even corrupted future expiries cannot retain routing beyond the documented room lifetime");
+  assert.match(wrapper, /const ROOM_ID_PATTERN = \/\^\[A-Za-z0-9_-\]\{24\}\$\//,
+               "the routing identifier must retain the exact internal room-id shape");
+  assert.match(wrapper, /if \(!validRoomId \|\| !validLifetime \|\| expires! <= nowSeconds\)/,
+               "invalid or expired routing is stripped instead of skipped until report deletion");
   assert.match(wrapper, /nextRoomExpiryMs < existing/,
                "room expiry may move the inbox alarm earlier but never later than retention");
   assert.match(wrapper, /const response = await super\.fetch\(request\);[\s\S]*?await this\.pruneExpiredRouting\(\);[\s\S]*?return response/,
