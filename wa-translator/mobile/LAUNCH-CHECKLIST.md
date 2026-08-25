@@ -34,10 +34,15 @@ matrix after development is declared complete.
 - [x] Native auth returns through the registered Lingua Relay app scheme rather
   than relying on a same-domain Safari Universal Link redirect.
 - [x] The short auth handoff is one-time, expires after 90 seconds, and is bound
-  to 256 random bits held by the app that initiated the provider flow.
+  to a canonical 256-bit proof held by the installed app.
+- [x] Current builds keep that raw proof in platform secure storage and put only
+  its SHA-256 challenge in the system-browser start URL. The previous raw-query
+  start remains temporarily accepted only for installed-build compatibility.
 - [x] Duplicate cold-launch delivery of the same native handoff is idempotent.
 - [x] The exchanged native session is stored in platform secure storage and is
   sent only to the versioned account/room-creation endpoints that require it.
+- [x] A stale/expired native session self-clears on a protected-endpoint `401` or
+  on the signed-out `/api/v1/me` snapshot instead of persisting across launches.
 - [x] Every native session endpoint, including room creation, requires the exact
   installed-app origin in addition to the bearer.
 - [x] Native logout and account deletion clear the stored native session.
@@ -100,8 +105,11 @@ matrix after development is declared complete.
   existing accounts delete it on their next account read/write.
 - [x] Abuse reporting is category-only and excludes names, room links, message
   content, captions, audio, video, screenshots and free text.
+- [x] Category report records remain bounded to 30 days, while the internal room
+  routing ID/expiry used only for moderator closure are removed when the room
+  expires, no later than 24 hours after room creation.
 - [x] Store declarations are maintained in `STORE-DECLARATIONS.md` and match the
-  non-monetized account schema.
+  non-monetized account schema and report-retention lifetimes.
 - [ ] Complete the final App Store age-rating/export-compliance questionnaires
   from actual product behavior and signing configuration.
 - [ ] Complete the final Google Play Data safety/content-rating/app-access forms
@@ -122,6 +130,10 @@ matrix after development is declared complete.
   state rather than silently changing controls.
 - [x] Background teardown closes CONNECTING/OPEN sockets and reconnect generation
   guards prevent duplicate room WebSockets after foreground restoration.
+- [x] Public UI responses deny undeclared CSP resource classes; room networking
+  is restricted to same-origin HTTP plus the exact page-host WebSocket origin.
+- [x] Dynamic account/auth/room/API responses are `no-store`, and all non-socket
+  responses receive `nosniff` and `no-referrer` at the outer Worker boundary.
 
 ## Compute/backend structure
 
@@ -135,6 +147,8 @@ matrix after development is declared complete.
   remote runtime and deployment decorator cannot diverge.
 - [x] Mobile bootstrap no longer advertises the retired `4 global streams /
   beta-limited` compute capacity as an installed-client compatibility promise.
+- [x] Room compute/network handshakes have a 30-second ceiling while preserving
+  shorter caller deadlines such as the existing eight-second chat timeout.
 - [ ] Before raising production GPU ceilings, retain measured latency, memory,
   scale-out/recovery and cost receipts for the exact release configuration.
 
