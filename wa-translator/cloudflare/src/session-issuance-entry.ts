@@ -5,6 +5,29 @@ import type { Env } from "./worker";
 export { AbuseGate, ReportInbox, Room, UserDirectory };
 
 const NATIVE_HANDOFF_PATH = "/api/v1/auth/handoff";
+const MOBILE_BOOTSTRAP_PATH = "/api/v1/mobile/bootstrap";
+const MOBILE_PROTOCOL = 2;
+
+async function v2MobileBootstrap(
+  request: Request, env: Env, ctx: ExecutionContext
+): Promise<Response | null> {
+  const url = new URL(request.url);
+  if (url.pathname !== MOBILE_BOOTSTRAP_PATH || request.method !== "GET") return null;
+  const response = await accountGuardEntry.fetch(request, env, ctx);
+  if (!response.ok) return response;
+  try {
+    const body = await response.json<Record<string, unknown>>();
+    body.protocol = MOBILE_PROTOCOL;
+    const headers = new Headers(response.headers);
+    headers.delete("Content-Length");
+    return Response.json(body, {status: response.status, headers});
+  } catch {
+    const headers = new Headers(response.headers);
+    headers.delete("Content-Length");
+    headers.set("Cache-Control", "no-store");
+    return new Response("Mobile compatibility unavailable", {status: 503, headers});
+  }
+}
 
 async function upgradedNativeHandoff(
   request: Request, env: Env, ctx: ExecutionContext
@@ -42,6 +65,8 @@ async function upgradedNativeHandoff(
 
 export default {
   async fetch(request, env, ctx): Promise<Response> {
+    const bootstrap = await v2MobileBootstrap(request, env, ctx);
+    if (bootstrap) return bootstrap;
     const handoff = await upgradedNativeHandoff(request, env, ctx);
     return handoff || accountGuardEntry.fetch(request, env, ctx);
   },
