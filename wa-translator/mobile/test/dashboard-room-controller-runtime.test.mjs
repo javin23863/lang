@@ -12,6 +12,16 @@ function response(status, body = null) {
   });
 }
 
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return {promise, resolve, reject};
+}
+
 function plain(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 }
@@ -117,4 +127,42 @@ test("failed close keeps the room available and emits a coarse failure result", 
   assert.deepEqual(plain(h.clears.at(-1)), {
     state: "error", key: "home.closeFailed", options: {preserveRoom: true},
   });
+});
+
+test("a delayed status response for a replaced room cannot clear the new host control", async () => {
+  const staleStatus = deferred();
+  const replacement = {
+    path: "/room/new-capability",
+    host_control: "host-control-new",
+    expires_at: Math.floor(Date.now() / 1000) + 7200,
+  };
+  let creates = 0;
+  const h = harness(async input => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/rooms") {
+      creates++;
+      return response(200, creates === 1 ? {...CREATED_ROOM} : replacement);
+    }
+    if (path === "/api/room-control/close") return response(200);
+    if (path === "/api/room-control") return staleStatus.promise;
+    throw new Error(`unexpected request ${path}`);
+  });
+
+  assert.equal(await h.controller.create("video"), true);
+  const oldRoom = h.controller.current();
+  const oldRefresh = h.controller.refresh();
+  assert.equal(await h.controller.create("chat"), true);
+  const newRoom = h.controller.current();
+  assert.notEqual(newRoom, oldRoom);
+  assert.equal(newRoom.path, replacement.path);
+  assert.deepEqual(h.stats(), {forgotten: 1, saved: 2},
+    "replacement closes and forgets only the old room");
+
+  staleStatus.resolve(response(403));
+  await oldRefresh;
+
+  assert.equal(h.controller.current(), newRoom,
+    "old authorization failure cannot clear the replacement room");
+  assert.deepEqual(h.stats(), {forgotten: 1, saved: 2});
+  assert.equal(h.clears.some(entry => entry.key === "home.controlLost"), false);
 });
