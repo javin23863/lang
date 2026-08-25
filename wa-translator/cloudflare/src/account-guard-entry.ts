@@ -5,17 +5,73 @@ export { AbuseGate, ReportInbox, Room, UserDirectory };
 
 const NATIVE_ORIGINS = new Set(["https://localhost", "capacitor://localhost"]);
 const SESSION_COOKIE = "lr_s";
+const SESSION_TOKEN_PATTERN = /^s1\.([A-Za-z0-9_-]{22})\.(\d{10})\.[A-Za-z0-9_-]{43}$/;
 const ROOM_CREATE_PATHS = new Set(["/api/rooms", "/api/v1/rooms"]);
+const ACCOUNT_DELETE_PATHS = new Set(["/api/account/delete", "/api/v1/account/delete"]);
+const ACCOUNT_SNAPSHOT_PATHS = new Set(["/api/me", "/api/v1/me"]);
+const LOGOUT_PATHS = new Set(["/auth/logout", "/api/v1/auth/logout"]);
+
+type SessionIdentity = {token: string; userId: string; expiresAt: number; digest: string};
 
 function nativeOrigin(request: Request): string | null {
   const origin = request.headers.get("Origin");
   return origin && NATIVE_ORIGINS.has(origin) ? origin : null;
 }
 
+function expectedOrigin(request: Request, env: Env): string {
+  return env.PUBLIC_ORIGIN || new URL(request.url).origin;
+}
+
+function sessionMutationOriginAllowed(request: Request, env: Env): boolean {
+  return request.headers.get("Origin") === expectedOrigin(request, env)
+    || nativeOrigin(request) !== null;
+}
+
+function readCookie(request: Request, name: string): string | null {
+  for (const pair of (request.headers.get("Cookie") || "").split(";")) {
+    const separator = pair.indexOf("=");
+    if (separator > 0 && pair.slice(0, separator).trim() === name) {
+      return pair.slice(separator + 1).trim();
+    }
+  }
+  return null;
+}
+
+function browserSessionToken(request: Request): string | null {
+  return readCookie(request, SESSION_COOKIE);
+}
+
+function nativeSessionToken(request: Request): string | null {
+  const authorization = request.headers.get("Authorization") || "";
+  if (!authorization.startsWith("Bearer ")) return null;
+  const token = authorization.slice("Bearer ".length);
+  return token && !token.includes(" ") ? token : null;
+}
+
+function requestSessionToken(request: Request): string | null {
+  return new URL(request.url).pathname.startsWith("/api/v1/")
+    ? nativeSessionToken(request) : browserSessionToken(request);
+}
+
 function hasBrowserSession(request: Request): boolean {
-  return (request.headers.get("Cookie") || "").split(";").some(pair =>
-    pair.trim().startsWith(`${SESSION_COOKIE}=`)
-  );
+  return browserSessionToken(request) !== null;
+}
+
+function base64url(bytes: ArrayBuffer): string {
+  let binary = "";
+  for (const byte of new Uint8Array(bytes)) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+async function sessionIdentity(request: Request): Promise<SessionIdentity | null> {
+  const token = requestSessionToken(request);
+  if (!token) return null;
+  const match = token.match(SESSION_TOKEN_PATTERN);
+  if (!match) return null;
+  const expiresAt = Number(match[2]);
+  if (!Number.isSafeInteger(expiresAt) || expiresAt <= Math.floor(Date.now() / 1000)) return null;
+  const digest = base64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token)));
+  return {token, userId: match[1], expiresAt, digest};
 }
 
 function clearSessionCookie(): string {
@@ -41,7 +97,7 @@ function retiredRoomCreate(request: Request): Response | null {
 
 function accountProbe(request: Request): Request {
   const url = new URL(request.url);
-  url.pathname = url.pathname === "/api/v1/rooms" ? "/api/v1/me" : "/api/me";
+  url.pathname = url.pathname.startsWith("/api/v1/") ? "/api/v1/me" : "/api/me";
   url.search = "";
   const headers = new Headers(request.headers);
   headers.delete("Content-Length");
@@ -49,83 +105,196 @@ function accountProbe(request: Request): Request {
   return new Request(url.toString(), {method: "GET", headers, redirect: "manual"});
 }
 
-function staleSessionResponse(request: Request): Response {
+function responseHeaders(request: Request): Headers {
   const headers = new Headers({
     "Cache-Control": "no-store",
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",
   });
-  const native = new URL(request.url).pathname === "/api/v1/rooms" ? nativeOrigin(request) : null;
+  const native = nativeOrigin(request);
   if (native) {
     headers.set("Access-Control-Allow-Origin", native);
     headers.set("Vary", "Origin");
-  } else {
-    // Browser sessions are stateless signed cookies. If their account has been
-    // deleted, expire the cookie immediately instead of letting it remain a
-    // plausible host credential until its original 30-day token expiry.
-    headers.append("Set-Cookie", clearSessionCookie());
   }
-  return new Response("Account unavailable", {status: 401, headers});
+  return headers;
 }
 
-async function accountGuardedRoomCreate(
+function staleSessionResponse(request: Request): Response {
+  const headers = responseHeaders(request);
+  if (!nativeOrigin(request)) {
+    // Browser sessions are signed cookies. A deleted/revoked credential is
+    // retired immediately instead of remaining plausible until token expiry.
+    headers.append("Set-Cookie", clearSessionCookie());
+  }
+  return new Response("Session unavailable", {status: 401, headers});
+}
+
+function sessionServiceUnavailable(request: Request): Response {
+  return new Response("Session service unavailable", {status: 503, headers: responseHeaders(request)});
+}
+
+async function sessionRevoked(identity: SessionIdentity, env: Env): Promise<boolean> {
+  const response = await env.USERS.get(env.USERS.idFromName(identity.userId)).fetch(
+    new Request(`https://users.internal/session-revocations/${identity.digest}`)
+  );
+  const status = response.status;
+  await response.body?.cancel().catch(() => {});
+  if (status === 204) return true;
+  if (status === 404) return false;
+  throw new Error(`session revocation lookup failed (${status})`);
+}
+
+async function revokeSession(identity: SessionIdentity, env: Env): Promise<void> {
+  const response = await env.USERS.get(env.USERS.idFromName(identity.userId)).fetch(
+    new Request("https://users.internal/session-revocations", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({digest: identity.digest, expires_at: identity.expiresAt}),
+    })
+  );
+  const status = response.status;
+  await response.body?.cancel().catch(() => {});
+  // A concurrent account deletion is stronger than a per-session revocation.
+  if (status === 204 || status === 404) return;
+  throw new Error(`session revocation write failed (${status})`);
+}
+
+async function signedInProbe(
+  request: Request, env: Env, ctx: ExecutionContext
+): Promise<{response: Response; signedIn: boolean} | null> {
+  const response = await launchEntry.fetch(accountProbe(request), env, ctx);
+  if (!response.ok) return {response, signedIn: false};
+  try {
+    const body = await response.clone().json() as {signed_in?: unknown};
+    return {response, signedIn: body.signed_in === true};
+  } catch {
+    await response.body?.cancel().catch(() => {});
+    return null;
+  }
+}
+
+async function accountGuardedMutation(
   request: Request, env: Env, ctx: ExecutionContext
 ): Promise<Response | null> {
   const url = new URL(request.url);
-  if (request.method !== "POST" || !ROOM_CREATE_PATHS.has(url.pathname)) return null;
-
-  // Reuse the normal account endpoint rather than duplicating session crypto in
-  // this outer entrypoint. That endpoint verifies the browser/native session and
-  // consults UserDirectory, which is the authority for whether the account
-  // still exists after deletion.
-  const probe = await launchEntry.fetch(accountProbe(request), env, ctx);
-  if (!probe.ok) return probe;
-  let signedIn = false;
-  try {
-    const body = await probe.json() as {signed_in?: unknown};
-    signedIn = body.signed_in === true;
-  } catch {
-    return new Response("Account unavailable", {
-      status: 503,
-      headers: {"Cache-Control": "no-store"},
-    });
+  if (request.method !== "POST"
+      || (!ROOM_CREATE_PATHS.has(url.pathname) && !ACCOUNT_DELETE_PATHS.has(url.pathname))) {
+    return null;
   }
-  if (!signedIn) return staleSessionResponse(request);
+
+  // Reuse the normal account endpoint for cryptographic session verification
+  // and account existence, then apply the independent logout-revocation check.
+  const probe = await signedInProbe(request, env, ctx);
+  if (!probe) return sessionServiceUnavailable(request);
+  if (!probe.response.ok) return probe.response;
+  if (!probe.signedIn) {
+    await probe.response.body?.cancel().catch(() => {});
+    return staleSessionResponse(request);
+  }
+  await probe.response.body?.cancel().catch(() => {});
+
+  const identity = await sessionIdentity(request);
+  if (!identity) return staleSessionResponse(request);
+  try {
+    if (await sessionRevoked(identity, env)) return staleSessionResponse(request);
+  } catch {
+    return sessionServiceUnavailable(request);
+  }
   return launchEntry.fetch(request, env, ctx);
 }
 
-async function browserAccountSnapshot(
+async function signedOutSnapshot(
+  request: Request, response: Response, providers: unknown
+): Promise<Response> {
+  const headers = new Headers(response.headers);
+  headers.delete("Content-Length");
+  if (!nativeOrigin(request)) headers.append("Set-Cookie", clearSessionCookie());
+  await response.body?.cancel().catch(() => {});
+  return Response.json({
+    signed_in: false,
+    providers: Array.isArray(providers)
+      ? providers.filter(provider => typeof provider === "string") : [],
+  }, {status: 200, headers});
+}
+
+async function accountSnapshot(
   request: Request, env: Env, ctx: ExecutionContext
 ): Promise<Response | null> {
   const url = new URL(request.url);
-  if (request.method !== "GET" || url.pathname !== "/api/me") return null;
+  if (request.method !== "GET" || !ACCOUNT_SNAPSHOT_PATHS.has(url.pathname)) return null;
 
   const response = await launchEntry.fetch(request, env, ctx);
-  if (!response.ok || !hasBrowserSession(request)) return response;
+  if (!response.ok) return response;
+  let body: {signed_in?: unknown; providers?: unknown};
   try {
-    const body = await response.clone().json() as {signed_in?: unknown};
-    if (body.signed_in !== false) return response;
+    body = await response.clone().json() as {signed_in?: unknown; providers?: unknown};
   } catch {
     return response;
   }
 
-  const headers = new Headers(response.headers);
-  headers.delete("Content-Length");
-  headers.append("Set-Cookie", clearSessionCookie());
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-  });
+  if (body.signed_in !== true) {
+    if (url.pathname === "/api/me" && hasBrowserSession(request)) {
+      const headers = new Headers(response.headers);
+      headers.delete("Content-Length");
+      headers.append("Set-Cookie", clearSessionCookie());
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      });
+    }
+    return response;
+  }
+
+  const identity = await sessionIdentity(request);
+  if (!identity) return sessionServiceUnavailable(request);
+  try {
+    if (!await sessionRevoked(identity, env)) return response;
+  } catch {
+    return sessionServiceUnavailable(request);
+  }
+  return signedOutSnapshot(request, response, body.providers);
+}
+
+async function revokingLogout(
+  request: Request, env: Env, ctx: ExecutionContext
+): Promise<Response | null> {
+  const url = new URL(request.url);
+  if (request.method !== "POST" || !LOGOUT_PATHS.has(url.pathname)) return null;
+  // Do not let the revocation write turn an otherwise rejected cross-origin
+  // logout attempt into a credential-denial side effect.
+  if (!sessionMutationOriginAllowed(request, env)) return launchEntry.fetch(request, env, ctx);
+
+  const probe = await signedInProbe(request, env, ctx);
+  if (!probe) return sessionServiceUnavailable(request);
+  if (!probe.response.ok) return probe.response;
+  if (!probe.signedIn) {
+    await probe.response.body?.cancel().catch(() => {});
+    return launchEntry.fetch(request, env, ctx);
+  }
+  await probe.response.body?.cancel().catch(() => {});
+
+  const identity = await sessionIdentity(request);
+  if (!identity) return staleSessionResponse(request);
+  try {
+    await revokeSession(identity, env);
+  } catch {
+    // Local credential clearing happens only after durable revocation succeeds;
+    // otherwise the UI would report logout while a copied bearer stayed valid.
+    return sessionServiceUnavailable(request);
+  }
+  return launchEntry.fetch(request, env, ctx);
 }
 
 export default {
   async fetch(request, env, ctx): Promise<Response> {
     const retired = retiredRoomCreate(request);
     if (retired) return retired;
-    const account = await browserAccountSnapshot(request, env, ctx);
+    const account = await accountSnapshot(request, env, ctx);
     if (account) return account;
-    const guarded = await accountGuardedRoomCreate(request, env, ctx);
+    const logout = await revokingLogout(request, env, ctx);
+    if (logout) return logout;
+    const guarded = await accountGuardedMutation(request, env, ctx);
     return guarded || launchEntry.fetch(request, env, ctx);
   },
 } satisfies ExportedHandler<Env>;
