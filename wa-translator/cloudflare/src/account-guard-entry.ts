@@ -12,6 +12,12 @@ function nativeOrigin(request: Request): string | null {
   return origin && NATIVE_ORIGINS.has(origin) ? origin : null;
 }
 
+function hasBrowserSession(request: Request): boolean {
+  return (request.headers.get("Cookie") || "").split(";").some(pair =>
+    pair.trim().startsWith(`${SESSION_COOKIE}=`)
+  );
+}
+
 function clearSessionCookie(): string {
   return `${SESSION_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`;
 }
@@ -71,8 +77,35 @@ async function accountGuardedRoomCreate(
   return launchEntry.fetch(request, env, ctx);
 }
 
+async function browserAccountSnapshot(
+  request: Request, env: Env, ctx: ExecutionContext
+): Promise<Response | null> {
+  const url = new URL(request.url);
+  if (request.method !== "GET" || url.pathname !== "/api/me") return null;
+
+  const response = await launchEntry.fetch(request, env, ctx);
+  if (!response.ok || !hasBrowserSession(request)) return response;
+  try {
+    const body = await response.clone().json() as {signed_in?: unknown};
+    if (body.signed_in !== false) return response;
+  } catch {
+    return response;
+  }
+
+  const headers = new Headers(response.headers);
+  headers.delete("Content-Length");
+  headers.append("Set-Cookie", clearSessionCookie());
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 export default {
   async fetch(request, env, ctx): Promise<Response> {
+    const account = await browserAccountSnapshot(request, env, ctx);
+    if (account) return account;
     const guarded = await accountGuardedRoomCreate(request, env, ctx);
     return guarded || launchEntry.fetch(request, env, ctx);
   },
