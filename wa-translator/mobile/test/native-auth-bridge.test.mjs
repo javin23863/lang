@@ -88,8 +88,10 @@ test("native one-time handoffs remain idempotent with a bounded replay cache and
   assert.match(bridge, /async function retireAuthBinding\(provider: string\): Promise<void>/);
   assert.match(bridge, /memoryAuthBindings\.delete\(provider\);\s*authChallenges\.delete\(provider\);\s*await hostStorage\.removeItem\(authBindingKey\(provider\)\)/,
                "terminal auth removes both in-memory and secure-storage proof state");
-  assert.match(bridge, /await hostStorage\.setItem\(NATIVE_SESSION_KEY, nativeSession\);\s*await retireAuthBinding\(provider\)/,
-               "success persists the session before retiring the one-attempt proof");
+  assert.match(bridge, /const session = String\(body\.session\);[\s\S]*?await hostStorage\.setItem\(NATIVE_SESSION_KEY, session\);\s*nativeSession = session;\s*await retireAuthBinding\(provider\)/,
+               "success persists the session before exposing it to the in-process fetch interceptor");
+  assert.doesNotMatch(bridge, /nativeSession = String\(body\.session\);\s*await hostStorage\.setItem/,
+                      "a failed secure-storage write cannot leave an in-memory authenticated session behind");
   assert.match(bridge, /catch \{\s*await retireAuthBinding\(provider\);\s*window\.location\.replace\("index\.html\?auth=failed"\)/,
                "failed exchange cannot leave reusable proof material behind");
   assert.match(bridge, /else \{\s*await retireAuthBinding\(auth\.provider\);\s*window\.location\.replace\("index\.html\?auth=failed"\)/,
