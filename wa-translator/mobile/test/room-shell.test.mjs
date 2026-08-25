@@ -53,6 +53,14 @@ test("native room shell is decomposed, accessible, bridge-enabled and two-person
                "background/page suspension also closes a socket still connecting");
   assert.doesNotMatch(js, /ws\.readyState === WebSocket\.OPEN\) \{\n\s*ws\.close\(1000, notifyServer/,
                       "teardown does not orphan a connecting WebSocket");
+  assert.match(js, /let connectGeneration = 0/);
+  assert.match(js, /const generation = \+\+connectGeneration/);
+  assert.match(js, /generation !== connectGeneration/,
+               "an older asynchronous connect attempt cannot create a second socket");
+  assert.match(js, /if \(ws && ws\.readyState < WebSocket\.CLOSING\) return/,
+               "a delayed reconnect cannot replace an active foreground connection");
+  assert.match(js, /leaving = true;\n  connectGeneration\+\+;/,
+               "suspension invalidates preflight and TURN work already in flight");
 
   assert.match(html, /id="participantCount" aria-live="polite">0 \/ 2 people</,
                "the first rendered room shell matches the two-person contract");
