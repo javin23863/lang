@@ -45,6 +45,17 @@ plist_value() {
   echo "Unexpected iOS bundle identifier." >&2
   exit 1
 }
+expected_build="${LINGUA_IOS_BUILD_NUMBER:-}"
+if [[ -n "$expected_build" ]]; then
+  if [[ ! "$expected_build" =~ ^[1-9][0-9]*$ ]]; then
+    echo "iOS artifact check: LINGUA_IOS_BUILD_NUMBER is invalid." >&2
+    exit 1
+  fi
+  if [[ "$(plist_value CFBundleVersion)" != "$expected_build" ]]; then
+    echo "iOS artifact check: packaged CFBundleVersion does not match the release build number." >&2
+    exit 1
+  fi
+fi
 [[ "$(plist_value UIRequiredDeviceCapabilities:0)" == "arm64" ]] || {
   echo "iOS app must require arm64." >&2
   exit 1
@@ -125,4 +136,4 @@ if find "$app" -type f \( -name '*.p12' -o -name '*.p8' -o -name '*.keystore' -o
   exit 1
 fi
 
-echo "iOS artifact check: identity, privacy, architecture, room UI contract and secret hygiene verified."
+echo "iOS artifact check: identity, version, privacy, architecture, room UI contract and secret hygiene verified."
