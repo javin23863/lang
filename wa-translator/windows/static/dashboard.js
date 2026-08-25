@@ -5,6 +5,7 @@ const t = runtime.t;
 const accountPresenter = window.LinguaDashboardAccount.create({
   runtime, fetch: dashboardFetch, t, byId: $
 });
+const roomModel = window.LinguaDashboardRoomModel.create(runtime);
 let currentRoom = null;
 let account = null;
 let statusTimer = null;
@@ -15,50 +16,28 @@ let busy = false;
 let stateKey = "home.noRoom", stateParams = null, noticeKey = "", noticeParams = null;
 let authStatusKey = "";
 
-// The three surfaces a room can open as. Video is the mode that needs no
-// parameter, so every link made before modes existed still opens a video call.
-const MODES = new Set(["voice", "chat", "video"]);
-
 function roomMode(room) {
-  return MODES.has(room?.mode) ? room.mode : "video";
+  return roomModel.mode(room);
 }
 
 function roomUrl(room) {
-  const url = new URL(runtime.inviteUrl(room));
-  const mode = roomMode(room);
-  if (mode !== "video") url.searchParams.set("m", mode);
-  // Shareable bearer URLs carry only the room credential and call mode. Do not
-  // add human names or other account/device labels to messages, QR codes,
-  // browser history, edge logs, or analytics surfaces.
-  return url.toString();
+  return roomModel.inviteUrl(room);
 }
 
-// `mode` is optional on purpose: a record saved before modes existed is still
-// a valid room and still opens. Legacy local-only fields are simply ignored.
 function validRoom(value) {
-  return value && typeof value.path === "string" && typeof value.host_control === "string"
-    && Number.isSafeInteger(value.expires_at);
+  return roomModel.valid(value);
 }
 
 async function loadRoom() {
-  try {
-    const value = JSON.parse(await runtime.loadHostRoom() || "null");
-    return validRoom(value) ? value : null;
-  } catch (_) {
-    return null;
-  }
+  return roomModel.load();
 }
 
 async function saveRoom(room) {
-  try {
-    return runtime.saveHostRoom(JSON.stringify(room));
-  } catch (_) {
-    return false;
-  }
+  return roomModel.save(room);
 }
 
 async function forgetRoom() {
-  await runtime.forgetHostRoom();
+  await roomModel.forget();
 }
 
 function setNotice(key, params) {
@@ -175,7 +154,7 @@ async function refreshStatus() {
 
 async function createRoom(mode) {
   if (busy) return;
-  const requestedMode = MODES.has(mode) ? mode : "video";
+  const requestedMode = roomModel.normalizeMode(mode);
   if (currentRoom) {
     if (!window.confirm(t("home.confirmReplace"))) return;
     await closeRoom(false);
