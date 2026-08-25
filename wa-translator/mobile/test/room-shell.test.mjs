@@ -4,10 +4,25 @@ import test from "node:test";
 
 const read = path => readFile(new URL(path, import.meta.url), "utf8");
 
-test("native room shell is bridge-enabled and structurally two-person", async () => {
+test("native room shell is decomposed, bridge-enabled and structurally two-person", async () => {
   const html = await read("../www/room.html");
+  const css = await read("../www/room.css");
+  const js = await read("../www/room.js");
+
   assert.match(html, /<script src="\/mobile-bridge\.js"><\/script><script src="\/app-runtime\.js"><\/script>/,
                "the native bridge loads before the shared runtime");
+  assert.match(html, /<link rel="stylesheet" href="\/room\.css">/,
+               "room styling ships as its own asset");
+  assert.match(html, /<script src="\/room\.js"><\/script>/,
+               "room behavior ships as its own asset at the original execution point");
+  assert.doesNotMatch(html, /<style>/, "the installed room has no inline style block");
+  assert.doesNotMatch(html, /<script>\s*const \$ =/,
+                      "the installed room has no inline call implementation");
+  assert.match(css, /#stage\{/);
+  assert.match(css, /#chatBar\{/);
+  assert.match(js, /const \$ = \(id\) => document\.getElementById\(id\);/);
+  assert.match(js, /async function connect\(\)/);
+
   assert.match(html, /id="participantCount" aria-live="polite">0 \/ 2 people</,
                "the first rendered room shell matches the two-person contract");
   assert.doesNotMatch(html, /id="participantCount" aria-live="polite">0 \/ 4 people</,
