@@ -31,10 +31,54 @@ const isNative = Capacitor.isNativePlatform();
 const hostStorage = createSecureHostStorage(SecureStorage);
 const nativeFetch = window.fetch.bind(window);
 const NATIVE_SESSION_KEY = "lingua-relay.native-session.v1";
+const NATIVE_AUTH_BINDING_PREFIX = "lingua-relay.native-auth-binding.v2.";
+const NATIVE_AUTH_START = /^\/auth\/(google|apple|facebook)\/start$/;
 const SESSION_API_PATHS = new Set([
   "/api/v1/me", "/api/v1/rooms", "/api/v1/account/delete", "/api/v1/auth/logout"
 ]);
 let nativeSession: string | null = null;
+const memoryAuthBindings = new Map<string, string>();
+
+function base64url(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function authBindingKey(provider: string): string {
+  return `${NATIVE_AUTH_BINDING_PREFIX}${provider}`;
+}
+
+function saveAuthBinding(provider: string, binding: string): void {
+  memoryAuthBindings.set(provider, binding);
+  try { localStorage.setItem(authBindingKey(provider), binding); } catch { /* memory fallback */ }
+}
+
+function readAuthBinding(provider: string): string | null {
+  try {
+    const stored = localStorage.getItem(authBindingKey(provider));
+    if (stored) return stored;
+  } catch { /* memory fallback */ }
+  return memoryAuthBindings.get(provider) || null;
+}
+
+function clearAuthBinding(provider: string): void {
+  memoryAuthBindings.delete(provider);
+  try { localStorage.removeItem(authBindingKey(provider)); } catch { /* already unusable */ }
+}
+
+function nativeApiPath(path: string): string {
+  const resolved = apiPath(path, true);
+  const provider = path.match(NATIVE_AUTH_START)?.[1];
+  if (!provider) return resolved;
+  // A custom URL scheme is the reliable browser-to-app return on iOS, but a
+  // scheme can be claimed by another installed app. Bind every handoff to 256
+  // random bits that remain only in this app; an intercepted URL is useless
+  // without the matching binding during the one-time exchange.
+  const binding = base64url(crypto.getRandomValues(new Uint8Array(32)));
+  saveAuthBinding(provider, binding);
+  return `${resolved}?binding=${encodeURIComponent(binding)}`;
+}
 
 const sessionReady: Promise<void> = isNative ? hostStorage.getItem(NATIVE_SESSION_KEY)
   .then(async value => {
@@ -93,19 +137,31 @@ function openRoom(token: string, mode?: string, name?: string): boolean {
   return true;
 }
 
-async function acceptNativeHandoff(handoff: string): Promise<void> {
+async function acceptNativeHandoff(provider: string, handoff: string): Promise<void> {
+  const binding = readAuthBinding(provider);
+  if (!binding) {
+    window.location.replace("index.html?auth=failed");
+    return;
+  }
   try {
     const response = await nativeFetch(`${PUBLIC_ORIGIN}/api/v1/auth/handoff`, {
       method: "POST",
       headers: {Accept: "application/json", "Content-Type": "application/json"},
-      body: JSON.stringify({handoff}),
+      body: JSON.stringify({handoff, binding}),
       cache: "no-store",
     });
-    if (!response.ok) throw new Error("handoff refused");
+    if (!response.ok) {
+      clearAuthBinding(provider);
+      throw new Error("handoff refused");
+    }
     const body = await response.json() as {session?: unknown};
-    if (!isSessionToken(body.session)) throw new Error("invalid native session");
+    if (!isSessionToken(body.session)) {
+      clearAuthBinding(provider);
+      throw new Error("invalid native session");
+    }
     nativeSession = String(body.session);
     await hostStorage.setItem(NATIVE_SESSION_KEY, nativeSession);
+    clearAuthBinding(provider);
     window.location.replace("index.html");
   } catch {
     window.location.replace("index.html?auth=failed");
@@ -116,9 +172,12 @@ async function routeAppLink(value: string | undefined): Promise<void> {
   if (!value) return;
   const auth = parseNativeAuthLink(value);
   if (auth) {
-    const handoff = "handoff" in auth && typeof auth.handoff === "string" ? auth.handoff : null;
-    if (handoff) await acceptNativeHandoff(handoff);
-    else window.location.replace("index.html?auth=failed");
+    if ("handoff" in auth && typeof auth.handoff === "string") {
+      await acceptNativeHandoff(auth.provider, auth.handoff);
+    } else {
+      clearAuthBinding(auth.provider);
+      window.location.replace("index.html?auth=failed");
+    }
     return;
   }
   const link = parseRoomLink(value);
@@ -131,7 +190,7 @@ async function routeAppLink(value: string | undefined): Promise<void> {
 window.LinguaNative = {
   isNative,
   publicOrigin: PUBLIC_ORIGIN,
-  apiPath: path => apiPath(path, true),
+  apiPath: nativeApiPath,
   websocketPath: token => websocketPath(token, true),
   isRoomToken,
   ready: () => compatibilityReady,
