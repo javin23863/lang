@@ -11,35 +11,33 @@ function isRoomPath(pathname: string): boolean {
   return pathname === "/room.html" || pathname.startsWith("/room/");
 }
 
+function isRoomShell(html: string): boolean {
+  return html.includes('id="roleGate"') && html.includes('id="participantCount"');
+}
+
 async function hardenHtml(request: Request, response: Response): Promise<Response> {
   if (response.webSocket) return response;
   const contentType = response.headers.get("Content-Type") || "";
   if (!contentType.toLowerCase().includes("text/html")) return response;
 
+  // Materialize HTML instead of transplanting a fixed-length asset stream into
+  // a new Response. Workerd can otherwise retain the original length contract
+  // while the wrapper changes headers/body handling and cancel the request.
+  const sourceHtml = await response.text();
+  const room = isRoomPath(new URL(request.url).pathname) || isRoomShell(sourceHtml);
+  const html = room ? sourceHtml.replace(FOUR_PERSON_FALLBACK, TWO_PERSON_FALLBACK) : sourceHtml;
+
   const headers = new Headers(response.headers);
+  headers.delete("Content-Length");
   headers.set("Content-Security-Policy", HTML_ISOLATION_POLICY);
   headers.set("X-Frame-Options", "DENY");
   headers.set("Referrer-Policy", "no-referrer");
   headers.set("X-Content-Type-Options", "nosniff");
-
-  const room = isRoomPath(new URL(request.url).pathname);
   headers.set("Permissions-Policy", room
     ? "camera=(self), microphone=(self)"
     : "camera=(), microphone=()");
 
-  if (room && request.method === "GET" && response.ok) {
-    // The live renderer already uses the strict two-person contract. Normalize
-    // the server-rendered fallback too so slow JavaScript can never flash `/4`.
-    const html = (await response.text()).replace(FOUR_PERSON_FALLBACK, TWO_PERSON_FALLBACK);
-    headers.delete("Content-Length");
-    return new Response(html, {
-      status: response.status,
-      statusText: response.statusText,
-      headers,
-    });
-  }
-
-  return new Response(response.body, {
+  return new Response(html, {
     status: response.status,
     statusText: response.statusText,
     headers,
