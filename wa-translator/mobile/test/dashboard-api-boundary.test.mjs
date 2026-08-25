@@ -8,6 +8,7 @@ test("prepared native dashboard centralizes deadlines and real result telemetry"
   const html = await readFile(new URL("index.html", root), "utf8");
   const api = await readFile(new URL("dashboard-api.js", root), "utf8");
   const dashboard = await readFile(new URL("dashboard.js", root), "utf8");
+  const controller = await readFile(new URL("dashboard-room-controller.js", root), "utf8");
 
   const apiTag = html.indexOf('<script src="/dashboard-api.js"></script>');
   const dashboardTag = html.indexOf('<script src="/dashboard.js"></script>');
@@ -25,15 +26,15 @@ test("prepared native dashboard centralizes deadlines and real result telemetry"
   assert.match(dashboard, /const dashboardFetch = window\.LinguaDashboardApi\.fetch/);
   assert.doesNotMatch(dashboard, /new AbortController\(\)/,
     "dashboard features must reuse the shared deadline boundary");
-  assert.match(dashboard,
+  assert.match(controller,
     /emit\("room\.create\.result", \{mode: requestedMode, result: "success"\}\)/);
-  assert.match(dashboard,
+  assert.match(controller,
     /emit\("room\.create\.result", \{mode: requestedMode, result: "failure"\}\)/);
-  assert.match(dashboard, /emit\("room\.close\.result", \{result: "success"\}\)/);
-  assert.match(dashboard, /emit\("room\.close\.result", \{result: "failure"\}\)/);
+  assert.match(controller, /emit\("room\.close\.result", \{result: "success"\}\)/);
+  assert.match(controller, /emit\("room\.close\.result", \{result: "failure"\}\)/);
 
-  for (const forbidden of ["host_control", "Authorization", "shareLink", "roomUrl(currentRoom)"]) {
-    const resultLines = dashboard.split("\n").filter(line => line.includes(".result\""));
+  const resultLines = controller.split("\n").filter(line => line.includes(".result\""));
+  for (const forbidden of ["host_control", "Authorization", "shareLink", "inviteUrl"]) {
     assert.ok(resultLines.every(line => !line.includes(forbidden)),
       `result telemetry must not carry ${forbidden}`);
   }
