@@ -12,6 +12,9 @@ test("credential-free native smoke boots and launches both installed apps", asyn
   ]);
 
   assert.match(workflow, /name: Native mobile smoke/);
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.doesNotMatch(workflow, /^\s{2}(?:pull_request|push):/m,
+    "native runtime acceptance stays manual until the required runners are available");
   assert.match(workflow, /android-emulator:/);
   assert.match(workflow, /runs-on: ubuntu-24\.04/);
   assert.match(workflow, /ios-simulator:/);
