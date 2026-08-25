@@ -1,7 +1,7 @@
 // Cache only the credential-free dashboard shell. Room bearer URLs, APIs,
 // authentication, captions and any request carrying user state are always
 // network-only and must never enter persistent browser Cache Storage.
-const CACHE_NAME = 'lingua-relay-shell-v2';
+const CACHE_NAME = 'lingua-relay-shell-v3';
 const CACHE_PREFIX = 'lingua-relay-shell-';
 const SHELL_PATHS = new Set([
   '/',
@@ -24,9 +24,9 @@ const SHELL_PATHS = new Set([
   '/manifest.webmanifest',
 ]);
 
-function pathOf(request) {
-  try { return new URL(request.url).pathname; }
-  catch (_) { return ''; }
+function requestUrl(request) {
+  try { return new URL(request.url); }
+  catch (_) { return null; }
 }
 
 function networkOnly(path) {
@@ -36,6 +36,14 @@ function networkOnly(path) {
     || path.startsWith('/api/')
     || path.startsWith('/auth/')
     || path.startsWith('/static/i18n/');
+}
+
+function cacheableShellRequest(request, url) {
+  return request.method === 'GET'
+    && url?.origin === self.location.origin
+    && url.search === ''
+    && !networkOnly(url.pathname)
+    && SHELL_PATHS.has(url.pathname);
 }
 
 async function updateShell(request) {
@@ -66,12 +74,8 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('fetch', event => {
   const request = event.request;
-  const path = pathOf(request);
-  if (request.method !== 'GET' || networkOnly(path)) {
-    event.respondWith(fetch(request, {cache: 'no-store'}));
-    return;
-  }
-  if (!SHELL_PATHS.has(path)) {
+  const url = requestUrl(request);
+  if (!url || !cacheableShellRequest(request, url)) {
     event.respondWith(fetch(request, {cache: 'no-store'}));
     return;
   }
