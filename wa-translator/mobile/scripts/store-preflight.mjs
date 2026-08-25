@@ -1,7 +1,7 @@
 import { pathToFileURL } from "node:url";
+import { PUBLIC_ORIGIN } from "../src/runtime-core.mjs";
 
-export const PUBLIC_ORIGIN =
-  "https://spoken-translation-room.spoken-translation-cloudflare.workers.dev";
+export { PUBLIC_ORIGIN };
 export const APP_ID = "com.javin23863.linguarelay";
 export const PARTICIPANT_LIMIT = 2;
 export const MOBILE_PROTOCOL = 1;
