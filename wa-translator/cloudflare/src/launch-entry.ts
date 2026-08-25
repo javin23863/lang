@@ -47,6 +47,9 @@ const TERMS_KEY_SEAM = "const termsKey = 'lingua-relay.terms.2026-08-14';";
 const TERMS_KEY_CURRENT = "const termsKey = 'lingua-relay.terms.2026-08-25';";
 const TERMS_BINDING_SEAM = "$('termsLink').href = runtime.contentUrl('terms');\n// The box arrives ticked; joining is the act of agreeing. Clearing it still\n// blocks Join, so the agreement is never assumed against an explicit refusal.\n$('termsAgree').onchange = updateRoleGate;";
 const TERMS_BINDING_CURRENT = "$('termsLink').href = runtime.contentUrl('terms');\n// Consent is affirmative for this exact Terms version. First-time users see an\n// empty box; only a prior acceptance of the current version restores it.\n$('termsAgree').checked = localStorage.getItem(termsKey) === '1';\n$('termsAgree').onchange = updateRoleGate;\nupdateRoleGate();";
+const ROOM_FETCH_HELPER_SEAM = "const blockedRoomKey = 'lingua-relay.blocked-room.' + roomId;";
+const ROOM_FETCH_HELPER_CURRENT = "const blockedRoomKey = 'lingua-relay.blocked-room.' + roomId;\nconst ROOM_CONTROL_FETCH_TIMEOUT_MS = 12000;\nasync function roomFetch(input, init = {}) {\n  const controller = new AbortController();\n  const timer = setTimeout(() => controller.abort(), ROOM_CONTROL_FETCH_TIMEOUT_MS);\n  try {\n    return await fetch(input, {...init, signal: controller.signal});\n  } finally {\n    clearTimeout(timer);\n  }\n}";
+const CONTROL_FETCH_SEAMS = ["/api/capabilities", "/api/turn", "/api/room", "/api/reports"] as const;
 const NATIVE_AUTH_CHALLENGE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const NATIVE_AUTH_START_PATTERN = /^\/auth\/native\/(google|apple|facebook)\/start$/;
 const MODAL_UPSTREAM_TIMEOUT_MS = 30_000;
@@ -144,11 +147,15 @@ function normalizeRoomScript(source: string): string {
     AUDIO_ENDED_SEAM, VIDEO_ENDED_SEAM, SOCKET_TEARDOWN_SEAM, CONNECTION_STATE_SEAM,
     CONNECT_SEAM, DISCONNECT_SEAM, CALL_GATE_SEAM, CALL_GATE_BUTTON_SEAM,
     CALL_WAIT_SEAM, CALL_RINGBACK_SEAM, WELCOME_CALL_SEAM, PEER_JOIN_CALL_SEAM,
-    TERMS_KEY_SEAM, TERMS_BINDING_SEAM,
+    TERMS_KEY_SEAM, TERMS_BINDING_SEAM, ROOM_FETCH_HELPER_SEAM,
   ]) {
     if (!source.includes(seam)) throw new Error(`room normalization seam is missing: ${seam.slice(0, 32)}`);
   }
-  return source
+  for (const path of CONTROL_FETCH_SEAMS) {
+    const seam = `fetch(runtime.apiUrl('${path}')`;
+    if (!source.includes(seam)) throw new Error(`room control fetch seam is missing: ${path}`);
+  }
+  let normalized = source
     .replace(STATUS_STYLE_SEAM, "el.hidden = !text;")
     .replace(STATUS_TIMEOUT_SEAM,
       "setTimeout(() => { if (el.textContent === text) el.hidden = true; }, 3000);")
@@ -167,7 +174,12 @@ function normalizeRoomScript(source: string): string {
     .replace(WELCOME_CALL_SEAM, WELCOME_CALL_NEUTRAL)
     .replace(PEER_JOIN_CALL_SEAM, PEER_JOIN_CALL_NEUTRAL)
     .replace(TERMS_KEY_SEAM, TERMS_KEY_CURRENT)
-    .replace(TERMS_BINDING_SEAM, TERMS_BINDING_CURRENT);
+    .replace(TERMS_BINDING_SEAM, TERMS_BINDING_CURRENT)
+    .replace(ROOM_FETCH_HELPER_SEAM, ROOM_FETCH_HELPER_CURRENT);
+  for (const path of CONTROL_FETCH_SEAMS) {
+    normalized = normalized.replace(`fetch(runtime.apiUrl('${path}')`, `roomFetch(runtime.apiUrl('${path}')`);
+  }
+  return normalized;
 }
 
 function enhanceRoomShell(source: string): string {
