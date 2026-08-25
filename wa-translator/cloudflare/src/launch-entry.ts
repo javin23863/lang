@@ -22,13 +22,20 @@ const VIDEO_ENDED_SEAM = "camOn = false;\n          $('camBtn').className = 'ico
 const VIDEO_ENDED_RECOVERY = "camOn = false;\n          $('camBtn').className = 'icon off';\n          setStatus('status.cameraUnavailable', null, true);";
 const SOCKET_TEARDOWN_SEAM = "if (!preserveServerClose && ws && ws.readyState === WebSocket.OPEN) {\n    ws.close(1000, notifyServer ? 'left room' : 'page suspended');\n  }";
 const SOCKET_TEARDOWN_SAFE = "if (!preserveServerClose && ws && ws.readyState < WebSocket.CLOSING) {\n    try { ws.close(1000, notifyServer ? 'left room' : 'page suspended'); } catch (_) {}\n  }";
+const CONNECTION_STATE_SEAM = "let ws, myId = null, ttsToken = null, myLang = null, myLocale = null;";
+const CONNECTION_STATE_GUARDED = "let ws, myId = null, ttsToken = null, myLang = null, myLocale = null;\nlet connectGeneration = 0;";
+const CONNECT_SEAM = "async function connect() {\n  if (leaving) return;\n  if (!await preflightRoom()) return;\n  await refreshIceServers();\n  ws = new WebSocket(runtime.websocketUrl(roomId));";
+const CONNECT_GUARDED = "async function connect() {\n  if (leaving) return;\n  if (ws && ws.readyState < WebSocket.CLOSING) return;\n  const generation = ++connectGeneration;\n  if (!await preflightRoom()) return;\n  if (leaving || generation !== connectGeneration) return;\n  await refreshIceServers();\n  if (leaving || generation !== connectGeneration) return;\n  ws = new WebSocket(runtime.websocketUrl(roomId));";
+const DISCONNECT_SEAM = "function disconnectRoom(notifyServer, preserveServerClose = false) {\n  if (leaving) return;\n  leaving = true;";
+const DISCONNECT_GUARDED = "function disconnectRoom(notifyServer, preserveServerClose = false) {\n  if (leaving) return;\n  leaving = true;\n  connectGeneration++;";
 
 type RoomAssets = { shell: string; css: string; js: string };
 
 function normalizeRoomScript(source: string): string {
   for (const seam of [
     STATUS_STYLE_SEAM, STATUS_TIMEOUT_SEAM, PARTICIPANT_COUNT_SEAM, WELCOME_SEAM,
-    AUDIO_ENDED_SEAM, VIDEO_ENDED_SEAM, SOCKET_TEARDOWN_SEAM,
+    AUDIO_ENDED_SEAM, VIDEO_ENDED_SEAM, SOCKET_TEARDOWN_SEAM, CONNECTION_STATE_SEAM,
+    CONNECT_SEAM, DISCONNECT_SEAM,
   ]) {
     if (!source.includes(seam)) throw new Error(`room normalization seam is missing: ${seam.slice(0, 32)}`);
   }
@@ -40,7 +47,10 @@ function normalizeRoomScript(source: string): string {
     .replace(WELCOME_SEAM, WELCOME_TWO_PERSON)
     .replace(AUDIO_ENDED_SEAM, AUDIO_ENDED_RECOVERY)
     .replace(VIDEO_ENDED_SEAM, VIDEO_ENDED_RECOVERY)
-    .replace(SOCKET_TEARDOWN_SEAM, SOCKET_TEARDOWN_SAFE);
+    .replace(SOCKET_TEARDOWN_SEAM, SOCKET_TEARDOWN_SAFE)
+    .replace(CONNECTION_STATE_SEAM, CONNECTION_STATE_GUARDED)
+    .replace(CONNECT_SEAM, CONNECT_GUARDED)
+    .replace(DISCONNECT_SEAM, DISCONNECT_GUARDED);
 }
 
 function enhanceRoomShell(source: string): string {
