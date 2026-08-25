@@ -61,10 +61,15 @@ participant and one remote participant.
 - [x] iOS keywords are at most 100 UTF-8 bytes.
 - [x] iOS listing has phone screenshots and production privacy/support URLs.
 - [x] Privacy, Terms, and Support pages are served by the production Worker.
+- [x] Owner-supplied App Review / Play review inputs are enumerated in
+  `REVIEW-INPUTS.md`, with secrets explicitly kept out of Git.
 - [ ] **App Review gate:** create a dedicated public product-support contact and
   add it to `/support` before App Store submission. The repository currently has
   no support email/phone/legal contact to publish; do not expose a developer's
   personal source-control identity as a substitute.
+- [ ] Enter App Review contact details, non-expiring OAuth review identity and
+  notes directly in App Store Connect; enter Play app-access instructions and
+  review identity directly in Play Console.
 
 ## Privacy, safety, and declarations
 
@@ -92,12 +97,27 @@ participant and one remote participant.
 - [x] Signed iOS automation stops at TestFlight.
 - [x] Signed uploads run the live mobile-contract/provider/link-association
   preflight before store upload.
+- [x] npm install scripts are version-pinned in `allowScripts`; CI uses
+  `strict-allow-scripts=true` so a new unreviewed install script fails closed.
 - [ ] Install the signed Android internal build on representative physical
   devices and exercise account, link, media-permission and call lifecycles.
 - [ ] Install the TestFlight build on representative physical iPhones and
   exercise the same lifecycle including real Apple sign-in.
 - [ ] Test Wi-Fi, cellular, network changes, permission revoke/regrant, app
   foreground/background transitions, interruption, reconnect and room expiry.
+
+## Frontend structure
+
+- [x] Host dashboard behavior and styles are extracted from `index.html` into
+  `dashboard.js` and `dashboard.css` while keeping the existing runtime/API seam.
+- [x] Dashboard deployment/native-bundle tests assert those assets are shipped.
+- [x] Dashboard presentation uses the Lingua Relay green/blue identity, adaptive
+  appearance, reduced-motion handling and 44pt-or-larger primary touch targets.
+- [ ] `room.html` remains the largest frontend monolith. Split its styling and
+  behavior only with a full-file-preserving edit path; do not perform a lossy
+  partial replacement because it contains WebRTC/media/signalling state.
+- [ ] After room decomposition is green, do the room-specific visual pass without
+  changing the proven two-person/media protocol contract.
 
 ## Production operations still requiring credentials or console access
 
@@ -120,6 +140,3 @@ that predates the version 1.0 decision. Production/dev Wrangler entry points use
 exercises that boundary. Do not deploy `worker.ts` directly. A later refactor
 should move the two-person invariant into the base Room and delete the wrapper,
 but that is not required to change the currently deployed product contract.
-
-Broader frontend decomposition and visual redesign remain separate work after
-this correctness/release seam is stable.
