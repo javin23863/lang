@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import vm from "node:vm";
 import test from "node:test";
 
 const root = new URL("../www/", import.meta.url);
@@ -52,4 +53,36 @@ test("service worker caches only coherent credential-free dashboard shell genera
     "/room.html", "/room/", "/api/", "/auth/", "/ws/", "bearer", "host_control",
     "room_id", "caption", "transcript", "?", "#",
   ]) assert.ok(!shellBlock.toLowerCase().includes(forbidden), `shell allowlist excludes ${forbidden}`);
+});
+
+test("service worker admission helpers reject query/cross-origin state and canonicalize cache requests", async () => {
+  const source = await readFile(new URL("sw.js", root), "utf8");
+  const definitions = source.slice(0, source.indexOf("self.addEventListener('install'"));
+  assert.ok(definitions.length > 0, "service worker helper boundary is present");
+
+  const context = vm.createContext({
+    self: {location: {origin: "https://lingua.test"}},
+    URL,
+    Request,
+  });
+  vm.runInContext(definitions, context, {filename: "sw.js"});
+
+  function admitted(url, init = undefined) {
+    context.testRequest = new Request(url, init);
+    context.testUrl = new URL(url);
+    return vm.runInContext("cacheableShellRequest(testRequest, testUrl)", context);
+  }
+
+  assert.equal(admitted("https://lingua.test/dashboard.css"), true);
+  assert.equal(admitted("https://lingua.test/dashboard.css?token=secret"), false);
+  assert.equal(admitted("https://evil.test/dashboard.css"), false);
+  assert.equal(admitted("https://lingua.test/api/me"), false);
+  assert.equal(admitted("https://lingua.test/dashboard.css", {method: "POST"}), false);
+
+  const canonical = vm.runInContext("canonicalShellRequest('/dashboard.css')", context);
+  assert.equal(canonical.url, "https://lingua.test/dashboard.css");
+  assert.equal(canonical.method, "GET");
+  assert.equal(canonical.credentials, "omit");
+  assert.equal(canonical.cache, "no-store");
+  assert.equal(canonical.headers.has("Authorization"), false);
 });
