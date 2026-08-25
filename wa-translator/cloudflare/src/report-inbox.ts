@@ -61,10 +61,10 @@ export class ReportInbox extends WorkerReportInbox {
     }
 
     const response = await super.fetch(request);
-    // A successful POST may have created a new report after the first pruning
-    // pass. Schedule its room-expiry alarm after the base inbox has scheduled
-    // its longer retention alarm.
-    if (request.method === "POST" && response.ok) await this.pruneExpiredRouting();
+    // The base inbox recalculates its own 30-day alarm on list and insert paths.
+    // Always reconcile afterwards so that work cannot accidentally postpone an
+    // earlier routing-data expiry back to the longer report-retention deadline.
+    await this.pruneExpiredRouting();
     return response;
   }
 
