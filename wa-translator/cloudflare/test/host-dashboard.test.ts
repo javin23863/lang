@@ -58,8 +58,20 @@ describe("installed host dashboard client", () => {
     // The link inside the code is the bearer token that opens the room, so it
     // is drawn on the tap that asks for it and nowhere else.
     expect(script).toContain("window.LinguaQR.svg(roomUrl(currentRoom))");
-    expect(script).toContain('fetch(runtime.apiUrl("/api/rooms")');
-    expect(script).toContain('fetch(runtime.apiUrl("/api/me")');
+    expect(script).toContain('dashboardFetch(runtime.apiUrl("/api/rooms")');
+    expect(script).toContain('dashboardFetch(runtime.apiUrl("/api/me")');
+    expect(script).toContain('dashboardFetch(runtime.apiUrl("/api/room-control")');
+    expect(script).toContain('dashboardFetch(runtime.apiUrl("/api/room-control/close")');
+    // Every dashboard API call has a local deadline and status polling cannot
+    // overlap itself on a slow connection.
+    expect(script).toContain("const DASHBOARD_REQUEST_TIMEOUT_MS = 15_000");
+    expect(script).toContain("const controller = new AbortController()");
+    expect(script).toContain("setTimeout(() => controller.abort(), DASHBOARD_REQUEST_TIMEOUT_MS)");
+    expect(script).toContain("clearTimeout(timer)");
+    expect(script).toContain("let statusRefreshing = false");
+    expect(script).toContain("if (!currentRoom || busy || statusRefreshing) return");
+    expect(script).toContain("statusRefreshing = true");
+    expect(script).toMatch(/finally \{\s*statusRefreshing = false/);
     // Signed-in and signed-out are one attribute on <body>; nothing about the
     // account is decided by hiding elements one at a time.
     expect(css).toContain("[data-auth=");
@@ -76,8 +88,6 @@ describe("installed host dashboard client", () => {
     expect(html).not.toContain("password");
     expect(script).not.toContain("password");
     expect(html).not.toContain('type="password"');
-    expect(script).toContain('fetch(runtime.apiUrl("/api/room-control")');
-    expect(script).toContain('fetch(runtime.apiUrl("/api/room-control/close")');
     expect(script).toContain("participantCount <= 2");
     expect(script).toContain("value.participant_limit !== 2");
     expect(script).not.toContain('fetch("/api/capabilities"');
