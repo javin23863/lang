@@ -62,8 +62,6 @@ body[data-auth="in"] #accountChip{display:flex}
 .calleeField{padding:16px 17px;gap:8px}
 .hint{color:var(--label-2);font-size:13px;line-height:1.4}
 .credits{display:grid;gap:12px;padding:18px}
-#creditsBalance{margin:0;font-size:30px;font-weight:750;letter-spacing:-.035em;color:var(--accent)}
-#buyCreditsBtn{width:100%}
 #usageList{list-style:none;margin:0;padding:0;display:grid}
 #usageList li{display:flex;justify-content:space-between;gap:12px;align-items:baseline;min-height:36px;padding:8px 0;border-top:1px solid var(--separator);font-size:15px}
 #usageList li:first-child{border-top:none}
