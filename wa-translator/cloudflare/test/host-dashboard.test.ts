@@ -33,6 +33,12 @@ describe("installed host dashboard client", () => {
     expect(html).not.toContain('id="buyCreditsBtn"');
     expect(html).not.toContain('id="creditsBalance"');
     expect(script).not.toContain("creditsBalance");
+    // The host screen also avoids collecting a person's name merely to put it
+    // into a bearer URL. Share/QR links contain only the token and call mode.
+    expect(html).not.toContain('id="calleeName"');
+    expect(script).not.toContain('searchParams.set("n"');
+    expect(script).not.toContain("room.callee");
+    expect(script).toContain("runtime.openRoom(currentRoom.path, roomMode(currentRoom))");
     // Provider buttons are rendered from /api/me, so the provider ids belong to
     // dashboard behavior rather than the markup shell.
     expect(script).toContain('"signInGoogle"');
