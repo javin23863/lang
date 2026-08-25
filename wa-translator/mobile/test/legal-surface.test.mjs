@@ -53,6 +53,10 @@ test("public legal pages share current Lingua chrome and deletion remains discov
                "security metadata has the same maximum lifetime as its session credential");
   assert.match(privacy, /any signed-out session revocation digests/i,
                "account deletion explicitly removes logout-security metadata too");
+  assert.match(privacy, /saved host-control token is removed from that device after a successful sign-out or account deletion/i,
+               "device-local room administration cannot transfer to the next account on a shared device");
+  assert.match(privacy, /already-issued participant room remains independent and can continue until its normal expiry/i,
+               "clearing local administration does not falsely claim that account exit revokes an issued room bearer");
 
   const terms = await read("terms.html");
   assert.match(terms, /Version 1\.0 does not sell credits or accept in-app payments/);
