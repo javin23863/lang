@@ -92,6 +92,14 @@ describe("permanent deployment surface", () => {
     expect(roomJsSource).toContain("$('termsAgree').checked = localStorage.getItem(termsKey) === '1';");
     expect(roomJsSource).toContain("if (roleChosen || !termsAccepted()");
 
+    const deleteAccount = await exports.default.fetch(`${ORIGIN}/delete-account.html`);
+    expect(deleteAccount.status).toBe(200);
+    expectBaselineHeaders(deleteAccount);
+    const deleteAccountHtml = await deleteAccount.text();
+    expect(deleteAccountHtml).toContain("Delete your Lingua Relay account");
+    expect(deleteAccountHtml).toMatch(/do not need the mobile app/i);
+    expect(deleteAccountHtml).toContain("Open Lingua Relay account controls");
+
     const worklet = await exports.default.fetch(`${ORIGIN}/static/pcm-worklet.js`);
     expect(worklet.status).toBe(200);
     expectBaselineHeaders(worklet);
