@@ -325,7 +325,7 @@ async function nativePreflight(
 }
 
 export default {
-  async fetch(request, env, ctx): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const asset = roomAsset(url.pathname);
     if (asset && request.method === "GET") return asset;
