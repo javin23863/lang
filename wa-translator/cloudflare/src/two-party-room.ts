@@ -1,9 +1,11 @@
-import { Room as WorkerRoom } from "./worker";
+import { Room as WorkerRoom, type Env } from "./worker";
 
 export const PARTICIPANT_LIMIT = 2;
+const COMPUTE_FETCH_TIMEOUT_MS = 30_000;
 
 type RoomBaseShape = {
   ctx: DurableObjectState;
+  env: Env;
   fetch(request: Request): Promise<Response>;
   webSocketMessage(socket: WebSocket, message: string | ArrayBuffer): Promise<void>;
   webSocketClose(socket: WebSocket, code: number, reason: string): Promise<void>;
@@ -11,9 +13,9 @@ type RoomBaseShape = {
 };
 
 // The original room implementation predates the final two-person product
-// decision and owns a private send() helper. Cast only the inheritance surface
-// so this wrapper can replace that runtime method without duplicating the room
-// protocol, metering, signalling, quotas, or compute lifecycle.
+// decision and owns private send()/computeFetch() helpers. Cast only the
+// inheritance surface so this wrapper can replace those runtime methods without
+// duplicating the room protocol, metering, signalling, quotas, or lifecycle.
 const RoomBase = WorkerRoom as unknown as new (...args: any[]) => RoomBaseShape;
 
 type SocketAttachment = { joined?: unknown } | null;
@@ -42,6 +44,19 @@ export class Room extends RoomBase {
     } catch {
       socket.close(1011, "send failed");
     }
+  }
+
+  // A dead upstream handshake must eventually re-enter WorkerRoom's existing
+  // failure/backoff path instead of leaving one participant in `connecting`
+  // forever. Preserve any shorter caller timeout (chat uses eight seconds) and
+  // cap only the otherwise-unbounded network/upgrade attempt.
+  private computeFetch(request: Request): Promise<Response> {
+    const signal = AbortSignal.any([
+      request.signal,
+      AbortSignal.timeout(COMPUTE_FETCH_TIMEOUT_MS),
+    ]);
+    const bounded = new Request(request, {signal});
+    return this.env.MODAL_TEST ? this.env.MODAL_TEST.fetch(bounded) : fetch(bounded);
   }
 
   async fetch(request: Request): Promise<Response> {
