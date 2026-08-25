@@ -101,16 +101,16 @@ test("placeholders survive translation in every dictionary", async () => {
   }
 });
 
-test("the room and the dashboard read every string through a key", async () => {
+test("the room and dashboard features read every rendered string through a key", async () => {
   const expected = baseKeys();
   const sources = [
     ["room.html", await readFile(new URL("room.html", staticRoot), "utf8")],
     ["index.html", await readFile(new URL("index.html", staticRoot), "utf8")],
     ["dashboard.js", await readFile(new URL("dashboard.js", staticRoot), "utf8")],
+    ["dashboard-account.js", await readFile(new URL("dashboard-account.js", staticRoot), "utf8")],
+    ["dashboard-share.js", await readFile(new URL("dashboard-share.js", staticRoot), "utf8")],
   ];
   for (const [name, source] of sources) {
-    // Dynamic t("voice." + ...) calls deliberately stop at the trailing dot;
-    // both possible complete keys are covered by the dictionary equality test.
     const used = [...source.matchAll(/\bt\(\s*["']([\w.]+)["']/g)]
       .map(match => match[1]).filter(key => !key.endsWith("."));
     const marked = [...source.matchAll(/data-i18n(?:-title|-label)?="([\w.]+)"/g)].map(m => m[1]);
@@ -121,11 +121,17 @@ test("the room and the dashboard read every string through a key", async () => {
   }
 });
 
+test("room controller status and confirmation keys exist in the base dictionary", async () => {
+  const expected = baseKeys();
+  const source = await readFile(new URL("dashboard-room-controller.js", staticRoot), "utf8");
+  const calls = [...source.matchAll(/\b(?:onNotice|onClear|confirmAction|clear)\(\s*["']([\w.]+)["']/g)]
+    .map(match => match[1]);
+  assert.ok(calls.length > 0, "room controller carries localized state keys");
+  for (const key of calls) assert.ok(expected.has(key), `room controller key exists: ${key}`);
+});
+
 test("no screen text is written as an English literal", async () => {
   const expected = baseKeys();
-  // Every one of these takes a dictionary key. A literal sentence slipped into
-  // one is the exact defect this catches: it renders, so nothing looks broken,
-  // and it stays English in all 100 languages.
   const calls = /\b(?:setStatus|showVideoNote|failVoice|finishSpeech\(item,)\s*\(?\s*["']([^"']*)["']/g;
   for (const name of ["room.html", "dashboard.js"]) {
     const source = await readFile(new URL(name, staticRoot), "utf8");
@@ -138,16 +144,25 @@ test("no screen text is written as an English literal", async () => {
   }
 });
 
-test("dashboard HTML is a thin shell over dedicated style and behavior assets", async () => {
+test("dashboard HTML is a thin shell over dedicated style and feature assets", async () => {
   const html = await readFile(new URL("index.html", staticRoot), "utf8");
   const script = await readFile(new URL("dashboard.js", staticRoot), "utf8");
   const css = await readFile(new URL("dashboard.css", staticRoot), "utf8");
   assert.match(html, /<link rel="stylesheet" href="\/dashboard\.css">/);
   assert.match(html, /<script src="\/dashboard\.js"><\/script>/);
+  for (const asset of [
+    "dashboard-api", "dashboard-account", "dashboard-room-model", "dashboard-room-controller",
+    "dashboard-share", "dashboard-settings", "dashboard-lifecycle",
+  ]) assert.match(html, new RegExp(`<script src="/${asset}\\.js"><\\/script>`));
   assert.doesNotMatch(html, /<style[\s>]/i, "dashboard carries no inline style block");
   assert.doesNotMatch(html, /<script>(?:.|\n)*?<\/script>/i, "dashboard carries no inline behavior block");
-  assert.match(script, /async function createRoom\(mode\)/);
-  assert.match(script, /function renderAccount\(\)/);
+  assert.match(script, /window\.LinguaDashboardRoomController\.create/);
+  assert.match(script, /window\.LinguaDashboardAccount\.create/);
+  assert.match(script, /window\.LinguaDashboardShare\.create/);
+  assert.doesNotMatch(script, /async function createRoom\(mode\)/,
+    "room creation belongs to the room controller");
+  assert.doesNotMatch(script, /function renderAccount\(\)/,
+    "account rendering belongs to the account presenter");
   assert.match(css, /\.page\{/);
   assert.match(css, /\.card\{/);
 });
@@ -161,15 +176,12 @@ test("the call controls are glyphs, so no translation can overflow the bar", asy
     assert.equal(label, "", `${id} carries no text that a translation could widen`);
     assert.match(button[0], /aria-label="/, `${id} still has an accessible name`);
   }
-  // The four secondary controls carry their icon in the markup; the microphone
-  // builds its own so it can swap between the live and muted glyph.
   for (const id of ["shareBtn", "camBtn", "voiceBtn", "leaveBtn"]) {
     assert.match(room.match(new RegExp(`<button id="${id}"[\\s\\S]*?</button>`))[0], /<svg /,
                  `${id} shows an icon`);
   }
   assert.match(room, /const MIC_GLYPH = /, "the microphone has a glyph of its own");
   assert.match(room, /path\.setAttribute\('d', micOn \? MIC_GLYPH : MIC_MUTED_GLYPH\)/);
-  // A glyph button never reads its own label out of the DOM.
   for (const write of room.matchAll(/\$\('(micBtn|shareBtn|camBtn|voiceBtn|leaveBtn)'\)\.(textContent|innerHTML|innerText)/g)) {
     assert.fail(`${write[1]} must not have its ${write[2]} overwritten`);
   }
@@ -178,7 +190,6 @@ test("the call controls are glyphs, so no translation can overflow the bar", asy
 test("the capability badge never says the same thing twice", async () => {
   const room = await readFile(new URL("room.html", staticRoot), "utf8");
   const badge = room.match(/function capabilityText\(profile\) \{[\s\S]*?\n\}/)[0];
-  // "Captions · Captions only" shipped once; one branch now picks one label.
   assert.doesNotMatch(badge, /badges\.push/, "the badge is not assembled by appending");
   assert.match(badge, /capability\.captionsUnavailable/);
   assert.match(badge, /voice\.captionsOnly/);
