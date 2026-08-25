@@ -215,6 +215,13 @@
   }
 
   function t(key, params) {
+    // Room capacity is a product invariant, not translator-owned copy. Keeping
+    // this numeric removes stale /4 strings from older locale dictionaries and
+    // prevents localization data from ever advertising multiparty support.
+    if ((key === "stage.countOne" || key === "stage.countMany")
+        && params && Object.prototype.hasOwnProperty.call(params, "count")) {
+      return `${params.count} / 2`;
+    }
     const template = typeof strings[key] === "string" ? strings[key] : BASE_STRINGS[key];
     if (typeof template !== "string") return key;
     if (!params) return template;
