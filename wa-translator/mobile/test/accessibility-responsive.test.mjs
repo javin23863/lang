@@ -26,7 +26,10 @@ test("prepared mobile surfaces preserve accessibility and responsive contracts",
   assert.match(dashboardCss, /min-height:var\(--touch-target\)/);
   assert.match(dashboardCss, /env\(safe-area-inset-top\)/);
   assert.match(dashboardCss, /env\(safe-area-inset-bottom\)/);
-  assert.match(dashboardCss, /@media\(max-width:380px\)/);
+  assert.match(dashboardCss, /@media\(max-width:560px\)/,
+    "the app home must collapse its launch surface for phone widths");
+  assert.match(dashboardCss, /@media\(max-width:360px\)/,
+    "the app home must retain an explicit narrow-phone layout");
   assert.match(dashboardCss, /@media\(prefers-reduced-motion:reduce\)/);
   assert.match(dashboardCss, /button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible/);
 

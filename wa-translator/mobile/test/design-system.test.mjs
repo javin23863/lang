@@ -25,7 +25,12 @@ test("prepared mobile dashboard ships shared tokens and video-first hierarchy", 
   assert.ok(video >= 0 && video < voice && voice < chat,
     "video must be the first activation choice in the prepared app");
 
-  assert.match(css, /\.modeGrid\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\);gap:10px\}/);
-  assert.match(css, /\.tilePrimary\{grid-column:1\/-1;min-height:92px/);
-  assert.match(css, /@media\(max-width:560px\)\{\.modeGrid\{grid-template-columns:1fr\}/);
+  assert.match(css,
+    /\.modeGrid\{display:grid;grid-template-columns:minmax\(0,1\.5fr\) minmax\(210px,\.8fr\);grid-template-rows:repeat\(2,minmax\(86px,1fr\)\);gap:10px\}/,
+    "larger screens reserve the dominant launch area for video");
+  assert.match(css, /\.tilePrimary\{grid-column:1;grid-row:1\/3;min-height:182px/,
+    "video spans both launch rows before the phone breakpoint");
+  assert.match(css,
+    /@media\(max-width:560px\)\{[\s\S]*?\.modeGrid\{grid-template-columns:1fr 1fr;grid-template-rows:auto auto\}[\s\S]*?\.tilePrimary\{grid-column:1\/-1;grid-row:auto;min-height:132px/,
+    "phones keep video first and full-width while voice and chat remain adjacent choices");
 });
