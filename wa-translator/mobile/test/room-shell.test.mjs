@@ -49,6 +49,10 @@ test("native room shell is decomposed, accessible, bridge-enabled and two-person
                "an active microphone track ending is surfaced to the user");
   assert.match(js, /setStatus\('status\.cameraUnavailable', null, true\)/,
                "an active camera track ending is surfaced to the user");
+  assert.match(js, /ws\.readyState < WebSocket\.CLOSING/,
+               "background/page suspension also closes a socket still connecting");
+  assert.doesNotMatch(js, /ws\.readyState === WebSocket\.OPEN\) \{\n\s*ws\.close\(1000, notifyServer/,
+                      "teardown does not orphan a connecting WebSocket");
 
   assert.match(html, /id="participantCount" aria-live="polite">0 \/ 2 people</,
                "the first rendered room shell matches the two-person contract");
