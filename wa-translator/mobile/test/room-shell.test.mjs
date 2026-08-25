@@ -1,0 +1,107 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+const read = path => readFile(new URL(path, import.meta.url), "utf8");
+
+test("native room shell is decomposed, accessible, bridge-enabled and two-person", async () => {
+  const html = await read("../www/room.html");
+  const css = await read("../www/room.css");
+  const uiCss = await read("../www/room-ui.css");
+  const js = await read("../www/room.js");
+
+  assert.match(html, /<script src="\/mobile-bridge\.js"><\/script><script src="\/app-runtime\.js"><\/script>/,
+               "the native bridge loads before the shared runtime");
+  assert.match(html, /<link rel="stylesheet" href="\/room\.css">/,
+               "canonical room styling ships as its own asset");
+  assert.match(html, /<link rel="stylesheet" href="\/room-ui\.css">/,
+               "Lingua room presentation ships after the canonical styling");
+  assert.match(html, /<script src="\/room\.js"><\/script>/,
+               "room behavior ships as its own asset at the original execution point");
+  assert.doesNotMatch(html, /<style>/, "the installed room has no inline style block");
+  assert.doesNotMatch(html, /<script>\s*const \$ =/,
+                      "the installed room has no inline call implementation");
+  assert.match(html, /id="status" role="status" aria-live="polite"/);
+  assert.match(html, /id="videoNote" role="status" aria-live="polite"/);
+  assert.match(html, /id="captions" role="log" aria-live="polite" aria-relevant="additions text"/);
+  assert.match(css, /#stage\{/);
+  assert.match(css, /#chatBar\{/);
+  assert.match(uiCss, /--accent:#64D4C3/,
+               "room presentation uses the Lingua Relay brand accent");
+  assert.match(uiCss, /prefers-reduced-motion:reduce/,
+               "motion-sensitive users get a non-animated room surface");
+  assert.match(uiCss, /orientation:landscape/,
+               "compact landscape call layouts are explicitly supported");
+  assert.match(js, /const \$ = \(id\) => document\.getElementById\(id\);/);
+  assert.match(js, /async function connect\(\)/);
+  assert.match(js, /el\.hidden = !text/);
+  assert.doesNotMatch(js, /el\.style\.display/,
+                      "strict style-src remains compatible with room status updates");
+  assert.match(js, /serverCount <= 2/,
+               "participant rendering accepts only the two-person server range");
+  assert.doesNotMatch(js, /serverCount <= 4/,
+                      "the installed client cannot reintroduce the retired four-person range");
+  assert.match(js, /m\.participant_limit !== 2/,
+               "the installed client fails closed on a mismatched server room contract");
+  assert.match(js, /m\.peers\.length > 1/,
+               "a welcome payload cannot smuggle multiple remote peers into a two-person room");
+  assert.match(js, /setStatus\('status\.micUnavailable', null, true\)/,
+               "an active microphone track ending is surfaced to the user");
+  assert.match(js, /setStatus\('status\.cameraUnavailable', null, true\)/,
+               "an active camera track ending is surfaced to the user");
+  assert.match(js, /ws\.readyState < WebSocket\.CLOSING/,
+               "background/page suspension also closes a socket still connecting");
+  assert.doesNotMatch(js, /ws\.readyState === WebSocket\.OPEN\) \{\n\s*ws\.close\(1000, notifyServer/,
+                      "teardown does not orphan a connecting WebSocket");
+  assert.match(js, /let connectGeneration = 0/);
+  assert.match(js, /const generation = \+\+connectGeneration/);
+  assert.match(js, /generation !== connectGeneration/,
+               "an older asynchronous connect attempt cannot create a second socket");
+  assert.match(js, /if \(ws && ws\.readyState < WebSocket\.CLOSING\) return/,
+               "a delayed reconnect cannot replace an active foreground connection");
+  assert.match(js, /leaving = true;\n  connectGeneration\+\+;/,
+               "suspension invalidates preflight and TURN work already in flight");
+
+  // Auxiliary room HTTP is bounded separately from translated-audio synthesis.
+  // A stalled capability/TURN/preflight/report request must not strand room UI,
+  // while TTS keeps its longer controller because audio generation has retries.
+  assert.match(js, /const ROOM_CONTROL_FETCH_TIMEOUT_MS = 12000/);
+  assert.match(js, /async function roomFetch\(input, init = \{\}\)/);
+  assert.match(js, /setTimeout\(\(\) => controller\.abort\(\), ROOM_CONTROL_FETCH_TIMEOUT_MS\)/);
+  for (const path of ["/api/capabilities", "/api/turn", "/api/room", "/api/reports"]) {
+    assert.match(js, new RegExp(`roomFetch\\(runtime\\.apiUrl\\('${path.replaceAll("/", "\\/")}'\\)`),
+                 `${path} uses the bounded control-plane fetch helper`);
+  }
+  assert.match(js, /fetch\(runtime\.apiUrl\('\/tts'\)/,
+               "TTS retains its audio-specific abort/retry envelope");
+
+  // Voice mode is a foreground two-person room, not an incoming-call service.
+  // Joining either before or after the other participant must converge on the
+  // same Connected state without a synthetic ringing/answer dependency.
+  assert.match(js, /const title = 'gate\.title';\n  const join = 'gate\.join';/);
+  assert.match(js, /\$\('declineBtn'\)\.hidden = true/);
+  assert.match(js, /setCallState\('stage\.waiting'\)/);
+  assert.doesNotMatch(js, /setCallState\('call\.ringing'\)/);
+  assert.doesNotMatch(js, /if \(isHost\) startRingback\(\)/);
+  assert.match(js, /if \(roomMode === 'voice' && m\.peers\.length\) \{[\s\S]*?connectCall\(\)/,
+               "welcome connects voice mode when the other person was already present");
+  assert.match(js, /if \(roomMode === 'voice' && !callTimerStart\) \{[\s\S]*?to: m\.id[\s\S]*?connectCall\(\)/,
+               "peer_join connects voice mode when the other person arrives later");
+
+  // Terms acceptance is affirmative and version-bound. A fresh install cannot
+  // inherit the canonical source's historical pre-check, and only acceptance
+  // recorded for the current legal text may restore the checkbox later.
+  assert.match(html, /<input id="termsAgree" type="checkbox">/);
+  assert.doesNotMatch(html, /<input id="termsAgree" type="checkbox" checked>/);
+  assert.match(js, /const termsKey = 'lingua-relay\.terms\.2026-08-25';/);
+  assert.doesNotMatch(js, /lingua-relay\.terms\.2026-08-14/);
+  assert.match(js, /\$\('termsAgree'\)\.checked = localStorage\.getItem\(termsKey\) === '1'/,
+               "only a prior affirmative acceptance of this exact Terms version is restored");
+  assert.match(js, /if \(roleChosen \|\| !termsAccepted\(\)/,
+               "joining remains fail-closed while the current agreement is unchecked");
+
+  assert.match(html, /id="participantCount" aria-live="polite">0 \/ 2 people</,
+               "the first rendered room shell matches the two-person contract");
+  assert.doesNotMatch(html, /id="participantCount" aria-live="polite">0 \/ 4 people</,
+                      "the installed app never flashes the retired four-person fallback");
+});

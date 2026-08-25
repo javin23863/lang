@@ -8,7 +8,6 @@ type Snapshot = {
   signed_in: boolean;
   providers: string[];
   user?: { name: string; email: string; provider: string };
-  credits?: { balance: number };
   totals?: Record<string, number>;
   recent?: unknown[];
 };
@@ -30,14 +29,30 @@ async function start(provider: string): Promise<Response> {
 // A real browser hands the state cookie back on the callback; here the test is
 // the browser, so it carries the same cookie the start response set.
 async function signIn(
-  provider = "google", code = "fixture-google"
+  provider = "google", code = "fixture-google", appleUser?: string
 ): Promise<{ response: Response; session: string | null }> {
   const started = await start(provider);
   const state = new URL(started.headers.get("Location")!).searchParams.get("state")!;
-  const response = await exports.default.fetch(
-    `${ORIGIN}/auth/${provider}/callback?code=${code}&state=${encodeURIComponent(state)}`,
-    { headers: { Cookie: cookieHeader(started) }, redirect: "manual" }
-  );
+  const callback = `${ORIGIN}/auth/${provider}/callback`;
+  let response: Response;
+  if (provider === "apple") {
+    const form = new URLSearchParams({code, state});
+    if (appleUser !== undefined) form.set("user", appleUser);
+    response = await exports.default.fetch(callback, {
+      method: "POST",
+      headers: {
+        Cookie: cookieHeader(started),
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: form.toString(),
+      redirect: "manual"
+    });
+  } else {
+    response = await exports.default.fetch(
+      `${callback}?code=${code}&state=${encodeURIComponent(state)}`,
+      { headers: { Cookie: cookieHeader(started) }, redirect: "manual" }
+    );
+  }
   return { response, session: cookieValue(response, "lr_s") };
 }
 
@@ -78,12 +93,12 @@ describe("OAuth sign-in, session, and the room-creation gate", () => {
     expect(stateCookie).toContain("Max-Age=600");
   });
 
-  it("mints a session from a valid callback and reports it on /api/me", async () => {
+  it("mints a unique v2 session from a valid callback and reports it on /api/me", async () => {
     const { response, session } = await signIn();
 
     expect(response.status).toBe(302);
     expect(response.headers.get("Location")).toBe("/");
-    expect(session).toMatch(/^s1\.[A-Za-z0-9_-]{22}\.\d{10}\.[A-Za-z0-9_-]{43}$/);
+    expect(session).toMatch(/^s2\.[A-Za-z0-9_-]{22}\.\d{10}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/);
     const sessionCookie = setCookies(response).find(value => value.startsWith("lr_s="))!;
     expect(sessionCookie).toContain("HttpOnly");
     expect(sessionCookie).toContain("Secure");
@@ -98,10 +113,22 @@ describe("OAuth sign-in, session, and the room-creation gate", () => {
     expect(account.user).toEqual({
       name: "Test Host", email: "host@example.test", provider: "google"
     });
-    expect(account.credits).toEqual({ balance: 0 });
+    expect(account).not.toHaveProperty("credits");
     expect(account.totals).toEqual({ call_minutes: 0, chat_messages: 0, tts_phrases: 0 });
     expect(account.recent).toEqual([]);
     // The provider's own subject never appears in anything we hand back.
+    expect(JSON.stringify(account)).not.toContain("google-subject-1");
+  });
+
+  it("sanitizes provider display metadata without changing provider/account identity", async () => {
+    const { session } = await signIn("google", "fixture-google-unsafe-name");
+    const account = await snapshot(session);
+
+    expect(account.signed_in).toBe(true);
+    expect(account.user).toEqual({
+      name: "HostAdmin", email: "host@example.test", provider: "google"
+    });
+    expect(account.user?.name).not.toMatch(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/);
     expect(JSON.stringify(account)).not.toContain("google-subject-1");
   });
 
@@ -158,18 +185,48 @@ describe("OAuth sign-in, session, and the room-creation gate", () => {
     });
   });
 
-  it("offers only providers it holds credentials for", async () => {
+  it("captures Apple's one-time name and preserves it when later logins omit user metadata", async () => {
+    const started = await start("apple");
+    expect(started.status).toBe(302);
+    const target = new URL(started.headers.get("Location")!);
+    expect(target.origin + target.pathname).toBe("https://appleid.apple.com/auth/authorize");
+    expect(target.searchParams.get("redirect_uri")).toBe(`${ORIGIN}/auth/apple/callback`);
+    expect(target.searchParams.get("scope")).toBe("name email");
+    expect(target.searchParams.get("response_mode")).toBe("form_post");
+
+    const firstUser = JSON.stringify({
+      name: {firstName: "Relay", lastName: "User"},
+      email: "untrusted-form-email@example.test",
+    });
+    const { session } = await signIn("apple", "fixture-apple", firstUser);
+    const account = await snapshot(session);
+    expect(account.signed_in).toBe(true);
+    expect(account.user).toEqual({
+      name: "Relay User",
+      // Email remains provider-token data; the one-time form cannot replace it.
+      email: "relay-user@privaterelay.appleid.com",
+      provider: "apple"
+    });
+
+    // Apple normally omits `user` after first authorization. A later login must
+    // not downgrade the captured display name back to the relay email fallback.
+    const { session: laterSession } = await signIn("apple", "fixture-apple");
+    expect((await snapshot(laterSession)).user).toEqual({
+      name: "Relay User",
+      email: "relay-user@privaterelay.appleid.com",
+      provider: "apple"
+    });
+  });
+
+  it("offers every fully configured provider and no dead unknown route", async () => {
     const account = await snapshot();
     expect(account.signed_in).toBe(false);
-    expect(account.providers).toEqual(["google", "facebook"]);
+    expect(account.providers).toEqual(["google", "facebook", "apple"]);
     expect(account.user).toBeUndefined();
 
-    // Apple has no credentials in this environment: no button, no dead route.
-    const apple = await start("apple");
-    expect(apple.status).toBe(404);
-    expect(setCookies(apple)).toEqual([]);
     const unknown = await start("myspace");
     expect(unknown.status).toBe(404);
+    expect(setCookies(unknown)).toEqual([]);
   });
 
   it("gates room creation on a session, and origin before that", async () => {
@@ -202,13 +259,14 @@ describe("OAuth sign-in, session, and the room-creation gate", () => {
     expect(created.status).toBe(201);
   });
 
-  it("clears the session on logout and refuses a cross-origin logout", async () => {
+  it("revokes the server session on logout and refuses a cross-origin logout", async () => {
     const { session } = await signIn();
 
     const foreign = await exports.default.fetch(`${ORIGIN}/auth/logout`, {
       method: "POST", headers: { Origin: "https://attacker.test", Cookie: `lr_s=${session}` }
     });
     expect(foreign.status).toBe(403);
+    expect((await snapshot(session)).signed_in).toBe(true);
 
     const response = await exports.default.fetch(`${ORIGIN}/auth/logout`, {
       method: "POST", headers: { Origin: ORIGIN, Cookie: `lr_s=${session}` }
@@ -217,8 +275,13 @@ describe("OAuth sign-in, session, and the room-creation gate", () => {
     expect(setCookies(response)[0]).toContain("lr_s=;");
     expect(setCookies(response)[0]).toContain("Max-Age=0");
 
-    // Logout is a browser-side clear; the account itself survives it.
-    expect((await snapshot(session)).signed_in).toBe(true);
+    // A copied cookie is no longer a live credential after logout. /api/me
+    // presents it as signed out and retires the stale browser copy again.
+    const replay = await exports.default.fetch(`${ORIGIN}/api/me`, {
+      headers: {Cookie: `lr_s=${session}`}
+    });
+    expect((await replay.clone().json<Snapshot>()).signed_in).toBe(false);
+    expect(setCookies(replay)[0]).toContain("Max-Age=0");
     expect((await snapshot()).signed_in).toBe(false);
   });
 

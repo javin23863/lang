@@ -4,6 +4,7 @@ platform :android do
   desc "Build a signed AAB and upload it to Play internal testing"
   lane :beta do
     gradle(project_dir: "android", task: "bundle", build_type: "Release")
+    sh("bash scripts/verify-android-aab.sh android/app/build/outputs/bundle/release/app-release.aab")
     upload_to_play_store(
       json_key: ENV.fetch("GOOGLE_PLAY_JSON_KEY"),
       package_name: "com.javin23863.linguarelay",
@@ -46,6 +47,8 @@ platform :ios do
       project: "ios/App/App.xcodeproj",
       scheme: "App",
       export_method: "app-store",
+      output_directory: "build/ios-beta",
+      output_name: "LinguaRelay.ipa",
       export_options: {
         provisioningProfiles: {
           "com.javin23863.linguarelay" => ENV.fetch("APPLE_PROVISIONING_PROFILE_NAME")
@@ -55,6 +58,7 @@ platform :ios do
         "CODE_SIGN_IDENTITY='Apple Distribution' " \
         "PROVISIONING_PROFILE_SPECIFIER='#{ENV.fetch('APPLE_PROVISIONING_PROFILE_NAME')}'"
     )
+    sh("bash scripts/verify-ios-app.sh build/ios-beta/LinguaRelay.ipa")
     upload_to_testflight(api_key: api_key, skip_waiting_for_build_processing: true)
   end
 end

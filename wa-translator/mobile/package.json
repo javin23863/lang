@@ -6,10 +6,11 @@
   "engines": {"node": ">=22"},
   "scripts": {
     "build:bridge": "esbuild src/mobile-bridge.ts --bundle --format=iife --platform=browser --target=es2022 --outfile=www/mobile-bridge.js",
-    "build:web": "node scripts/prepare-web.mjs && npm run build:bridge",
+    "build:web": "node scripts/prepare-web.mjs && node scripts/generate-third-party-notices.mjs && npm run build:bridge",
     "assets": "python scripts/generate-assets.py",
     "screenshots": "python scripts/prepare-store-screenshots.py",
-    "sync": "npm run build:web && cap sync",
+    "sync:platform": "node scripts/sync-platform-origin.mjs",
+    "sync": "npm run build:web && cap sync && npm run sync:platform && node scripts/verify-synced-notices.mjs",
     "check": "npm run typecheck && npm run build:web && node --test test/*.test.mjs",
     "browser": "node ../tools/browser/run.mjs",
     "typecheck": "tsc --noEmit",
@@ -30,5 +31,8 @@
     "esbuild": "0.28.2",
     "typescript": "7.0.2"
   },
-  "overrides": {"uuid": "11.1.1"}
+  "overrides": {"uuid": "11.1.1"},
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
 }

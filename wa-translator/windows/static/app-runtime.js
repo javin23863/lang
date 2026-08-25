@@ -21,6 +21,112 @@
     "uk", "ur", "uz", "vi", "wo", "xh", "yi", "yo", "zh", "zu",
   ]);
 
+  // `auth.signOutFailed` was added after the original 99 locale files were
+  // generated. Keep its translation coverage explicit and source-controlled
+  // while avoiding 99 noisy whole-file rewrites. The catalog guard requires
+  // this map to cover every shipped non-English locale exactly.
+  const SIGN_OUT_FAILED_TRANSLATIONS = Object.freeze({
+    "af": "Kon nie afmeld nie. Probeer weer.",
+    "am": "መውጣት አልተቻለም። እንደገና ይሞክሩ።",
+    "ar": "تعذّر تسجيل الخروج. حاول مرة أخرى.",
+    "ast": "Nun se pudo zarrar sesión. Inténtalo otra vuelta.",
+    "az": "Hesabdan çıxmaq mümkün olmadı. Yenidən cəhd edin.",
+    "ba": "Системанан сығып булманы. Тағы бер тапҡыр ҡабатлап ҡарағыҙ.",
+    "be": "Не ўдалося выйсці. Паспрабуйце яшчэ раз.",
+    "bg": "Неуспешно излизане. Опитайте отново.",
+    "bn": "সাইন আউট করা যায়নি। আবার চেষ্টা করুন।",
+    "br": "N'eus ket bet gallet digevreañ. Klaskit en-dro.",
+    "bs": "Odjava nije uspjela. Pokušajte ponovo.",
+    "ca": "No s'ha pogut tancar la sessió. Torna-ho a provar.",
+    "ceb": "Dili maka-sign out. Sulayi pag-usab.",
+    "cs": "Odhlášení se nezdařilo. Zkuste to znovu.",
+    "cy": "Methu allgofnodi. Rhowch gynnig arall arni.",
+    "da": "Kunne ikke logge ud. Prøv igen.",
+    "de": "Abmelden nicht möglich. Versuche es erneut.",
+    "el": "Δεν ήταν δυνατή η αποσύνδεση. Δοκιμάστε ξανά.",
+    "es": "No se pudo cerrar sesión. Inténtalo de nuevo.",
+    "et": "Väljalogimine ebaõnnestus. Proovige uuesti.",
+    "fa": "خروج از حساب ممکن نشد. دوباره تلاش کنید.",
+    "ff": "Horiima seŋaade. Eto kadi.",
+    "fi": "Uloskirjautuminen epäonnistui. Yritä uudelleen.",
+    "fr": "Impossible de se déconnecter. Réessayez.",
+    "fy": "Ofmelde is net slagge. Besykje it nochris.",
+    "ga": "Níorbh fhéidir síniú amach. Bain triail eile as.",
+    "gd": "Cha b’ urrainn dhuinn do chlàradh a-mach. Feuch ris a-rithist.",
+    "gl": "Non se puido pechar a sesión. Téntao de novo.",
+    "gu": "સાઇન આઉટ થઈ શક્યું નથી. ફરી પ્રયાસ કરો.",
+    "ha": "Ba a iya fita ba. Sake gwadawa.",
+    "he": "לא ניתן להתנתק. נסו שוב.",
+    "hi": "साइन आउट नहीं हो सका। फिर से कोशिश करें।",
+    "hr": "Odjava nije uspjela. Pokušajte ponovno.",
+    "ht": "Pa t kapab dekonekte. Eseye ankò.",
+    "hu": "Nem sikerült kijelentkezni. Próbálja újra.",
+    "hy": "Չհաջողվեց դուրս գալ։ Կրկին փորձեք։",
+    "id": "Tidak dapat keluar. Coba lagi.",
+    "ig": "Enweghị ike ịpụ. Nwaa ọzọ.",
+    "ilo": "Saan a nakapag-sign out. Padasem manen.",
+    "is": "Ekki tókst að skrá út. Reyndu aftur.",
+    "it": "Impossibile uscire. Riprova.",
+    "ja": "サインアウトできませんでした。もう一度お試しください。",
+    "jv": "Ora bisa metu. Coba maneh.",
+    "ka": "გასვლა ვერ მოხერხდა. სცადეთ ხელახლა.",
+    "kk": "Жүйеден шығу мүмкін болмады. Қайталап көріңіз.",
+    "km": "មិនអាចចាកចេញពីគណនីបានទេ។ សូមព្យាយាមម្តងទៀត។",
+    "kn": "ಸೈನ್ ಔಟ್ ಮಾಡಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ. ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.",
+    "ko": "로그아웃할 수 없습니다. 다시 시도하세요.",
+    "lb": "Ofmellen ass net gelongen. Probéiert nach eng Kéier.",
+    "lg": "Tekisobose kufuluma. Gezaako nate.",
+    "ln": "Kobima na compte esimbaki te. Meka lisusu.",
+    "lo": "ບໍ່ສາມາດອອກຈາກລະບົບໄດ້. ລອງໃໝ່ອີກຄັ້ງ.",
+    "lt": "Nepavyko atsijungti. Bandykite dar kartą.",
+    "lv": "Neizdevās izrakstīties. Mēģiniet vēlreiz.",
+    "mg": "Tsy afaka nivoaka. Andramo indray.",
+    "mk": "Не можеше да се одјавите. Обидете се повторно.",
+    "ml": "സൈൻ ഔട്ട് ചെയ്യാനായില്ല. വീണ്ടും ശ്രമിക്കുക.",
+    "mn": "Гарах боломжгүй байна. Дахин оролдоно уу.",
+    "mr": "साइन आउट करता आले नाही. पुन्हा प्रयत्न करा.",
+    "ms": "Tidak dapat log keluar. Cuba lagi.",
+    "my": "အကောင့်မှ ထွက်၍ မရပါ။ ထပ်မံကြိုးစားပါ။",
+    "ne": "साइन आउट गर्न सकिएन। फेरि प्रयास गर्नुहोस्।",
+    "nl": "Afmelden is niet gelukt. Probeer het opnieuw.",
+    "no": "Kunne ikke logge ut. Prøv igjen.",
+    "ns": "Ga se gwa kgonega go tšwa. Leka gape.",
+    "oc": "Impossible de se desconnectar. Tornatz ensajar.",
+    "or": "ସାଇନ୍ ଆଉଟ୍ କରିହେଲା ନାହିଁ। ପୁଣି ଚେଷ୍ଟା କରନ୍ତୁ।",
+    "pa": "ਸਾਈਨ ਆਉਟ ਨਹੀਂ ਕੀਤਾ ਜਾ ਸਕਿਆ। ਦੁਬਾਰਾ ਕੋਸ਼ਿਸ਼ ਕਰੋ।",
+    "pl": "Nie udało się wylogować. Spróbuj ponownie.",
+    "ps": "وتل ممکن نه شول. بیا هڅه وکړئ.",
+    "pt": "Não foi possível terminar sessão. Tente novamente.",
+    "ro": "Nu s-a putut face deconectarea. Încercați din nou.",
+    "ru": "Не удалось выйти. Попробуйте ещё раз.",
+    "sd": "سائن آئوٽ نه ٿي سگهيو. ٻيهر ڪوشش ڪريو.",
+    "si": "වරනය වීමට නොහැකි විය. නැවත උත්සාහ කරන්න.",
+    "sk": "Odhlásenie sa nepodarilo. Skúste to znova.",
+    "sl": "Odjava ni uspela. Poskusite znova.",
+    "so": "Lagama bixi karin. Mar kale isku day.",
+    "sq": "Nuk u bë dot dalja. Provo përsëri.",
+    "sr": "Одјављивање није успело. Покушајте поново.",
+    "ss": "Akukwazekanga kuphuma. Zama futsi.",
+    "su": "Teu tiasa kaluar. Cobian deui.",
+    "sv": "Det gick inte att logga ut. Försök igen.",
+    "sw": "Haikuwezekana kuondoka. Jaribu tena.",
+    "ta": "வெளியேற முடியவில்லை. மீண்டும் முயற்சிக்கவும்.",
+    "th": "ออกจากระบบไม่ได้ โปรดลองอีกครั้ง",
+    "tl": "Hindi makapag-sign out. Subukan ulit.",
+    "tn": "Ga go a kgonega go tswa. Leka gape.",
+    "tr": "Çıkış yapılamadı. Tekrar deneyin.",
+    "uk": "Не вдалося вийти. Спробуйте ще раз.",
+    "ur": "سائن آؤٹ نہیں ہو سکا۔ دوبارہ کوشش کریں۔",
+    "uz": "Hisobdan chiqib bo‘lmadi. Qayta urinib ko‘ring.",
+    "vi": "Không thể đăng xuất. Hãy thử lại.",
+    "wo": "Mëneesul génn. Jéemaatal.",
+    "xh": "Akukwazekanga ukuphuma. Zama kwakhona.",
+    "yi": "מען האָט נישט געקענט זיך אָפּמעלדן. פּרוּווט ווידער.",
+    "yo": "Kò ṣeé jáde kúrò nínú àkọọ́lẹ̀. Gbìyànjú lẹ́ẹ̀kan síi.",
+    "zh": "无法退出登录。请重试。",
+    "zu": "Akukwazekanga ukuphuma. Zama futhi."
+  });
+
   const BASE_STRINGS = Object.freeze({
     "legal.privacy": "Privacy",
     "legal.terms": "Terms",
@@ -66,6 +172,7 @@
     "auth.signInApple": "Continue with Apple",
     "auth.signInFacebook": "Continue with Facebook",
     "auth.signOut": "Sign out",
+    "auth.signOutFailed": "Could not sign out. Try again.",
     "auth.signedInAs": "{name}",
     "auth.failed": "Sign-in did not finish. Try again.",
     "auth.deleteAccount": "Delete account",
@@ -171,8 +278,8 @@
     "captions.live": "live",
 
     "stage.waiting": "Waiting for the other person to join…",
-    "stage.countOne": "{count} / 4 person",
-    "stage.countMany": "{count} / 4 people",
+    "stage.countOne": "{count} / 2 person",
+    "stage.countMany": "{count} / 2 people",
 
     "status.joiningAs": "Joining as {language}…",
     "status.connected": "Connected",
@@ -215,6 +322,13 @@
   }
 
   function t(key, params) {
+    // Room capacity is a product invariant, not translator-owned copy. Keeping
+    // this numeric removes stale /4 strings from older locale dictionaries and
+    // prevents localization data from ever advertising multiparty support.
+    if ((key === "stage.countOne" || key === "stage.countMany")
+        && params && Object.prototype.hasOwnProperty.call(params, "count")) {
+      return `${params.count} / 2`;
+    }
     const template = typeof strings[key] === "string" ? strings[key] : BASE_STRINGS[key];
     if (typeof template !== "string") return key;
     if (!params) return template;
@@ -281,7 +395,11 @@
         if (!value || typeof value !== "object" || Array.isArray(value)) {
           throw new Error("invalid dictionary");
         }
-        loaded = value;
+        const signOutFailed = SIGN_OUT_FAILED_TRANSLATIONS[supported];
+        if (typeof signOutFailed !== "string" || !signOutFailed) {
+          throw new Error("incomplete dictionary");
+        }
+        loaded = {...value, "auth.signOutFailed": signOutFailed};
       } catch {
         // An unreachable dictionary must not strand the person on a blank
         // screen: English is always complete and always local.
@@ -350,6 +468,11 @@
     return new URL(path, publicOrigin).toString();
   }
 
+  function currentRoomMode() {
+    const mode = new URLSearchParams(location.search).get("m");
+    return mode === "voice" || mode === "chat" ? mode : "";
+  }
+
   function contentUrl(page, hash = "") {
     if (!["privacy", "terms", "support"].includes(page)) {
       throw new Error("Unsupported content page");
@@ -358,9 +481,11 @@
                         native ? location.href : publicOrigin);
     const token = roomToken();
     if (token) {
-      url.searchParams.set("return", native
-        ? `room.html?room=${encodeURIComponent(token)}`
-        : `/room/${token}`);
+      const mode = currentRoomMode();
+      const returnPath = native
+        ? `room.html?room=${encodeURIComponent(token)}${mode ? `&m=${mode}` : ""}`
+        : `/room/${token}${mode ? `?m=${mode}` : ""}`;
+      url.searchParams.set("return", returnPath);
     }
     if (hash) url.hash = hash;
     return url.toString();
@@ -416,8 +541,9 @@
     opened.opener = null;
     const url = new URL(inviteUrl(room));
     if (mode && mode !== "video") url.searchParams.set("m", mode);
-    // The host opens the same call screen the invitation opens, name included.
-    if (mode === "voice" && room?.callee) url.searchParams.set("n", room.callee);
+    // Personal labels from older saved-room records are deliberately ignored:
+    // participant bearer URLs contain only the signed room token and call mode.
+    url.searchParams.delete("n");
     opened.location.replace(url.toString());
     return true;
   }

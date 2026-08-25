@@ -12,13 +12,15 @@ describe("participant terminal-close client", () => {
     const { path } = await created.json<{ path: string }>();
     const page = await exports.default.fetch(`${ORIGIN}${path}`);
     expect(page.status).toBe(200);
-    const html = await page.text();
-    expect(html).toContain('m.type === \'room_closed\'');
-    expect(html).toContain('event.code === 4001');
-    expect(html).toContain('terminalRoom = true');
+    expect(await page.text()).toContain('<script src="/room.js"></script>');
+
+    const js = await (await exports.default.fetch(`${ORIGIN}/room.js`)).text();
+    expect(js).toContain('m.type === \'room_closed\'');
+    expect(js).toContain('event.code === 4001');
+    expect(js).toContain('terminalRoom = true');
     // The closed-room line is a dictionary key now, not a sentence: it has to
     // reach the participant in the language they picked.
-    expect(html).toContain("setStatus('status.roomClosed', null, true)");
-    expect(html).toContain("showVideoNote('note.closedByHost')");
+    expect(js).toContain("setStatus('status.roomClosed', null, true)");
+    expect(js).toContain("showVideoNote('note.closedByHost')");
   });
 });

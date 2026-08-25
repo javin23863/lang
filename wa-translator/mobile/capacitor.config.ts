@@ -12,12 +12,14 @@ const config: CapacitorConfig = {
     SplashScreen: {
       launchAutoHide: true,
       launchShowDuration: 700,
-      backgroundColor: "#09141e",
+      backgroundColor: "#F4FBF9",
       showSpinner: false
     },
     StatusBar: {
-      style: "DARK",
-      backgroundColor: "#09141e"
+      // Capacitor's LIGHT value means dark status-bar text, which matches the
+      // light dashboard. The native bridge switches to DARK (light text) for
+      // the always-dark room screen. Android 16 ignores backgroundColor.
+      style: "LIGHT"
     }
   }
 };

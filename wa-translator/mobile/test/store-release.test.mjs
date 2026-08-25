@@ -2,7 +2,26 @@ import assert from "node:assert/strict";
 import { readFile, stat } from "node:fs/promises";
 import test from "node:test";
 
+import {
+  APP_ID, MOBILE_PROTOCOL, PLAY_VERSION_CODE_MAX, PUBLIC_ORIGIN, normalizeFingerprint,
+  releaseBuildNumber, validateAndroidAssociation, validateAppleAssociation,
+  validateBootstrap, validateProviderSnapshot,
+} from "../scripts/store-preflight.mjs";
+
 const read = path => readFile(new URL(path, import.meta.url), "utf8");
+
+async function pngInfo(path) {
+  const data = await readFile(new URL(path, import.meta.url));
+  assert.equal(data.subarray(0, 8).toString("hex"), "89504e470d0a1a0a", `${path} is not PNG`);
+  assert.equal(data.subarray(12, 16).toString("ascii"), "IHDR", `${path} has no IHDR`);
+  return {
+    size: data.length,
+    width: data.readUInt32BE(16),
+    height: data.readUInt32BE(20),
+    bitDepth: data[24],
+    colorType: data[25],
+  };
+}
 
 test("credential-free CI builds both native products", async () => {
   const workflow = await read("../../../.github/workflows/mobile-build.yml");
@@ -18,6 +37,20 @@ test("credential-free CI builds both native products", async () => {
   assert.doesNotMatch(workflow, /uses:\s+[^\n]+@(v\d+|main|master)\s*$/m);
   assert.doesNotMatch(workflow, /pull_request_target/);
   assert.doesNotMatch(workflow, /actions\/(?:checkout|setup-node|setup-java|upload-artifact)@v4/);
+  assert.match(workflow, /workflow_dispatch:\s*\n\s+inputs:\s*\n\s+release_sha:/,
+               "manual credential-free acceptance requires the frozen release SHA");
+  assert.equal((workflow.match(/ref: \$\{\{ github\.sha \}\}/g) || []).length, 3,
+               "every credential-free job checks out the immutable event commit");
+  assert.equal((workflow.match(/persist-credentials: false/g) || []).length, 3,
+               "credential-free checkout leaves no repository credential in git configuration");
+  assert.equal((workflow.match(/name: Verify frozen release commit/g) || []).length, 3);
+  assert.equal((workflow.match(/if: github\.event_name == 'workflow_dispatch'/g) || []).length, 3,
+               "exact-SHA verification runs only for deliberate manual acceptance");
+  assert.equal((workflow.match(/EXPECTED_RELEASE_SHA: \$\{\{ inputs\.release_sha \}\}/g) || []).length, 3);
+  assert.equal((workflow.match(/DISPATCH_RELEASE_SHA: \$\{\{ github\.sha \}\}/g) || []).length, 3);
+  assert.equal((workflow.match(/"\$DISPATCH_RELEASE_SHA" != "\$EXPECTED_RELEASE_SHA"/g) || []).length, 3);
+  assert.equal((workflow.match(/actual="\$\(git rev-parse HEAD\)"/g) || []).length, 3);
+  assert.equal((workflow.match(/"\$actual" != "\$EXPECTED_RELEASE_SHA"/g) || []).length, 3);
 });
 
 test("credential-gated Fastlane lanes stop at beta tracks", async () => {
@@ -31,10 +64,41 @@ test("credential-gated Fastlane lanes stop at beta tracks", async () => {
   assert.match(lockfile, /multi_json \(= 1\.21\.1\)/);
   assert.match(workflow, /npm ci && npm run check && npm run sync/);
   assert.match(workflow, /bundle exec fastlane --version/);
-  assert.match(workflow, /github\.ref == 'refs\/heads\/main'/);
-  assert.match(workflow, /LINGUA_ANDROID_VERSION_CODE=\$\{build_epoch\}/);
+  assert.match(workflow, /release_sha:\s*\n\s+description: Exact 40-character commit SHA approved for beta/,
+               "signed beta dispatch requires an explicit frozen commit SHA");
+  assert.doesNotMatch(workflow, /github\.ref == 'refs\/heads\/main'/,
+                      "signed beta must be runnable against the frozen pre-merge candidate");
+  assert.equal((workflow.match(/ref: \$\{\{ inputs\.release_sha \}\}/g) || []).length, 2,
+               "both platform jobs must check out the requested frozen commit");
+  assert.equal((workflow.match(/name: Verify frozen release commit/g) || []).length, 2);
+  assert.equal((workflow.match(/EXPECTED_RELEASE_SHA: \$\{\{ inputs\.release_sha \}\}/g) || []).length, 2);
+  assert.equal((workflow.match(/DISPATCH_RELEASE_SHA: \$\{\{ github\.sha \}\}/g) || []).length, 2,
+               "the workflow definition itself must come from the frozen commit");
+  assert.equal((workflow.match(/"\$DISPATCH_RELEASE_SHA" != "\$EXPECTED_RELEASE_SHA"/g) || []).length, 2,
+               "dispatch ref and requested release SHA must be identical");
+  assert.equal((workflow.match(/actual="\$\(git rev-parse HEAD\)"/g) || []).length, 2);
+  assert.equal((workflow.match(/"\$actual" != "\$EXPECTED_RELEASE_SHA"/g) || []).length, 2);
+  assert.equal((workflow.match(/persist-credentials: false/g) || []).length, 2,
+               "beta checkout must not leave the repository token in git configuration");
+  assert.equal((workflow.match(/environment: mobile-beta/g) || []).length, 2,
+               "both signed jobs stay behind the protected beta environment");
+  assert.match(workflow, /\^\[0-9a-f\]\{40\}\$/,
+               "release SHA input is fail-closed to an exact lowercase commit id");
+  assert.ok(workflow.indexOf("Verify frozen release commit")
+    < workflow.indexOf("Materialize signing credentials"),
+    "the exact checkout is verified before credentials are written to disk");
+  assert.match(workflow, /migration_base=1900000000/,
+               "the new strategy stays above any pre-switch 2026 Unix-seconds versionCode");
+  assert.match(workflow, /run_number="\$\{GITHUB_RUN_NUMBER\}"/);
+  assert.match(workflow, /attempt="\$\{GITHUB_RUN_ATTEMPT\}"/);
+  assert.match(workflow, /version_code=\$\(\( migration_base \+ run_number \* 100 \+ attempt \)\)/,
+               "run number and retry remain monotonic without consuming wall-clock seconds");
+  assert.match(workflow, /version_code > 2100000000/,
+               "the release generator refuses values above Google Play's versionCode ceiling");
+  assert.match(workflow, /LINGUA_ANDROID_VERSION_CODE=\$\{version_code\}/);
   assert.match(workflow, /LINGUA_ANDROID_VERSION_NAME=1\.0\.\$\{GITHUB_RUN_NUMBER\}\.\$\{GITHUB_RUN_ATTEMPT\}/);
-  assert.equal((workflow.match(/date -u \+%s/g) || []).length, 2);
+  assert.equal((workflow.match(/date -u \+%s/g) || []).length, 1,
+               "only iOS still uses epoch seconds; Android has a migration-safe monotonic sequence");
   assert.match(workflow, /LINGUA_IOS_BUILD_NUMBER=\$\(date -u \+%s\)/);
   for (const job of ["android", "ios"]) {
     const section = workflow.split(`\n  ${job}:`)[1].split("\n  ")[0];
@@ -45,6 +109,14 @@ test("credential-gated Fastlane lanes stop at beta tracks", async () => {
   assert.doesNotMatch(workflow, /uses:\s+[^\n]+@(v\d+|main|master)\s*$/m);
   assert.ok(workflow.indexOf("npm ci && npm run check && npm run sync")
     < workflow.indexOf("Materialize signing credentials"));
+  assert.match(workflow, /node scripts\/store-preflight\.mjs android/);
+  assert.match(workflow, /node scripts\/store-preflight\.mjs ios/);
+  assert.match(workflow, /keytool -exportcert/);
+  assert.match(workflow, /MOBILE_ANDROID_CERT_SHA256="\$fingerprint"/);
+  assert.ok(workflow.indexOf("Verify live Android launch contract")
+    < workflow.indexOf("Upload Android internal beta"));
+  assert.ok(workflow.indexOf("Verify live iOS launch contract")
+    < workflow.indexOf("Upload TestFlight beta"));
   assert.match(fastfile, /track: "internal"/);
   assert.match(fastfile, /release_status: "completed"/);
   assert.doesNotMatch(fastfile, /release_status: "draft"/);
@@ -63,6 +135,58 @@ test("credential-gated Fastlane lanes stop at beta tracks", async () => {
   ]) assert.match(workflow, new RegExp(secret));
 });
 
+test("store preflight rejects live backend, build, provider, and association drift", () => {
+  const bootstrap = {
+    protocol: MOBILE_PROTOCOL,
+    minimum_client_build: 1,
+    public_origin: PUBLIC_ORIGIN,
+    account_mode: "session",
+    call_lifecycle: "foreground",
+    max_room_participants: 2,
+  };
+  assert.equal(MOBILE_PROTOCOL, 2,
+               "session-v2 issuance is a deliberate installed-client protocol boundary");
+  assert.equal(PLAY_VERSION_CODE_MAX, 2_100_000_000);
+  assert.equal(releaseBuildNumber("android", {LINGUA_ANDROID_VERSION_CODE: "1900000101"}), 1_900_000_101);
+  assert.equal(releaseBuildNumber("ios", {LINGUA_IOS_BUILD_NUMBER: "456"}), 456);
+  assert.throws(() => releaseBuildNumber("android", {}), /build number/);
+  assert.throws(() => releaseBuildNumber("android", {LINGUA_ANDROID_VERSION_CODE: "2100000001"}),
+    /Google Play maximum/);
+  assert.equal(validateBootstrap(bootstrap, 1_900_000_101), true);
+  assert.throws(() => validateBootstrap({...bootstrap, protocol: 1}, 1_900_000_101),
+    /protocol mismatch/);
+  assert.throws(() => validateBootstrap({...bootstrap, minimum_client_build: 1_900_000_102}, 1_900_000_101),
+    /requires mobile build 1900000102/);
+  assert.throws(() => validateBootstrap({...bootstrap, max_room_participants: 4}, 1_900_000_101), /two-person/);
+  assert.throws(() => validateBootstrap({...bootstrap, public_origin: "https://attacker.test"}, 1_900_000_101),
+    /public origin/);
+
+  assert.equal(validateProviderSnapshot({providers: ["google"]}, "android"), true);
+  assert.equal(validateProviderSnapshot({providers: ["google", "apple"]}, "ios"), true);
+  assert.throws(() => validateProviderSnapshot({providers: ["google"]}, "ios"), /Apple login/);
+  assert.throws(() => validateProviderSnapshot({providers: []}, "android"), /no sign-in provider/);
+
+  const teamId = "TESTTEAM01";
+  assert.equal(validateAppleAssociation({applinks: {details: [{
+    appID: `${teamId}.${APP_ID}`,
+    components: [{"/": "/room/*"}],
+  }]}}, teamId), true);
+  assert.throws(() => validateAppleAssociation({applinks: {details: []}}, teamId),
+    /does not contain/);
+
+  const fingerprint = "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99";
+  assert.equal(normalizeFingerprint(fingerprint.toLowerCase()), fingerprint);
+  assert.equal(validateAndroidAssociation([{
+    relation: ["delegate_permission/common.handle_all_urls"],
+    target: {
+      namespace: "android_app",
+      package_name: APP_ID,
+      sha256_cert_fingerprints: [fingerprint],
+    },
+  }], fingerprint), true);
+  assert.throws(() => validateAndroidAssociation([], fingerprint), /does not contain/);
+});
+
 test("store listing and operator declarations are source controlled", async () => {
   const android = await read("../fastlane/metadata/android/en-US/full_description.txt");
   const ios = await read("../fastlane/metadata/ios/en-US/description.txt");
@@ -74,14 +198,37 @@ test("store listing and operator declarations are source controlled", async () =
   }
   assert.match(declarations, /Account required to START a call/);
   assert.match(declarations, /No account is required to JOIN one/);
+  assert.match(declarations, /iOS login release gate/);
+  assert.match(declarations, /production Apple provider is not fully configured and visible/);
+  assert.match(declarations, /Room capacity: exactly two participants total/);
   assert.match(declarations, /No password is ever created, collected, or stored/);
-  // A live-looking dead purchase button is a store review finding. The
-  // declaration has to say the control is disabled and collects nothing.
-  assert.match(declarations, /Buy credits\s*\n?\s*control is DISABLED and collects nothing/);
+  assert.match(declarations, /Monetization: version 1\.0 has no purchase surface/);
+  assert.doesNotMatch(declarations, /Buy credits/i,
+                      "the shipping declarations cannot resurrect the retired purchase preview");
   assert.match(declarations, /Account deletion: available in the app/);
   assert.match(declarations, /No advertising/);
   assert.match(declarations, /No transcript history/);
-  assert.match(declarations, /Foreground only/);
+  assert.match(declarations, /foreground only/i);
+});
+
+test("Play listing has its mandatory icon and feature graphic", async () => {
+  const generator = await read("../scripts/generate-assets.py");
+  assert.match(generator, /PLAY_STORE/);
+  assert.match(generator, /featureGraphic\.png/);
+  assert.match(generator, /icon\.png/);
+
+  const icon = await pngInfo("../fastlane/metadata/android/en-US/images/icon.png");
+  assert.deepEqual(
+    {width: icon.width, height: icon.height, bitDepth: icon.bitDepth, colorType: icon.colorType},
+    {width: 512, height: 512, bitDepth: 8, colorType: 6},
+  );
+  assert.ok(icon.size <= 1024 * 1024, "Play listing icon exceeds 1 MiB");
+
+  const feature = await pngInfo("../fastlane/metadata/android/en-US/images/featureGraphic.png");
+  assert.deepEqual(
+    {width: feature.width, height: feature.height, bitDepth: feature.bitDepth, colorType: feature.colorType},
+    {width: 1024, height: 500, bitDepth: 8, colorType: 2},
+  );
 });
 
 test("both stores have two accepted-size phone screenshots", async () => {

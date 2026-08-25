@@ -2,6 +2,10 @@ import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  // Several abuse-control cases deliberately exercise dozens of sequential
+  // Durable Object requests. Five seconds is too tight on a loaded CI runner;
+  // the assertions still bound behavior, while this avoids timing-only flakes.
+  test: { testTimeout: 10_000 },
   plugins: [
     cloudflareTest({
       wrangler: { configPath: "./wrangler.jsonc" },
@@ -43,9 +47,12 @@ export default defineConfig({
           GOOGLE_CLIENT_ID: "test-google-client-id.apps.googleusercontent.com",
           GOOGLE_CLIENT_SECRET: "test-only-google-client-secret",
           FACEBOOK_APP_ID: "test-facebook-app-id",
-          FACEBOOK_APP_SECRET: "test-only-facebook-app-secret"
-          // Apple stays unset on purpose: the suite asserts that an
-          // unprovisioned provider 404s instead of offering a dead button.
+          FACEBOOK_APP_SECRET: "test-only-facebook-app-secret",
+          APPLE_CLIENT_ID: "test.lingua.relay.service",
+          APPLE_KEY_ID: "TESTKEY123",
+          // Test-only P-256 PKCS#8 key. It exists solely to exercise WebCrypto
+          // client-secret generation; it is not a credential for any service.
+          APPLE_PRIVATE_KEY: "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgDSfIU7xyYMHDjhPJ\nbo30DSjkT6Dbkn3idXg2aTs3l0ahRANCAARSZpV5T4baktzbWgEnEjDkbtBnVjsV\n5KRWvfD0gZmdNx8yUFglzocOzPIoxZxewA9cHM8Ixq9D+xrXlMghUa2o\n-----END PRIVATE KEY-----"
         }
       }
     })

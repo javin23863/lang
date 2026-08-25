@@ -112,9 +112,46 @@ PARTIAL_EVERY_S = 0.4
 MIN_PARTIAL_S = 0.8
 MAX_UTTERANCE_S = 15.0
 IDLE_DROP_S = 3.0
-MAX_STREAM_INPUTS = 4
-MAX_TTS_INPUTS = 1
 COMPUTE_CAPACITY_RETRY_MS = 1_000
+
+
+def _bounded_int_setting(name: str, default: int, minimum: int, maximum: int) -> int:
+    """Resolve an operator setting once and fail deployment on unsafe values."""
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise RuntimeError(f"{name} must be an integer") from error
+    if value < minimum or value > maximum:
+        raise RuntimeError(f"{name} must be between {minimum} and {maximum}")
+    return value
+
+
+def _routing_region_setting(name: str, default: str) -> str:
+    value = (os.environ.get(name) or default).strip().lower()
+    if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", value):
+        raise RuntimeError(f"{name} must be a Modal routing region slug")
+    return value
+
+
+# Defaults preserve the current development cost envelope. Horizontal scale and
+# per-container concurrency are deployment inputs now, not source-code edits.
+MAX_STREAM_INPUTS = _bounded_int_setting("LINGUA_MODAL_STREAM_INPUTS", 4, 2, 16)
+MAX_TTS_INPUTS = _bounded_int_setting("LINGUA_MODAL_TTS_INPUTS", 1, 1, 4)
+MODAL_MAX_INPUTS = MAX_STREAM_INPUTS + MAX_TTS_INPUTS
+# Scale before the stream reservation is exhausted so a short translate/TTS job
+# can still enter a busy container without starving an active call.
+MODAL_TARGET_INPUTS = MAX_STREAM_INPUTS
+MODAL_MAX_CONTAINERS = _bounded_int_setting("LINGUA_MODAL_MAX_CONTAINERS", 1, 1, 64)
+MODAL_MIN_CONTAINERS = _bounded_int_setting(
+    "LINGUA_MODAL_MIN_CONTAINERS", 0, 0, MODAL_MAX_CONTAINERS
+)
+MODAL_SCALEDOWN_WINDOW_S = _bounded_int_setting(
+    "LINGUA_MODAL_SCALEDOWN_WINDOW_S", 60, 30, 3600
+)
+MODAL_ROUTING_REGION = _routing_region_setting("LINGUA_MODAL_ROUTING_REGION", "ap-south")
 
 MODEL_ROOT = Path(os.environ.get("LANG_ROOM_MODEL_ROOT", "/model-cache/lang-room"))
 KOKORO_REPO = "hexgrad/Kokoro-82M"
@@ -191,7 +228,7 @@ def _translate_receipt_fixture(fixture: dict[str, Any]) -> dict[str, Any]:
 
 
 class InputCapacity:
-    """Container-local admission: four long streams plus one bounded TTS job."""
+    """Container-local admission for long streams and bounded short GPU jobs."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -748,10 +785,8 @@ def create_api(
             await websocket.close(code=1008, reason="unauthorized")
             return
         if not input_capacity.try_stream():
-            # There is one scale-to-zero L4 container. Accept long enough to
-            # send a bounded, explicit global-capacity status; the Worker can
-            # surface this to the affected speaker instead of silently losing
-            # PCM while another room owns the four stream slots.
+            # Container-local admission is the last line of defense if a burst
+            # reaches one GPU before Modal has placed the retry on another.
             await websocket.accept()
             await websocket.send_json({
                 "type": "stream_status", "status": "capacity", "scope": "global",
@@ -854,10 +889,10 @@ def create_api(
     return api
 
 
-# Modal owns only authenticated compute.  One L4 container handles at most the
-# room's four participant streams plus one bounded TTS request and scales all
-# the way to zero.  The Volume
-# persists downloaded model artefacts across cold starts.
+# Modal owns only authenticated compute. Per-container concurrency is tested and
+# bounded separately from horizontal scale. Defaults remain the development
+# envelope (one scale-to-zero L4); deployment settings can raise that ceiling
+# without changing application source. The Volume persists model artefacts.
 if modal is not None:  # pragma: no branch - false only in the local test venv
     modal_image = (
         modal.Image.debian_slim(python_version="3.11")
@@ -870,6 +905,11 @@ if modal is not None:  # pragma: no branch - false only in the local test venv
             "HOME": "/root",
             "HF_HOME": "/model-cache/huggingface",
             "LANG_ROOM_MODEL_ROOT": "/model-cache/lang-room",
+            # Bake the deployment-time admission values into the image. Without
+            # this, the local decorator could scale for one limit while a remote
+            # container imports the source with a different environment/default.
+            "LINGUA_MODAL_STREAM_INPUTS": str(MAX_STREAM_INPUTS),
+            "LINGUA_MODAL_TTS_INPUTS": str(MAX_TTS_INPUTS),
             "MODAL_IS_REMOTE": "1",
             "LD_LIBRARY_PATH": "/usr/local/lib/python3.11/site-packages/nvidia/cublas/lib:/usr/local/lib/python3.11/site-packages/nvidia/cudnn/lib",
         })
@@ -897,21 +937,20 @@ if modal is not None:  # pragma: no branch - false only in the local test venv
                                           create_if_missing=True)
     modal_application = modal.App("spoken-translation-compute")
 
-    # The previous default-routed deployment remains available in Modal/Git
-    # history for rollback. Only this AP-routed function may allocate an L4 in
-    # the active deployment, preserving the app's one-container beta ceiling.
+    # Keep one public GPU Function and its established name/URL shape. Region,
+    # warm floor and horizontal ceiling are validated deployment inputs.
     @modal_application.function(
         image=modal_image,
         gpu="L4",
         volumes={"/model-cache": modal_volume},
         secrets=[modal.Secret.from_name("spoken-translation-modal")],
-        max_containers=1,
-        min_containers=0,
-        scaledown_window=60,
+        max_containers=MODAL_MAX_CONTAINERS,
+        min_containers=MODAL_MIN_CONTAINERS,
+        scaledown_window=MODAL_SCALEDOWN_WINDOW_S,
         timeout=86_400,
-        routing_region="ap-south",
+        routing_region=MODAL_ROUTING_REGION,
     )
-    @modal.concurrent(max_inputs=5, target_inputs=5)
+    @modal.concurrent(max_inputs=MODAL_MAX_INPUTS, target_inputs=MODAL_TARGET_INPUTS)
     @modal.asgi_app()
     def web_ap_south() -> FastAPI:
         return create_api()

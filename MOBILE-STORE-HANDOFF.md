@@ -1,57 +1,62 @@
-# Lingua Relay mobile-store handoff
+# Lingua Relay mobile-store handoff — historical receipt
 
-Status date: 2026-08-14. Merged to `main` by PR #5 at
-`4340d6d4d308081f21ba8d82526db5a278378748`.
+Status date: 2026-08-14.
 
-## What is built
+> **Historical evidence only.** This file records the August 14 closed-beta
+> deployment/build receipt and one-time store setup notes. It is not evidence
+> for the current development head and must not be used to claim current CI,
+> signed-build, deployment, or physical-device acceptance.
+>
+> The current Version 1.0 product boundary is
+> [`RELEASE-1.0.md`](RELEASE-1.0.md). Current implementation and release-gate
+> status is [`wa-translator/mobile/LAUNCH-CHECKLIST.md`](wa-translator/mobile/LAUNCH-CHECKLIST.md).
+> Historical four-person/accountless assumptions are superseded: Version 1.0 is
+> exactly two joined participants, hosts authenticate to create rooms, guests do
+> not need accounts, and Version 1.0 is non-monetized.
 
-- One Capacitor 8 application named **Lingua Relay** for Android and iOS.
-- Fixed identifier: `com.javin23863.linguarelay`.
-- The application bundles the reviewed web interface. It is not a remote-site
-  wrapper and does not need the Codex browser or the Windows host.
-- Cloudflare remains the public room/signalling API and Modal remains the
-  speech/translation/optional-voice compute service.
-- Host controls use Android Keystore-backed encrypted storage or iOS Keychain.
-- WhatsApp and other messaging apps use the native share sheet. No WhatsApp SDK
-  or additional paid link service is required.
-- Exact signed room links are accepted through Android App Links and iOS
-  Universal Links; wrong hosts, query strings, and malformed tokens fail closed.
-- Camera and microphone are foreground-only and requested independently from
-  their own controls. Denying camera does not disable microphone captions.
-- A live participant can submit one private category-only abuse report and
-  block that room locally. The stored report has no free text, participant
-  bearer, transcript, or media; reports expire after 30 days.
-- Store privacy, terms, and support pages are served by the existing Worker.
-- Android AAB and unsigned iOS compilation run without credentials. Signed
-  uploads are manual jobs and stop at Play Internal Testing or TestFlight.
+## What this receipt established on August 14
 
-## Current beta receipt — 2026-08-14 11:04 +07
+- A Capacitor 8 application named **Lingua Relay** existed for Android and iOS.
+- Bundle/application ID: `com.javin23863.linguarelay`.
+- Native builds used bundled web assets rather than a remote-site wrapper.
+- Cloudflare remained the room/signalling service and Modal remained remote
+  speech/translation/optional-voice compute.
+- Android/iOS secure storage, App/Universal Link plumbing, native sharing,
+  foreground camera/microphone behavior, public legal pages, category-only
+  reporting, unsigned build automation, and beta upload scaffolding were present.
+- The dated browser/build probes and artifact hashes below were useful evidence
+  for that historical commit only.
 
-- Public origin: `https://spoken-translation-room.spoken-translation-cloudflare.workers.dev`.
-  Worker version `f2c94502-82f3-4281-809f-3aed424bb25b` was deployed from
-  `b7b0fffdd41816b45cf0e1ee53893b6802d75853` at 10:55 +07.
-- The deployed no-secret acceptance probe returned health 200, mobile bootstrap
-  200, room creation 201, WebSocket welcome, category-only report 201, private
-  report list 200, moderator close 200, and closed-room preflight 410.
-- A generated 32-byte report-admin credential is installed in the Worker and
-  backed up with Windows DPAPI at
-  `C:\Users\MSI\AppData\Local\LiveTranslator\report-admin-token.dpapi`.
-  The plaintext value was never written to the repository or receipts.
-- The live public two-tab browser acceptance passed the compact 106-profile
-  picker, Khmer and Arabic RTL layouts, native sharing, audio/video WebRTC,
-  independent camera/microphone acquisition, permission revoke/regrant,
-  device speech, translated WAV playback, feedback protection, and Leave.
-- GitHub Actions run `31769087455` on the merged `main` commit completed Android,
-  iOS, and product-regression
-  jobs successfully. Its downloaded Android AAB is 3,095,207 bytes with SHA-256
-  `C9D1196739A69B6CCC7738DFE292051EF568FCA83CE3C3A4F498E4C1FCA3296E`.
-  The unsigned iOS app executable is 441,048 bytes with SHA-256
-  `232F76EFE5B106FF977493924F5B5C6FA68E0BB4FD0400E90B7487B046C4B120`.
-- Store screenshots were regenerated from that live public surface. They do not
-  contain localhost URLs, unavailable-capability warnings, fabricated captions,
-  or development explanation text.
+## Historical beta receipt — 2026-08-14 11:04 +07
 
-## Commands
+Public origin at the time:
+
+`https://spoken-translation-room.spoken-translation-cloudflare.workers.dev`
+
+Historical Worker version:
+
+`f2c94502-82f3-4281-809f-3aed424bb25b`
+
+Historical runtime source:
+
+`b7b0fffdd41816b45cf0e1ee53893b6802d75853`
+
+The dated acceptance probe reported health/bootstrap/room/report/moderator-close
+success and the browser acceptance exercised language UI, RTL layout, WebRTC,
+permissions, device speech, translated WAV playback, sharing, and Leave.
+
+Historical GitHub Actions run `31769087455` passed its Android, iOS, and product
+regression jobs on that earlier source. The archived Android AAB receipt was
+3,095,207 bytes with SHA-256
+`C9D1196739A69B6CCC7738DFE292051EF568FCA83CE3C3A4F498E4C1FCA3296E`.
+The unsigned iOS executable receipt was 441,048 bytes with SHA-256
+`232F76EFE5B106FF977493924F5B5C6FA68E0BB4FD0400E90B7487B046C4B120`.
+
+These values are intentionally retained as provenance. They do **not** describe
+the current branch or satisfy the final Version 1.0 exact-head verification
+matrix.
+
+## Current development commands
 
 From `wa-translator/mobile`:
 
@@ -62,92 +67,64 @@ npm run assets
 npm run sync
 ```
 
-The normal pull-request workflow builds both native projects. The separate
-`Mobile beta upload` workflow is deliberately manual and uses the protected
-`mobile-beta` environment.
+Do not run signed/release workflows merely because these source commands exist.
+The final exact-head credential-free and signed matrices are explicit release
+gates in `LAUNCH-CHECKLIST.md`.
 
-## One-time account setup
-
-These actions cannot be completed before the account owners are known. Paying
-the subscriptions is necessary, but the stores also require identity checks,
-agreements, signing ownership, listing review, closed testing, and physical
-device acceptance.
+## Store/operator setup that remains conceptually valid
 
 ### Google Play
 
-1. Pay and verify the Play Console developer account.
-2. Create the app with package `com.javin23863.linguarelay` and enable Play App
-   Signing.
-3. Create a Play service account with release access to this app.
-4. Add protected GitHub environment secrets `LINGUA_ANDROID_KEYSTORE_B64`,
-   `LINGUA_ANDROID_KEYSTORE_PASSWORD`, `LINGUA_ANDROID_KEY_ALIAS`,
-   `LINGUA_ANDROID_KEY_PASSWORD`, and `GOOGLE_PLAY_JSON_KEY_B64`.
-5. Copy the **Play App Signing** SHA-256 certificate fingerprint—not the upload
-   key fingerprint—to Cloudflare Worker secret `MOBILE_ANDROID_CERT_SHA256`.
-6. Run `Mobile beta upload` with `android`. After protected-environment
-   approval it makes the build available on the Internal Testing track;
-   production remains a manual Play Console decision.
+The account owner must verify the Play Console developer account, create the app
+for package `com.javin23863.linguarelay`, enable Play App Signing, provide the
+release service-account access and protected signing/upload secrets, and place
+the **Play App Signing** SHA-256 certificate fingerprint—not merely an upload-key
+fingerprint—into the production association configuration.
+
+Signed automation should stop at Play Internal Testing until the release owner
+approves later rollout.
 
 ### Apple
 
-1. Pay and verify the Apple Developer membership and accept current agreements.
-2. Register bundle ID `com.javin23863.linguarelay` with Associated Domains.
-3. Create an App Store Connect API key with app-management access.
-4. Add protected GitHub environment secrets `APP_STORE_CONNECT_KEY_ID`,
-   `APP_STORE_CONNECT_ISSUER_ID`, `APP_STORE_CONNECT_KEY_B64`, and
-   `APPLE_TEAM_ID`. Export one reusable Apple Distribution certificate and
-   profile, then add `APPLE_DISTRIBUTION_P12_B64`,
-   `APPLE_DISTRIBUTION_CERT_PASSWORD`, `APPLE_PROVISIONING_PROFILE_B64`, and
-   `APPLE_PROVISIONING_PROFILE_NAME`. CI imports these into an ephemeral
-   keychain; it never creates or consumes a new certificate.
-5. Put the public Team ID in Cloudflare Worker secret `MOBILE_APPLE_TEAM_ID`.
-6. Run `Mobile beta upload` from `main` with `ios`. It imports the reusable
-   signing identity into a temporary CI keychain and uploads to TestFlight.
+The account owner must verify Apple Developer/App Store Connect, register bundle
+ID `com.javin23863.linguarelay` with Associated Domains, provide the final Team
+ID and App Store Connect/signing credentials, and run the signed build through
+TestFlight before production submission.
 
-### Abuse-report operations
+The live iOS provider surface must include Sign in with Apple whenever other
+third-party sign-in is offered.
 
-1. Generate a random 32-byte-or-longer value and install the same value as the
-   Worker secret `MOBILE_REPORT_ADMIN_TOKEN` and in the operator's private
-   password manager. Never add it to the repository or a room URL.
-2. Review `GET /api/internal/reports` with `Authorization: Bearer <token>` on a
-   documented schedule throughout beta testing. The response contains only
-   category, platform, timestamp, opaque room reference, and report ID.
-3. Close an active reported room with authenticated `POST
-   /api/internal/reports/<report-id>/close`, or pause the beta when a category
-   trend requires broader intervention. The service resolves the report to an
-   internal room routing ID without returning the participant link. Records
-   delete automatically after 30 days; the inbox is bounded to 500 records.
+### Moderation
 
-Both association endpoints deliberately return 503 until their exact public
-certificate/team binding is configured. This prevents a false green deep-link
-claim before store ownership exists.
+A monitored operator must own the private category-only report queue throughout
+beta/public availability. The current repository includes the private moderation
+CLI/runbook; credentials remain outside Git. Public launch is blocked until a
+real owner/on-call schedule is assigned and the live private queue is verified.
 
-## Submission source of truth
+## Current submission sources
 
-- Android and iOS listing copy: `wa-translator/mobile/fastlane/metadata`.
-- Screenshots: Android metadata image folder and `fastlane/screenshots/en-US`.
-- Privacy and store answers: `wa-translator/mobile/STORE-DECLARATIONS.md`.
-- Public pages: `/privacy`, `/terms`, and `/support` on the Worker origin.
-- Architecture and acceptance rows: `MOBILE-STORE-PLAN.md`.
-- Reused open-source workflow research: `MOBILE-STORE-REUSE-SOURCES.md`.
+Use the current hierarchy rather than this historical handoff:
 
-## Launch boundary
+1. `RELEASE-1.0.md` — product contract.
+2. `wa-translator/mobile/LAUNCH-CHECKLIST.md` — current gates/status.
+3. `wa-translator/mobile/STORE-DECLARATIONS.md` — store/privacy answers.
+4. `wa-translator/mobile/REVIEW-INPUTS.md` — owner-supplied review inputs.
+5. `wa-translator/mobile/fastlane/metadata` and screenshot directories — store
+   listing assets.
+6. Current runtime code/tests and `CLOUD-ARCHITECTURE.md` — implementation.
 
-The code and unsigned store artifacts can be completed here. Paying the store
-fees alone does not complete identity, agreements, signing, review, moderation,
-or physical-device testing. The first store submission should be a closed beta.
-A public production launch
-remains blocked until all of these are observed on physical devices:
+## Current launch boundary
 
-- Android-to-iPhone room links open the installed app on both platforms.
-- Both people grant/revoke camera and microphone and complete a real call.
-- WhatsApp sharing, background/foreground recovery, natural audio, captions,
-  and optional translated voice pass on both platforms.
-- A relay-only TURN test succeeds on restricted networks.
-- Caption/voice admission is sized beyond the present beta compute ceiling or
-  the release audience is explicitly limited to the supported capacity.
-- Current store privacy/content-rating/export-compliance forms are reviewed by
-  the account owner and each beta is approved before production.
+No historical CI run or browser acceptance replaces final release acceptance.
+Before public submission, the exact final development commit must complete:
 
-No automated browser or synthetic-audio check substitutes for these physical
-store launch gates.
+- the full credential-free test/build matrix;
+- signed Android Internal and iOS TestFlight workflows;
+- live provider/deep-link/account-deletion preflight;
+- real Android-to-iPhone testing of account/auth, links, camera/microphone,
+  foreground/background recovery, reconnect, TURN, captions, optional translated
+  voice, network changes, and room expiry;
+- final App Store/Play privacy, content/rating/export, app-access/reviewer, and
+  moderation/support ownership gates.
+
+Store approval cannot be automated or guaranteed.

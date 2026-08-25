@@ -41,7 +41,9 @@ async function join(
   socket.send(JSON.stringify({
     type: "join", locale, name: "listener", voice_profile
   }));
-  return { id: (await welcome).id, socket };
+  const message = await welcome;
+  expect(message.type).toBe("welcome");
+  return { id: message.id, socket };
 }
 
 function voiceHeaders(roomToken: string, participantId: string): HeadersInit {
@@ -90,18 +92,18 @@ describe("TURN and translated-voice edge interfaces", () => {
   });
 
   it("routes only each participant's explicitly selected profile to Modal and enforces caps", async () => {
-    const roomToken = await token();
-    const participants = await Promise.all([
-      join(roomToken, "en-US", "en-us-af-heart"),
-      join(roomToken, "en-US", "en-us-am-michael"),
-      join(roomToken, "es-ES", "es-ef-dora"),
-      join(roomToken, "es-ES", "es-em-alex"),
-    ]);
-    for (const [participant, [locale, voice_profile]] of participants.map((participant, index) => [
-      participant,
-      [["en-US", "en-us-af-heart"], ["en-US", "en-us-am-michael"],
-       ["es-ES", "es-ef-dora"], ["es-ES", "es-em-alex"]][index],
-    ] as const)) {
+    const profiles = [
+      ["en-US", "en-us-af-heart"],
+      ["en-US", "en-us-am-michael"],
+      ["es-ES", "es-ef-dora"],
+      ["es-ES", "es-em-alex"],
+    ] as const;
+
+    // Profile routing is per participant, not dependent on room size. Give each
+    // profile its own room so this acceptance test never relies on >2 people.
+    for (const [locale, voice_profile] of profiles) {
+      const roomToken = await token();
+      const participant = await join(roomToken, locale, voice_profile);
       const response = await exports.default.fetch(`${ORIGIN}/tts`, {
         method: "POST", headers: voiceHeaders(roomToken, participant.id),
         body: JSON.stringify({ text: "hello", locale, voice_profile })
@@ -110,8 +112,11 @@ describe("TURN and translated-voice edge interfaces", () => {
       expect(response.headers.get("Content-Type")).toBe("audio/wav");
       expect(response.headers.get("X-Upstream-Secret")).toBeNull();
       expect(new Uint8Array(await response.arrayBuffer()).byteLength).toBeGreaterThan(4);
+      participant.socket.close(1000, "done");
     }
 
+    const roomToken = await token();
+    const participant = await join(roomToken, "en-US", "en-us-af-heart");
     const invalid = [
       { text: "hello", locale: "ar-SA", voice_profile: null },
       { text: "hello", locale: "en-US", voice_profile: "es-em-alex" },
@@ -120,23 +125,23 @@ describe("TURN and translated-voice edge interfaces", () => {
     for (const body of invalid) {
       const response = await exports.default.fetch(`${ORIGIN}/tts`, {
         method: "POST",
-        headers: voiceHeaders(roomToken, participants[0].id),
+        headers: voiceHeaders(roomToken, participant.id),
         body: JSON.stringify(body)
       });
       expect(response.status).toBe(422);
     }
     const wrongSelectedProfile = await exports.default.fetch(`${ORIGIN}/tts`, {
-      method: "POST", headers: voiceHeaders(roomToken, participants[0].id),
+      method: "POST", headers: voiceHeaders(roomToken, participant.id),
       body: JSON.stringify({ text: "hello", locale: "en-US", voice_profile: "en-us-am-michael" })
     });
     expect(wrongSelectedProfile.status).toBe(403);
     const oversized = await exports.default.fetch(`${ORIGIN}/tts`, {
       method: "POST",
-      headers: voiceHeaders(roomToken, participants[0].id),
+      headers: voiceHeaders(roomToken, participant.id),
       body: JSON.stringify({ text: "x".repeat(3000), locale: "en-US", voice_profile: "en-us-af-heart" })
     });
     expect(oversized.status).toBe(413);
-    for (const participant of participants) participant.socket.close(1000, "done");
+    participant.socket.close(1000, "done");
   });
 
   it("fails closed on missing, oversized, non-RIFF, and truncated upstream audio", async () => {

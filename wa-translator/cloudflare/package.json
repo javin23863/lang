@@ -5,6 +5,8 @@
   "scripts": {
     "check": "npm run typecheck && npm test && npm run dry-run",
     "dry-run": "wrangler deploy --dry-run",
+    "reports:list": "node scripts/moderate-reports.mjs list",
+    "reports:close": "node scripts/moderate-reports.mjs close",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
@@ -15,5 +17,10 @@
     "typescript": "7.0.2",
     "vitest": "4.1.10",
     "wrangler": "4.122.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "fsevents@2.3.3": true,
+    "workerd@1.20260811.1": true
   }
 }

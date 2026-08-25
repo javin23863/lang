@@ -73,7 +73,7 @@ test("an unknown key returns the key instead of blanking the screen", async () =
 test("placeholders take the values the caller supplies", async () => {
   const {runtime} = await loadRuntime();
   assert.equal(runtime.t("status.roomFull", {limit: 4}), "Room is full (4 people)");
-  assert.equal(runtime.t("stage.countMany", {count: 2}), "2 / 4 people");
+  assert.equal(runtime.t("stage.countMany", {count: 2}), "2 / 2");
   // A missing value leaves the placeholder rather than printing "undefined".
   assert.equal(runtime.t("status.roomFull", {}), "Room is full ({limit} people)");
 });

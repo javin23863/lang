@@ -7,37 +7,80 @@ const GOOGLE_CLIENT_SECRET = "test-only-google-client-secret";
 const FACEBOOK_APP_ID = "test-facebook-app-id";
 const FACEBOOK_APP_SECRET = "test-only-facebook-app-secret";
 const FACEBOOK_ACCESS_TOKEN = "fixture-facebook-access-token";
+const APPLE_CLIENT_ID = "test.lingua.relay.service";
+const APPLE_TEAM_ID = "TESTTEAM01";
+const APPLE_KEY_ID = "TESTKEY123";
 
 function base64url(value) {
-  return btoa(value).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function idToken(claims) {
+function decodeBase64url(value) {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/")
+    + "=".repeat((4 - value.length % 4) % 4);
+  return atob(padded);
+}
+
+function idToken(defaults, claims = {}) {
   const now = Math.floor(Date.now() / 1000);
   return [
     base64url(JSON.stringify({ alg: "RS256", kid: "fixture" })),
-    base64url(JSON.stringify({
-      iss: "https://accounts.google.com", aud: GOOGLE_CLIENT_ID,
-      sub: "google-subject-1", email: "host@example.test", name: "Test Host",
-      iat: now, exp: now + 3600, ...claims
-    })),
+    base64url(JSON.stringify({ iat: now, exp: now + 3600, ...defaults, ...claims })),
     "fixture-signature-not-verified"
   ].join(".");
 }
 
+function googleIdToken(claims = {}) {
+  return idToken({
+    iss: "https://accounts.google.com", aud: GOOGLE_CLIENT_ID,
+    sub: "google-subject-1", email: "host@example.test", name: "Test Host"
+  }, claims);
+}
+
+function appleIdToken(claims = {}) {
+  return idToken({
+    iss: "https://appleid.apple.com", aud: APPLE_CLIENT_ID,
+    sub: "apple-subject-1", email: "relay-user@privaterelay.appleid.com"
+  }, claims);
+}
+
+function appleClientSecretIsValid(value) {
+  if (typeof value !== "string") return false;
+  const parts = value.split(".");
+  if (parts.length !== 3 || !/^[A-Za-z0-9_-]+$/.test(parts[2])) return false;
+  try {
+    const header = JSON.parse(decodeBase64url(parts[0]));
+    const payload = JSON.parse(decodeBase64url(parts[1]));
+    const now = Math.floor(Date.now() / 1000);
+    return header.alg === "ES256" && header.kid === APPLE_KEY_ID
+      && payload.iss === APPLE_TEAM_ID && payload.sub === APPLE_CLIENT_ID
+      && payload.aud === "https://appleid.apple.com"
+      && Number.isInteger(payload.iat) && Number.isInteger(payload.exp)
+      && payload.iat <= now + 5 && payload.exp > now && payload.exp - payload.iat <= 600;
+  } catch {
+    return false;
+  }
+}
+
 const GOOGLE_CODES = {
-  "fixture-google": () => Response.json({ id_token: idToken({}) }),
+  "fixture-google": () => Response.json({ id_token: googleIdToken() }),
   "fixture-google-second-account": () => Response.json({
-    id_token: idToken({ sub: "google-subject-2", email: "other@example.test", name: "Other" })
+    id_token: googleIdToken({ sub: "google-subject-2", email: "other@example.test", name: "Other" })
+  }),
+  "fixture-google-unsafe-name": () => Response.json({
+    id_token: googleIdToken({ name: "Host\u202e\u0007Admin" })
   }),
   "fixture-google-foreign-audience": () => Response.json({
-    id_token: idToken({ aud: "some-other-client-id" })
+    id_token: googleIdToken({ aud: "some-other-client-id" })
   }),
   "fixture-google-foreign-issuer": () => Response.json({
-    id_token: idToken({ iss: "https://accounts.attacker.test" })
+    id_token: googleIdToken({ iss: "https://accounts.attacker.test" })
   }),
   "fixture-google-expired": () => Response.json({
-    id_token: idToken({ exp: Math.floor(Date.now() / 1000) - 60 })
+    id_token: googleIdToken({ exp: Math.floor(Date.now() / 1000) - 60 })
   }),
   "fixture-google-unusable-code": () => new Response("invalid_grant", { status: 400 }),
 };
@@ -75,6 +118,19 @@ export default {
       return form.get("code") === "fixture-facebook"
         ? Response.json({ access_token: FACEBOOK_ACCESS_TOKEN, token_type: "bearer" })
         : new Response("invalid_grant", { status: 400 });
+    }
+    if (url.hostname === "appleid.apple.com" && url.pathname === "/auth/token") {
+      if (form.get("client_id") !== APPLE_CLIENT_ID
+          || !appleClientSecretIsValid(form.get("client_secret"))) {
+        return new Response("invalid_client", { status: 401 });
+      }
+      if (form.get("code") === "fixture-apple") {
+        return Response.json({ id_token: appleIdToken() });
+      }
+      if (form.get("code") === "fixture-apple-no-email") {
+        return Response.json({ id_token: appleIdToken({email: undefined}) });
+      }
+      return new Response("invalid_grant", { status: 400 });
     }
     return new Response("Not Found", { status: 404 });
   }

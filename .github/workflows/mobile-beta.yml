@@ -8,6 +8,10 @@ on:
         required: true
         type: choice
         options: [android, ios]
+      release_sha:
+        description: Exact 40-character commit SHA approved for beta
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -18,7 +22,7 @@ concurrency:
 
 jobs:
   android:
-    if: inputs.platform == 'android' && github.ref == 'refs/heads/main'
+    if: inputs.platform == 'android'
     runs-on: ubuntu-latest
     environment: mobile-beta
     defaults:
@@ -29,6 +33,29 @@ jobs:
       GOOGLE_PLAY_JSON_KEY: ${{ github.workspace }}/wa-translator/mobile/google-play.json
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify frozen release commit
+        shell: bash
+        env:
+          EXPECTED_RELEASE_SHA: ${{ inputs.release_sha }}
+          DISPATCH_RELEASE_SHA: ${{ github.sha }}
+        run: |
+          if [[ ! "$EXPECTED_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "release_sha must be an exact lowercase 40-character commit SHA" >&2
+            exit 1
+          fi
+          if [[ "$DISPATCH_RELEASE_SHA" != "$EXPECTED_RELEASE_SHA" ]]; then
+            echo "Workflow dispatch ref resolves to ${DISPATCH_RELEASE_SHA}, expected frozen release ${EXPECTED_RELEASE_SHA}" >&2
+            exit 1
+          fi
+          actual="$(git rev-parse HEAD)"
+          if [[ "$actual" != "$EXPECTED_RELEASE_SHA" ]]; then
+            echo "Checked out ${actual}, expected frozen release ${EXPECTED_RELEASE_SHA}" >&2
+            exit 1
+          fi
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
@@ -44,11 +71,37 @@ jobs:
           ruby-version: "3.3"
           bundler-cache: true
           working-directory: wa-translator/mobile
+      - name: Verify Play target API
+        shell: bash
+        run: |
+          grep -Eq 'compileSdkVersion\s*=\s*36' android/variables.gradle
+          grep -Eq 'targetSdkVersion\s*=\s*36' android/variables.gradle
       - name: Set unique Android version
         shell: bash
         run: |
-          build_epoch="$(date -u +%s)"
-          echo "LINGUA_ANDROID_VERSION_CODE=${build_epoch}" >> "$GITHUB_ENV"
+          # Earlier development lanes used raw Unix seconds as versionCode. A
+          # compact epoch would move backwards if any such beta reached Play.
+          # Start above every pre-switch 2026 epoch-seconds value, then advance
+          # by workflow run number with two digits reserved for retries. This is
+          # monotonic across the strategy migration and allows about two million
+          # release workflow runs before Google's 2,100,000,000 ceiling.
+          migration_base=1900000000
+          run_number="${GITHUB_RUN_NUMBER}"
+          attempt="${GITHUB_RUN_ATTEMPT}"
+          if [[ ! "$run_number" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Android release run number is invalid: ${run_number}" >&2
+            exit 1
+          fi
+          if [[ ! "$attempt" =~ ^[1-9][0-9]?$ ]]; then
+            echo "Android release supports workflow attempts 1-99; found ${attempt}" >&2
+            exit 1
+          fi
+          version_code=$(( migration_base + run_number * 100 + attempt ))
+          if (( version_code < 1 || version_code > 2100000000 )); then
+            echo "Android versionCode ${version_code} is outside Google Play's accepted range" >&2
+            exit 1
+          fi
+          echo "LINGUA_ANDROID_VERSION_CODE=${version_code}" >> "$GITHUB_ENV"
           echo "LINGUA_ANDROID_VERSION_NAME=1.0.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
       - run: npm ci && npm run check && npm run sync
       - run: bundle exec fastlane --version
@@ -60,6 +113,24 @@ jobs:
         run: |
           printf '%s' "$LINGUA_ANDROID_KEYSTORE_B64" | base64 --decode > release.keystore
           printf '%s' "$GOOGLE_PLAY_JSON_KEY_B64" | base64 --decode > "$GOOGLE_PLAY_JSON_KEY"
+      - name: Verify live Android launch contract
+        shell: bash
+        env:
+          LINGUA_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.LINGUA_ANDROID_KEYSTORE_PASSWORD }}
+          LINGUA_ANDROID_KEY_ALIAS: ${{ secrets.LINGUA_ANDROID_KEY_ALIAS }}
+        run: |
+          fingerprint="$(
+            keytool -exportcert \
+              -alias "$LINGUA_ANDROID_KEY_ALIAS" \
+              -keystore "$LINGUA_ANDROID_KEYSTORE" \
+              -storepass:env LINGUA_ANDROID_KEYSTORE_PASSWORD |
+            openssl dgst -sha256 -binary |
+            od -An -vtx1 |
+            tr -d ' \n' |
+            sed 's/../&:/g; s/:$//' |
+            tr '[:lower:]' '[:upper:]'
+          )"
+          MOBILE_ANDROID_CERT_SHA256="$fingerprint" node scripts/store-preflight.mjs android
       - name: Upload Android internal beta
         env:
           LINGUA_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.LINGUA_ANDROID_KEYSTORE_PASSWORD }}
@@ -72,7 +143,7 @@ jobs:
         run: rm -f release.keystore "$GOOGLE_PLAY_JSON_KEY"
 
   ios:
-    if: inputs.platform == 'ios' && github.ref == 'refs/heads/main'
+    if: inputs.platform == 'ios'
     runs-on: macos-26
     environment: mobile-beta
     defaults:
@@ -83,6 +154,29 @@ jobs:
       APPLE_PROVISIONING_PROFILE: ${{ github.workspace }}/wa-translator/mobile/lingua-relay.mobileprovision
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify frozen release commit
+        shell: bash
+        env:
+          EXPECTED_RELEASE_SHA: ${{ inputs.release_sha }}
+          DISPATCH_RELEASE_SHA: ${{ github.sha }}
+        run: |
+          if [[ ! "$EXPECTED_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "release_sha must be an exact lowercase 40-character commit SHA" >&2
+            exit 1
+          fi
+          if [[ "$DISPATCH_RELEASE_SHA" != "$EXPECTED_RELEASE_SHA" ]]; then
+            echo "Workflow dispatch ref resolves to ${DISPATCH_RELEASE_SHA}, expected frozen release ${EXPECTED_RELEASE_SHA}" >&2
+            exit 1
+          fi
+          actual="$(git rev-parse HEAD)"
+          if [[ "$actual" != "$EXPECTED_RELEASE_SHA" ]]; then
+            echo "Checked out ${actual}, expected frozen release ${EXPECTED_RELEASE_SHA}" >&2
+            exit 1
+          fi
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
@@ -93,11 +187,30 @@ jobs:
           ruby-version: "3.3"
           bundler-cache: true
           working-directory: wa-translator/mobile
+      - name: Verify App Store SDK floor
+        shell: bash
+        run: |
+          xcode_version="$(xcodebuild -version | awk '/^Xcode / {print $2}')"
+          sdk_version="$(xcrun --sdk iphoneos --show-sdk-version)"
+          xcode_major="${xcode_version%%.*}"
+          sdk_major="${sdk_version%%.*}"
+          if [[ ! "$xcode_major" =~ ^[0-9]+$ || "$xcode_major" -lt 26 ]]; then
+            echo "App Store build requires Xcode 26 or newer; found ${xcode_version}" >&2
+            exit 1
+          fi
+          if [[ ! "$sdk_major" =~ ^[0-9]+$ || "$sdk_major" -lt 26 ]]; then
+            echo "App Store build requires iOS SDK 26 or newer; found ${sdk_version}" >&2
+            exit 1
+          fi
       - name: Set unique iOS build number
         shell: bash
         run: echo "LINGUA_IOS_BUILD_NUMBER=$(date -u +%s)" >> "$GITHUB_ENV"
       - run: npm ci && npm run check && npm run sync
       - run: bundle exec fastlane --version
+      - name: Verify live iOS launch contract
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: node scripts/store-preflight.mjs ios
       - name: Materialize signing credentials
         shell: bash
         env:

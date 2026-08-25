@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "assets"
 ANDROID = ROOT / "android" / "app" / "src" / "main" / "res"
 IOS = ROOT / "ios" / "App" / "App" / "Assets.xcassets"
+PLAY_STORE = ROOT / "fastlane" / "metadata" / "android" / "en-US" / "images"
 GREEN = "#075E54"
 BLUE = "#53BDEB"
 CREAM = "#F4FBF9"
@@ -62,6 +63,33 @@ def splash(width: int, height: int) -> Image.Image:
     return image
 
 
+def play_store_icon() -> Image.Image:
+    """Google Play's mandatory 512x512 RGBA listing icon."""
+    image = Image.new("RGBA", (512, 512), GREEN)
+    draw = ImageDraw.Draw(image)
+    draw.rounded_rectangle((95, 110, 360, 300), radius=46, fill="white")
+    draw.polygon([(145, 292), (120, 360), (220, 292)], fill="white")
+    draw.rounded_rectangle((230, 235, 430, 365), radius=42, fill=BLUE)
+    draw.polygon([(335, 355), (395, 410), (375, 355)], fill=BLUE)
+    return image
+
+
+def feature_graphic() -> Image.Image:
+    """Google Play's mandatory 1024x500, no-alpha listing graphic."""
+    image = Image.new("RGB", (1024, 500), GREEN)
+    draw = ImageDraw.Draw(image)
+
+    # Conversation cards echo the product mark without localized marketing
+    # copy, so one source graphic is valid for every listing locale.
+    draw.rounded_rectangle((92, 82, 610, 370), radius=54, fill=CREAM)
+    draw.polygon([(180, 360), (150, 430), (270, 360)], fill=CREAM)
+    draw.rounded_rectangle((470, 155, 934, 385), radius=48, fill=BLUE)
+    draw.polygon([(778, 377), (850, 438), (824, 377)], fill=BLUE)
+    for y, width in ((215, 250), (265, 320), (315, 220)):
+        draw.rounded_rectangle((615, y, 615 + width, y + 18), radius=9, fill="white")
+    return image
+
+
 def main() -> None:
     ASSETS.mkdir(exist_ok=True)
     symbol(1024, background=True).convert("RGB").save(ASSETS / "icon-1024.png", optimize=True)
@@ -83,6 +111,10 @@ def main() -> None:
     symbol(1024, background=True).convert("RGB").save(ios_icon, optimize=True)
     for name in ("splash-2732x2732.png", "splash-2732x2732-1.png", "splash-2732x2732-2.png"):
         splash(2732, 2732).save(IOS / "Splash.imageset" / name, optimize=True)
+
+    PLAY_STORE.mkdir(parents=True, exist_ok=True)
+    play_store_icon().save(PLAY_STORE / "icon.png", optimize=True)
+    feature_graphic().save(PLAY_STORE / "featureGraphic.png", optimize=True)
 
 
 if __name__ == "__main__":
