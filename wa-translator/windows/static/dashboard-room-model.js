@@ -42,12 +42,21 @@
     }
 
     async function load() {
+      let persisted;
       try {
-        const value = JSON.parse(await runtime.loadHostRoom() || "null");
-        return valid(value) ? value : null;
+        persisted = await runtime.loadHostRoom();
       } catch (_) {
         return null;
       }
+      if (!persisted) return null;
+      try {
+        const value = JSON.parse(persisted);
+        if (valid(value)) return value;
+      } catch (_) {}
+      try {
+        await runtime.forgetHostRoom();
+      } catch (_) {}
+      return null;
     }
 
     async function save(room) {

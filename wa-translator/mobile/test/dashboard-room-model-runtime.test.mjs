@@ -59,9 +59,26 @@ test("invalid persisted capability records never become invite URLs or survive l
   const h = loadModel(JSON.stringify(malicious));
 
   assert.equal(await h.model.load(), null);
+  assert.equal(h.state().stored, null);
+  assert.equal(h.state().forgets, 1);
   assert.equal(await h.model.save(malicious), false);
   assert.equal(h.state().writes, 0);
   assert.throws(() => h.model.inviteUrl(malicious), /invalid room capability/);
+
+  const malformed = loadModel("{not-json");
+  assert.equal(await malformed.model.load(), null);
+  assert.equal(malformed.state().stored, null);
+  assert.equal(malformed.state().forgets, 1);
+});
+
+test("valid persisted capabilities survive load without destructive cleanup", async () => {
+  const record = roomRecord();
+  const h = loadModel(JSON.stringify(record));
+  const loaded = await h.model.load();
+  assert.equal(loaded.path, record.path);
+  assert.equal(loaded.host_control, record.host_control);
+  assert.equal(loaded.expires_at, record.expires_at);
+  assert.equal(h.state().forgets, 0);
 });
 
 test("valid invite URLs remain on the public origin and add only the normalized mode", async () => {
