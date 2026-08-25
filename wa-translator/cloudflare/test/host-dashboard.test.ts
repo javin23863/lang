@@ -67,8 +67,12 @@ describe("installed host dashboard client", () => {
     expect(script).toContain("window.LinguaDashboardRoomModel.create(runtime)");
     expect(roomModel).toContain('new Set(["voice", "chat", "video"])');
     expect(roomModel).toContain('url.searchParams.set("m", selected)');
-    expect(roomModel).toContain('typeof value.host_control === "string"');
+    expect(roomModel).toContain('typeof value.path !== "string"');
+    expect(roomModel).toContain('typeof value.host_control !== "string"');
     expect(roomModel).toContain("Number.isSafeInteger(value.expires_at)");
+    expect(roomModel).toContain("ROOM_PATH_PATTERN.exec(value.path)");
+    expect(roomModel).toContain("HOST_CONTROL_PATTERN.exec(value.host_control)");
+    expect(roomModel).toContain("room[1] === control[1] && room[2] === control[2] && room[2] === expires");
     expect(roomModel).toContain("runtime.loadHostRoom()");
     expect(roomModel).toContain("runtime.saveHostRoom(JSON.stringify(room))");
     expect(roomModel).toContain("runtime.forgetHostRoom()");
