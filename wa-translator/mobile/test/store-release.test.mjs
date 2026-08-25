@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import { readFile, stat } from "node:fs/promises";
 import test from "node:test";
 
+import {
+  APP_ID, PUBLIC_ORIGIN, normalizeFingerprint, validateAndroidAssociation,
+  validateAppleAssociation, validateBootstrap, validateProviderSnapshot,
+} from "../scripts/store-preflight.mjs";
+
 const read = path => readFile(new URL(path, import.meta.url), "utf8");
 
 test("credential-free CI builds both native products", async () => {
@@ -45,6 +50,14 @@ test("credential-gated Fastlane lanes stop at beta tracks", async () => {
   assert.doesNotMatch(workflow, /uses:\s+[^\n]+@(v\d+|main|master)\s*$/m);
   assert.ok(workflow.indexOf("npm ci && npm run check && npm run sync")
     < workflow.indexOf("Materialize signing credentials"));
+  assert.match(workflow, /node scripts\/store-preflight\.mjs android/);
+  assert.match(workflow, /node scripts\/store-preflight\.mjs ios/);
+  assert.match(workflow, /keytool -exportcert/);
+  assert.match(workflow, /MOBILE_ANDROID_CERT_SHA256="\$fingerprint"/);
+  assert.ok(workflow.indexOf("Verify live Android launch contract")
+    < workflow.indexOf("Upload Android internal beta"));
+  assert.ok(workflow.indexOf("Verify live iOS launch contract")
+    < workflow.indexOf("Upload TestFlight beta"));
   assert.match(fastfile, /track: "internal"/);
   assert.match(fastfile, /release_status: "completed"/);
   assert.doesNotMatch(fastfile, /release_status: "draft"/);
@@ -61,6 +74,46 @@ test("credential-gated Fastlane lanes stop at beta tracks", async () => {
     "APPLE_DISTRIBUTION_P12_B64", "APPLE_PROVISIONING_PROFILE_B64",
     "APPLE_DISTRIBUTION_CERT_PASSWORD", "APPLE_PROVISIONING_PROFILE_NAME"
   ]) assert.match(workflow, new RegExp(secret));
+});
+
+test("store preflight rejects live backend, provider, and association drift", () => {
+  const bootstrap = {
+    protocol: 1,
+    minimum_client_build: 1,
+    public_origin: PUBLIC_ORIGIN,
+    account_mode: "session",
+    call_lifecycle: "foreground",
+    max_room_participants: 2,
+  };
+  assert.equal(validateBootstrap(bootstrap), true);
+  assert.throws(() => validateBootstrap({...bootstrap, max_room_participants: 4}), /two-person/);
+  assert.throws(() => validateBootstrap({...bootstrap, public_origin: "https://attacker.test"}),
+    /public origin/);
+
+  assert.equal(validateProviderSnapshot({providers: ["google"]}, "android"), true);
+  assert.equal(validateProviderSnapshot({providers: ["google", "apple"]}, "ios"), true);
+  assert.throws(() => validateProviderSnapshot({providers: ["google"]}, "ios"), /Apple login/);
+  assert.throws(() => validateProviderSnapshot({providers: []}, "android"), /no sign-in provider/);
+
+  const teamId = "TESTTEAM01";
+  assert.equal(validateAppleAssociation({applinks: {details: [{
+    appID: `${teamId}.${APP_ID}`,
+    components: [{"/": "/room/*"}],
+  }]}}, teamId), true);
+  assert.throws(() => validateAppleAssociation({applinks: {details: []}}, teamId),
+    /does not contain/);
+
+  const fingerprint = "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99";
+  assert.equal(normalizeFingerprint(fingerprint.toLowerCase()), fingerprint);
+  assert.equal(validateAndroidAssociation([{
+    relation: ["delegate_permission/common.handle_all_urls"],
+    target: {
+      namespace: "android_app",
+      package_name: APP_ID,
+      sha256_cert_fingerprints: [fingerprint],
+    },
+  }], fingerprint), true);
+  assert.throws(() => validateAndroidAssociation([], fingerprint), /does not contain/);
 });
 
 test("store listing and operator declarations are source controlled", async () => {
