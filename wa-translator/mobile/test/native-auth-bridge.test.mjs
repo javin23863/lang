@@ -18,6 +18,18 @@ test("native session injection is origin-bound and narrowly scoped", async () =>
   assert.doesNotMatch(bridge, /SESSION_API_PATHS[\s\S]*?\/api\/v1\/reports/);
 });
 
+test("stale native sessions clear themselves on auth failure or signed-out account state", async () => {
+  const bridge = await read("../src/mobile-bridge.ts");
+  assert.match(bridge, /async function clearNativeSession\(\): Promise<void>/);
+  assert.match(bridge, /attachedNativeSession && response\.status === 401/,
+               "an expired bearer returned by a protected endpoint is removed");
+  assert.match(bridge, /response\.clone\(\)\.json\(\)/,
+               "account state is inspected without consuming the response returned to the dashboard");
+  assert.match(bridge, /account\.signed_in === false/,
+               "the deliberately 200 signed-out /me response also retires a stale bearer");
+  assert.match(bridge, /if \(clearSession\) await clearNativeSession\(\)/);
+});
+
 test("native one-time auth handoffs are idempotent across cold-launch delivery", async () => {
   const bridge = await read("../src/mobile-bridge.ts");
   assert.match(bridge, /const handledAuthHandoffs = new Set<string>\(\)/);
