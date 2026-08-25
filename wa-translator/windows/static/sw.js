@@ -1,7 +1,7 @@
 // Cache only the credential-free dashboard shell. Room bearer URLs, APIs,
 // authentication, captions and any request carrying user state are always
 // network-only and must never enter persistent browser Cache Storage.
-const CACHE_NAME = 'lingua-relay-shell-v3';
+const CACHE_NAME = 'lingua-relay-shell-v4';
 const CACHE_PREFIX = 'lingua-relay-shell-';
 const SHELL_PATHS = new Set([
   '/',
@@ -23,6 +23,7 @@ const SHELL_PATHS = new Set([
   '/icon.svg',
   '/manifest.webmanifest',
 ]);
+const DASHBOARD_PATHS = new Set(['/', '/index.html']);
 
 function requestUrl(request) {
   try { return new URL(request.url); }
@@ -38,27 +39,63 @@ function networkOnly(path) {
     || path.startsWith('/static/i18n/');
 }
 
+function sameOriginGet(request, url) {
+  return request.method === 'GET' && url?.origin === self.location.origin;
+}
+
 function cacheableShellRequest(request, url) {
-  return request.method === 'GET'
-    && url?.origin === self.location.origin
+  return sameOriginGet(request, url)
     && url.search === ''
     && !networkOnly(url.pathname)
     && SHELL_PATHS.has(url.pathname);
 }
 
-async function updateShell(request) {
-  const response = await fetch(request, {cache: 'no-store'});
-  if (response.ok) {
-    const cache = await caches.open(CACHE_NAME);
-    await cache.put(request, response.clone());
+function canonicalShellRequest(path) {
+  return new Request(new URL(path, self.location.origin).toString(), {
+    method: 'GET',
+    credentials: 'omit',
+    cache: 'no-store',
+  });
+}
+
+function shellRequests() {
+  return [...SHELL_PATHS].map(canonicalShellRequest);
+}
+
+async function refreshShell() {
+  const cache = await caches.open(CACHE_NAME);
+  // addAll fetches the complete allowlisted generation before the dashboard is
+  // released to load its subresources. Never persist a browser request whose
+  // cookies, Authorization header or query parameters may carry user state.
+  await cache.addAll(shellRequests());
+  return cache;
+}
+
+async function cachedShell(path) {
+  return caches.match(canonicalShellRequest(path));
+}
+
+async function dashboardNavigation(request, url) {
+  try {
+    const cache = await refreshShell();
+    if (url.search === '') {
+      const fresh = await cache.match(canonicalShellRequest(url.pathname));
+      if (fresh) return fresh;
+    }
+    // Query-bearing dashboard URLs (for example an OAuth failure marker) are
+    // never cached, but the fixed shell was refreshed before this response is
+    // released so its unversioned subresources cannot come from an older deploy.
+    return await fetch(request, {cache: 'no-store'});
+  } catch (_) {
+    const cached = await cachedShell(url.pathname);
+    if (cached) return cached;
+    return fetch(request, {cache: 'no-store'});
   }
-  return response;
 }
 
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
-    const cache = await caches.open(CACHE_NAME);
-    await cache.addAll([...SHELL_PATHS]);
+    await refreshShell();
     await self.skipWaiting();
   })());
 });
@@ -75,20 +112,26 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const request = event.request;
   const url = requestUrl(request);
+
+  if (url && sameOriginGet(request, url) && DASHBOARD_PATHS.has(url.pathname)) {
+    event.respondWith(dashboardNavigation(request, url));
+    return;
+  }
+
   if (!url || !cacheableShellRequest(request, url)) {
     event.respondWith(fetch(request, {cache: 'no-store'}));
     return;
   }
 
   event.respondWith((async () => {
-    const cached = await caches.match(request);
-    const fresh = updateShell(request).catch(() => null);
-    if (cached) {
-      event.waitUntil(fresh);
-      return cached;
-    }
-    const response = await fresh;
-    if (response) return response;
-    throw new Error('dashboard shell unavailable');
+    const canonical = canonicalShellRequest(url.pathname);
+    const cached = await caches.match(canonical);
+    if (cached) return cached;
+    try {
+      const cache = await refreshShell();
+      const fresh = await cache.match(canonical);
+      if (fresh) return fresh;
+    } catch (_) { /* fall through to a one-off network response */ }
+    return fetch(request, {cache: 'no-store'});
   })());
 });
