@@ -3,16 +3,16 @@ import { readFile, stat } from "node:fs/promises";
 import test from "node:test";
 
 import {
-  APP_ID, PUBLIC_ORIGIN, normalizeFingerprint, releaseBuildNumber,
-  validateAndroidAssociation, validateAppleAssociation, validateBootstrap,
-  validateProviderSnapshot,
+  APP_ID, PLAY_VERSION_CODE_MAX, PUBLIC_ORIGIN, normalizeFingerprint,
+  releaseBuildNumber, validateAndroidAssociation, validateAppleAssociation,
+  validateBootstrap, validateProviderSnapshot,
 } from "../scripts/store-preflight.mjs";
 
 const read = path => readFile(new URL(path, import.meta.url), "utf8");
 
 async function pngInfo(path) {
   const data = await readFile(new URL(path, import.meta.url));
-  assert.equal(data.subarray(0, 8).toString("hex"), "89504e470d0a1a0a", `${path} is not PNG`);
+  assert.equal(data.subarray(0, 8).toString("hex"), "89504e470d0a1a0a0a", `${path} is not PNG`);
   assert.equal(data.subarray(12, 16).toString("ascii"), "IHDR", `${path} has no IHDR`);
   return {
     size: data.length,
@@ -51,7 +51,13 @@ test("credential-gated Fastlane lanes stop at beta tracks", async () => {
   assert.match(workflow, /npm ci && npm run check && npm run sync/);
   assert.match(workflow, /bundle exec fastlane --version/);
   assert.match(workflow, /github\.ref == 'refs\/heads\/main'/);
-  assert.match(workflow, /LINGUA_ANDROID_VERSION_CODE=\$\{build_epoch\}/);
+  assert.match(workflow, /epoch_2020=1577836800/,
+               "Android versioning uses a fixed compact epoch rather than raw Unix seconds");
+  assert.match(workflow, /build_minutes=\$\(\( \(epoch_seconds - epoch_2020\) \/ 60 \)\)/);
+  assert.match(workflow, /version_code=\$\(\( build_minutes \* 10 \+ attempt \)\)/);
+  assert.match(workflow, /version_code > 2100000000/,
+               "the release generator refuses values above Google Play's versionCode ceiling");
+  assert.match(workflow, /LINGUA_ANDROID_VERSION_CODE=\$\{version_code\}/);
   assert.match(workflow, /LINGUA_ANDROID_VERSION_NAME=1\.0\.\$\{GITHUB_RUN_NUMBER\}\.\$\{GITHUB_RUN_ATTEMPT\}/);
   assert.equal((workflow.match(/date -u \+%s/g) || []).length, 2);
   assert.match(workflow, /LINGUA_IOS_BUILD_NUMBER=\$\(date -u \+%s\)/);
@@ -99,9 +105,12 @@ test("store preflight rejects live backend, build, provider, and association dri
     call_lifecycle: "foreground",
     max_room_participants: 2,
   };
+  assert.equal(PLAY_VERSION_CODE_MAX, 2_100_000_000);
   assert.equal(releaseBuildNumber("android", {LINGUA_ANDROID_VERSION_CODE: "123"}), 123);
   assert.equal(releaseBuildNumber("ios", {LINGUA_IOS_BUILD_NUMBER: "456"}), 456);
   assert.throws(() => releaseBuildNumber("android", {}), /build number/);
+  assert.throws(() => releaseBuildNumber("android", {LINGUA_ANDROID_VERSION_CODE: "2100000001"}),
+    /Google Play maximum/);
   assert.equal(validateBootstrap(bootstrap, 123), true);
   assert.throws(() => validateBootstrap({...bootstrap, minimum_client_build: 124}, 123),
     /requires mobile build 124/);
