@@ -23,7 +23,7 @@ declare global {
       setItem(key: string, value: string): Promise<void>;
       removeItem(key: string): Promise<void>;
       share(value: {title: string; text: string; url: string}): Promise<boolean>;
-      openRoom(token: string, mode?: string, name?: string): boolean;
+      openRoom(token: string, mode?: string): boolean;
     };
   }
 }
@@ -134,9 +134,9 @@ const compatibilityReady = isNative ? (async () => {
   return true;
 })() : Promise.resolve(true);
 
-function openRoom(token: string, mode?: string, name?: string): boolean {
+function openRoom(token: string, mode?: string): boolean {
   if (!isRoomToken(token)) return false;
-  window.location.replace(roomPageUrl(token, mode, name));
+  window.location.replace(roomPageUrl(token, mode));
   return true;
 }
 
@@ -190,8 +190,10 @@ async function routeAppLink(value: string | undefined): Promise<void> {
   }
   const link = parseRoomLink(value);
   if (link) {
-    const name = "name" in link && typeof link.name === "string" ? link.name : undefined;
-    openRoom(link.token, link.mode, name);
+    // Legacy `n=` room labels remain parseable so an old signed invitation is
+    // not rejected, but the installed app deliberately does not carry that
+    // personal label into its bundled room URL.
+    openRoom(link.token, link.mode);
   }
 }
 
