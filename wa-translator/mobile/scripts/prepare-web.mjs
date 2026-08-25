@@ -27,6 +27,18 @@ const CONNECT_SEAM = "async function connect() {\n  if (leaving) return;\n  if (
 const CONNECT_GUARDED = "async function connect() {\n  if (leaving) return;\n  if (ws && ws.readyState < WebSocket.CLOSING) return;\n  const generation = ++connectGeneration;\n  if (!await preflightRoom()) return;\n  if (leaving || generation !== connectGeneration) return;\n  await refreshIceServers();\n  if (leaving || generation !== connectGeneration) return;\n  ws = new WebSocket(runtime.websocketUrl(roomId));";
 const DISCONNECT_SEAM = "function disconnectRoom(notifyServer, preserveServerClose = false) {\n  if (leaving) return;\n  leaving = true;";
 const DISCONNECT_GUARDED = "function disconnectRoom(notifyServer, preserveServerClose = false) {\n  if (leaving) return;\n  leaving = true;\n  connectGeneration++;";
+const CALL_GATE_SEAM = "const title = isHost ? 'call.call' : 'call.incoming';\n  const join = isHost ? 'call.call' : 'call.accept';";
+const CALL_GATE_NEUTRAL = "const title = 'gate.title';\n  const join = 'gate.join';";
+const CALL_GATE_BUTTON_SEAM = "$('joinBtn').classList.toggle('accept', !isHost);\n  $('declineBtn').hidden = isHost;";
+const CALL_GATE_BUTTON_NEUTRAL = "$('joinBtn').classList.remove('accept');\n  $('declineBtn').hidden = true;";
+const CALL_WAIT_SEAM = "setCallState('call.calling');";
+const CALL_WAIT_NEUTRAL = "setCallState('stage.waiting');";
+const CALL_RINGBACK_SEAM = "if (isHost) startRingback();";
+const CALL_RINGBACK_NEUTRAL = "stopRingback();";
+const WELCOME_CALL_SEAM = "if (roomMode === 'voice' && !isHost && m.peers.length) {\n      for (const peer of m.peers) send({type: 'signal', to: peer.id, data: {call: 'accept'}});\n      connectCall();\n    }";
+const WELCOME_CALL_NEUTRAL = "if (roomMode === 'voice' && m.peers.length) {\n      for (const peer of m.peers) send({type: 'signal', to: peer.id, data: {call: 'accept'}});\n      connectCall();\n    }";
+const PEER_JOIN_CALL_SEAM = "if (roomMode === 'voice' && isHost && !callTimerStart) {\n      setCallState('call.ringing');\n      startRingback();\n      updateCallButtons();\n    }";
+const PEER_JOIN_CALL_NEUTRAL = "if (roomMode === 'voice' && !callTimerStart) {\n      send({type: 'signal', to: m.id, data: {call: 'accept'}});\n      connectCall();\n    }";
 
 if (path.dirname(WWW) !== MOBILE || path.basename(WWW) !== "www") {
   throw new Error(`Refusing unsafe mobile web target: ${WWW}`);
@@ -36,7 +48,8 @@ function normalizeRoomScript(source) {
   for (const seam of [
     STATUS_STYLE_SEAM, STATUS_TIMEOUT_SEAM, PARTICIPANT_COUNT_SEAM, WELCOME_SEAM,
     AUDIO_ENDED_SEAM, VIDEO_ENDED_SEAM, SOCKET_TEARDOWN_SEAM, CONNECTION_STATE_SEAM,
-    CONNECT_SEAM, DISCONNECT_SEAM,
+    CONNECT_SEAM, DISCONNECT_SEAM, CALL_GATE_SEAM, CALL_GATE_BUTTON_SEAM,
+    CALL_WAIT_SEAM, CALL_RINGBACK_SEAM, WELCOME_CALL_SEAM, PEER_JOIN_CALL_SEAM,
   ]) {
     if (!source.includes(seam)) throw new Error(`room normalization seam is missing: ${seam.slice(0, 32)}`);
   }
@@ -51,7 +64,13 @@ function normalizeRoomScript(source) {
     .replace(SOCKET_TEARDOWN_SEAM, SOCKET_TEARDOWN_SAFE)
     .replace(CONNECTION_STATE_SEAM, CONNECTION_STATE_GUARDED)
     .replace(CONNECT_SEAM, CONNECT_GUARDED)
-    .replace(DISCONNECT_SEAM, DISCONNECT_GUARDED);
+    .replace(DISCONNECT_SEAM, DISCONNECT_GUARDED)
+    .replace(CALL_GATE_SEAM, CALL_GATE_NEUTRAL)
+    .replace(CALL_GATE_BUTTON_SEAM, CALL_GATE_BUTTON_NEUTRAL)
+    .replace(CALL_WAIT_SEAM, CALL_WAIT_NEUTRAL)
+    .replace(CALL_RINGBACK_SEAM, CALL_RINGBACK_NEUTRAL)
+    .replace(WELCOME_CALL_SEAM, WELCOME_CALL_NEUTRAL)
+    .replace(PEER_JOIN_CALL_SEAM, PEER_JOIN_CALL_NEUTRAL);
 }
 
 function enhanceRoomShell(source) {
