@@ -28,6 +28,18 @@ for required in \
   fi
 done
 
+expected_version_code="${LINGUA_ANDROID_VERSION_CODE:-}"
+if [[ -n "$expected_version_code" ]]; then
+  if [[ ! "$expected_version_code" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Android artifact check: LINGUA_ANDROID_VERSION_CODE is invalid." >&2
+    exit 1
+  fi
+  if ! grep -Fq "android:versionCode=\"$expected_version_code\"" <<<"$manifest"; then
+    echo "Android artifact check: packaged versionCode does not match the release build number." >&2
+    exit 1
+  fi
+fi
+
 for entry in base/assets/public/room.html base/assets/public/room.css \
   base/assets/public/room-ui.css base/assets/public/room.js; do
   if ! unzip -Z1 "$bundle" | grep -Fxq "$entry"; then
@@ -94,4 +106,4 @@ if unzip -Z1 "$bundle" | grep -Ei '(^|/)(google-services\.json|google-play\.json
 fi
 
 bash scripts/verify-android-16k.sh "$bundle"
-echo "Android artifact check: identity, permissions, transport security, room UI contract and secret hygiene verified."
+echo "Android artifact check: identity, version, permissions, transport security, room UI contract and secret hygiene verified."
