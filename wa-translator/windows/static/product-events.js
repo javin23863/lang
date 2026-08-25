@@ -4,6 +4,8 @@
   const EVENT_FIELDS = Object.freeze({
     "app.open": new Set(["surface", "native"]),
     "auth.state": new Set(["state", "provider_count"]),
+    "onboarding.view": new Set(),
+    "onboarding.complete": new Set(),
     "room.create.intent": new Set(["mode"]),
     "room.create.result": new Set(["mode", "result"]),
     "invite.share.intent": new Set(["method", "mode"]),
