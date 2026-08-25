@@ -41,8 +41,10 @@ if [[ -n "$expected_version_code" ]]; then
 fi
 
 # Credential-free CI intentionally produces an unsigned release bundle. When a
-# release keystore is configured, however, the exact AAB intended for Play must
-# verify against that keystore/alias before any upload occurs.
+# release keystore is configured, the exact AAB intended for Play must both
+# verify cryptographically and carry the same signer certificate as the
+# configured upload-key alias. Direct fingerprint equality avoids depending on
+# jarsigner's non-strict warning/exit-code behavior for alias mismatches.
 if [[ -n "${LINGUA_ANDROID_KEYSTORE:-}${LINGUA_ANDROID_KEYSTORE_PASSWORD:-}${LINGUA_ANDROID_KEY_ALIAS:-}" ]]; then
   for value in LINGUA_ANDROID_KEYSTORE LINGUA_ANDROID_KEYSTORE_PASSWORD LINGUA_ANDROID_KEY_ALIAS; do
     if [[ -z "${!value:-}" ]]; then
@@ -50,13 +52,30 @@ if [[ -n "${LINGUA_ANDROID_KEYSTORE:-}${LINGUA_ANDROID_KEYSTORE_PASSWORD:-}${LIN
       exit 1
     fi
   done
-  jarsigner -verify \
-    -keystore "$LINGUA_ANDROID_KEYSTORE" \
-    -storepass:env LINGUA_ANDROID_KEYSTORE_PASSWORD \
-    "$bundle" "$LINGUA_ANDROID_KEY_ALIAS" >/dev/null || {
-      echo "Android artifact check: AAB signature does not verify against the configured release alias." >&2
-      exit 1
-    }
+  jarsigner -verify "$bundle" >/dev/null || {
+    echo "Android artifact check: AAB signature integrity verification failed." >&2
+    exit 1
+  }
+  expected_signer="$(
+    keytool -exportcert \
+      -alias "$LINGUA_ANDROID_KEY_ALIAS" \
+      -keystore "$LINGUA_ANDROID_KEYSTORE" \
+      -storepass:env LINGUA_ANDROID_KEYSTORE_PASSWORD \
+      -rfc |
+    openssl x509 -noout -fingerprint -sha256 |
+    sed 's/^sha256 Fingerprint=//I' |
+    tr '[:lower:]' '[:upper:]'
+  )"
+  actual_signer="$(
+    keytool -printcert -jarfile "$bundle" -rfc |
+    openssl x509 -noout -fingerprint -sha256 |
+    sed 's/^sha256 Fingerprint=//I' |
+    tr '[:lower:]' '[:upper:]'
+  )"
+  if [[ -z "$expected_signer" || "$actual_signer" != "$expected_signer" ]]; then
+    echo "Android artifact check: AAB signer certificate does not match the configured release alias." >&2
+    exit 1
+  fi
 fi
 
 for entry in base/assets/public/room.html base/assets/public/room.css \
