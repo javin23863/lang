@@ -26,6 +26,8 @@ test("deep links accept only exact signed public room URLs", () => {
   assert.equal(parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?copy=1`), null);
   assert.equal(parseRoomLink(`${PUBLIC_ORIGIN}/rooms/${TOKEN}`), null);
   assert.equal(parseRoomLink("not a url"), null);
+  assert.equal(parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?${"x".repeat(2000)}`), null,
+               "oversized OS-delivered URLs fail before unbounded query parsing");
 });
 
 test("deep links preserve mode and accept only bounded legacy voice labels", () => {
@@ -77,6 +79,9 @@ test("native auth completion accepts only the app scheme and matching provider",
   assert.equal(parseNativeAuthLink(
     `${MOBILE_AUTH_SCHEME}://auth/google#handoff=${HANDOFF}&extra=1`
   ), null);
+  assert.equal(parseNativeAuthLink(
+    `${MOBILE_AUTH_SCHEME}://auth/google#${"x".repeat(2000)}`
+  ), null, "oversized custom-scheme input is rejected before fragment parsing");
   assert.equal(isSessionToken(SESSION), true);
   assert.equal(isSessionToken(`s1.${USER}.1.${CHALLENGE}`), false);
 });
