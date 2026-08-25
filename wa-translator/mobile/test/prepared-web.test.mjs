@@ -8,7 +8,7 @@ test("prepared mobile web bundle contains the app, runtime, and local worklet", 
   for (const path of [
     "index.html", "room.html", "app-runtime.js", "mobile-bridge.js", "qr.js",
     "dashboard.css", "dashboard.js", "privacy.html", "terms.html", "support.html",
-    "static/pcm-worklet.js"
+    "legal-runtime.js", "static/pcm-worklet.js"
   ]) await access(new URL(path, root));
 
   for (const name of ["index.html", "room.html"]) {
@@ -21,6 +21,13 @@ test("prepared mobile web bundle contains the app, runtime, and local worklet", 
   const dashboard = await readFile(new URL("index.html", root), "utf8");
   assert.match(dashboard, /<link rel="stylesheet" href="\/dashboard\.css">/);
   assert.match(dashboard, /<script src="\/dashboard\.js"><\/script>/);
+
+  for (const name of ["privacy.html", "terms.html", "support.html"]) {
+    const html = await readFile(new URL(name, root), "utf8");
+    assert.match(html, /id="legalBack"/);
+    assert.match(html, /<script src="legal-runtime\.js"><\/script>/,
+                 `${name} keeps safe room-return behavior in the native bundle`);
+  }
 });
 
 test("phone video status reserves the local preview area", async () => {
