@@ -40,6 +40,25 @@ if [[ -n "$expected_version_code" ]]; then
   fi
 fi
 
+# Credential-free CI intentionally produces an unsigned release bundle. When a
+# release keystore is configured, however, the exact AAB intended for Play must
+# verify against that keystore/alias before any upload occurs.
+if [[ -n "${LINGUA_ANDROID_KEYSTORE:-}${LINGUA_ANDROID_KEYSTORE_PASSWORD:-}${LINGUA_ANDROID_KEY_ALIAS:-}" ]]; then
+  for value in LINGUA_ANDROID_KEYSTORE LINGUA_ANDROID_KEYSTORE_PASSWORD LINGUA_ANDROID_KEY_ALIAS; do
+    if [[ -z "${!value:-}" ]]; then
+      echo "Android artifact check: signed verification is missing $value." >&2
+      exit 1
+    fi
+  done
+  jarsigner -verify \
+    -keystore "$LINGUA_ANDROID_KEYSTORE" \
+    -storepass:env LINGUA_ANDROID_KEYSTORE_PASSWORD \
+    "$bundle" "$LINGUA_ANDROID_KEY_ALIAS" >/dev/null || {
+      echo "Android artifact check: AAB signature does not verify against the configured release alias." >&2
+      exit 1
+    }
+fi
+
 for entry in base/assets/public/room.html base/assets/public/room.css \
   base/assets/public/room-ui.css base/assets/public/room.js; do
   if ! unzip -Z1 "$bundle" | grep -Fxq "$entry"; then
@@ -106,4 +125,4 @@ if unzip -Z1 "$bundle" | grep -Ei '(^|/)(google-services\.json|google-play\.json
 fi
 
 bash scripts/verify-android-16k.sh "$bundle"
-echo "Android artifact check: identity, version, permissions, transport security, room UI contract and secret hygiene verified."
+echo "Android artifact check: identity, version, signing, permissions, transport security, room UI contract and secret hygiene verified."
