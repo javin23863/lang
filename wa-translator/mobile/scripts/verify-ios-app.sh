@@ -32,7 +32,8 @@ exe="$app/App"
 for required in "$plist" "$exe" "$app/PrivacyInfo.xcprivacy" \
   "$app/Frameworks/Capacitor.framework/PrivacyInfo.xcprivacy" \
   "$app/Frameworks/Cordova.framework/PrivacyInfo.xcprivacy" \
-  "$app/public/room.html" "$app/public/room.css" "$app/public/room-ui.css" "$app/public/room.js"; do
+  "$app/public/room.html" "$app/public/room.css" "$app/public/room-ui.css" \
+  "$app/public/room.js" "$app/public/third-party-notices.txt"; do
   if [[ ! -e "$required" ]]; then
     echo "iOS artifact is missing required file: $required" >&2
     exit 1
@@ -119,11 +120,27 @@ if [[ "$signed_ipa" == true ]]; then
   }
 fi
 
-tracking="$(/usr/libexec/PlistBuddy -c 'Print :NSPrivacyTracking' "$app/PrivacyInfo.xcprivacy")"
+privacy="$app/PrivacyInfo.xcprivacy"
+tracking="$(/usr/libexec/PlistBuddy -c 'Print :NSPrivacyTracking' "$privacy")"
 [[ "$tracking" == "false" ]] || {
   echo "App privacy manifest must declare tracking disabled." >&2
   exit 1
 }
+for privacy_type in \
+  NSPrivacyCollectedDataTypeName \
+  NSPrivacyCollectedDataTypeEmailAddress \
+  NSPrivacyCollectedDataTypeUserID \
+  NSPrivacyCollectedDataTypeOtherUsageData \
+  NSPrivacyCollectedDataTypeOtherUserContent; do
+  if ! grep -Fq "<string>$privacy_type</string>" "$privacy"; then
+    echo "iOS artifact check: privacy manifest is missing $privacy_type" >&2
+    exit 1
+  fi
+done
+if grep -Eq 'NSPrivacyCollectedDataTypeAudioData|NSPrivacyCollectedDataTypeEmailsOrTextMessages' "$privacy"; then
+  echo "iOS artifact check: privacy manifest incorrectly declares ephemeral conversation content." >&2
+  exit 1
+fi
 
 room="$app/public/room.html"
 if grep -q 'id="participantCount" aria-live="polite">0 / 4 people<' "$room"; then
@@ -134,6 +151,14 @@ grep -q 'id="participantCount" aria-live="polite">0 / 2 people<' "$room" || {
   echo "Packaged iOS room is missing the two-person fallback." >&2
   exit 1
 }
+grep -q '<input id="termsAgree" type="checkbox">' "$room" || {
+  echo "Packaged iOS room is missing affirmative Terms consent." >&2
+  exit 1
+}
+if grep -q '<input id="termsAgree" type="checkbox" checked' "$room"; then
+  echo "Packaged iOS Terms consent is preselected." >&2
+  exit 1
+fi
 grep -q '<link rel="stylesheet" href="/room.css">' "$room" || {
   echo "Packaged iOS room is missing external room.css." >&2
   exit 1
@@ -163,10 +188,30 @@ grep -q 'prefers-reduced-motion:reduce' "$app/public/room-ui.css" || {
   echo "Packaged iOS room-ui.css is missing reduced-motion handling." >&2
   exit 1
 }
-grep -q 'async function connect()' "$app/public/room.js" || {
+room_js="$app/public/room.js"
+grep -Fq 'async function connect()' "$room_js" || {
   echo "Packaged iOS room.js is incomplete." >&2
   exit 1
 }
+grep -Fq 'lingua-relay.terms.2026-08-25' "$room_js" || {
+  echo "Packaged iOS room.js is missing the current Terms version." >&2
+  exit 1
+}
+grep -Fq "localStorage.getItem(termsKey) === '1'" "$room_js" || {
+  echo "Packaged iOS room.js does not restore only prior current-version consent." >&2
+  exit 1
+}
+
+notices="$app/public/third-party-notices.txt"
+for legal_marker in \
+  'Lingua Relay third-party notices' \
+  '@capacitor/core@8.5.0' \
+  '@aparajita/capacitor-secure-storage@8.0.0'; do
+  if ! grep -Fq "$legal_marker" "$notices"; then
+    echo "iOS artifact check: third-party notices are missing $legal_marker" >&2
+    exit 1
+  fi
+done
 
 if grep -RInaE '127\.0\.0\.1|localhost:8788|test-only-|local-dev-only-|BEGIN PRIVATE KEY|google-play\.json|release\.keystore' \
     "$app/public" "$app/capacitor.config.json" "$app/config.xml" >/dev/null; then
@@ -180,4 +225,4 @@ if find "$app" -type f \( -name '*.p12' -o -name '*.p8' -o -name '*.keystore' -o
   exit 1
 fi
 
-echo "iOS artifact check: identity, version, signing, provisioning, privacy, architecture, room UI contract and secret hygiene verified."
+echo "iOS artifact check: identity, version, signing, provisioning, privacy, architecture, consent, legal notices, room UI contract and secret hygiene verified."

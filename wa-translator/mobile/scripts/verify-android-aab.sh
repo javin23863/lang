@@ -44,12 +44,39 @@ manifest="$(java -jar "$bundletool_jar" dump manifest --bundle="$bundle" --modul
 for required in \
   'package="com.javin23863.linguarelay"' \
   'android:targetSdkVersion="36"' \
+  'android:name="android.permission.INTERNET"' \
   'android:name="android.permission.CAMERA"' \
   'android:name="android.permission.RECORD_AUDIO"' \
   'android:allowBackup="false"' \
   'android:usesCleartextTraffic="false"'; do
   if ! grep -Fq "$required" <<<"$manifest"; then
     echo "Android artifact check: manifest is missing $required" >&2
+    exit 1
+  fi
+done
+
+# Lingua Relay's version-1 native surface is foreground camera/microphone plus
+# network access. Fail the final merged manifest if an SDK begins contributing a
+# permission that would expand the Play Data safety / sensitive-permission scope.
+for forbidden_permission in \
+  android.permission.ACCESS_COARSE_LOCATION \
+  android.permission.ACCESS_FINE_LOCATION \
+  android.permission.ACCESS_BACKGROUND_LOCATION \
+  android.permission.READ_CONTACTS \
+  android.permission.WRITE_CONTACTS \
+  android.permission.READ_CALENDAR \
+  android.permission.WRITE_CALENDAR \
+  android.permission.READ_SMS \
+  android.permission.RECEIVE_SMS \
+  android.permission.SEND_SMS \
+  android.permission.READ_PHONE_STATE \
+  android.permission.READ_PHONE_NUMBERS \
+  android.permission.CALL_PHONE \
+  com.google.android.gms.permission.AD_ID \
+  android.permission.MANAGE_EXTERNAL_STORAGE \
+  android.permission.REQUEST_INSTALL_PACKAGES; do
+  if grep -Fq "android:name=\"$forbidden_permission\"" <<<"$manifest"; then
+    echo "Android artifact check: unexpected permission $forbidden_permission" >&2
     exit 1
   fi
 done
@@ -105,7 +132,8 @@ if [[ -n "${LINGUA_ANDROID_KEYSTORE:-}${LINGUA_ANDROID_KEYSTORE_PASSWORD:-}${LIN
 fi
 
 for entry in base/assets/public/room.html base/assets/public/room.css \
-  base/assets/public/room-ui.css base/assets/public/room.js; do
+  base/assets/public/room-ui.css base/assets/public/room.js \
+  base/assets/public/third-party-notices.txt; do
   if ! unzip -Z1 "$bundle" | grep -Fxq "$entry"; then
     echo "Android artifact check: AAB is missing $entry" >&2
     exit 1
@@ -121,6 +149,14 @@ grep -q 'id="participantCount" aria-live="polite">0 / 2 people<' <<<"$room" || {
   echo "Android artifact check: room is missing the two-person fallback." >&2
   exit 1
 }
+grep -q '<input id="termsAgree" type="checkbox">' <<<"$room" || {
+  echo "Android artifact check: room is missing affirmative Terms consent." >&2
+  exit 1
+}
+if grep -q '<input id="termsAgree" type="checkbox" checked' <<<"$room"; then
+  echo "Android artifact check: Terms consent is preselected." >&2
+  exit 1
+fi
 grep -q '<link rel="stylesheet" href="/room.css">' <<<"$room" || {
   echo "Android artifact check: room is missing external room.css." >&2
   exit 1
@@ -150,10 +186,30 @@ unzip -p "$bundle" base/assets/public/room-ui.css | grep -q 'prefers-reduced-mot
   echo "Android artifact check: room-ui.css is missing reduced-motion handling." >&2
   exit 1
 }
-unzip -p "$bundle" base/assets/public/room.js | grep -q 'async function connect()' || {
+room_js="$(unzip -p "$bundle" base/assets/public/room.js)"
+grep -Fq 'async function connect()' <<<"$room_js" || {
   echo "Android artifact check: room.js is incomplete." >&2
   exit 1
 }
+grep -Fq "lingua-relay.terms.2026-08-25" <<<"$room_js" || {
+  echo "Android artifact check: room.js is missing the current Terms version." >&2
+  exit 1
+}
+grep -Fq "localStorage.getItem(termsKey) === '1'" <<<"$room_js" || {
+  echo "Android artifact check: room.js does not restore only prior current-version consent." >&2
+  exit 1
+}
+
+notices="$(unzip -p "$bundle" base/assets/public/third-party-notices.txt)"
+for legal_marker in \
+  'Lingua Relay third-party notices' \
+  '@capacitor/core@8.5.0' \
+  '@aparajita/capacitor-secure-storage@8.0.0'; do
+  if ! grep -Fq "$legal_marker" <<<"$notices"; then
+    echo "Android artifact check: third-party notices are missing $legal_marker" >&2
+    exit 1
+  fi
+done
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -170,4 +226,4 @@ if unzip -Z1 "$bundle" | grep -Ei '(^|/)(google-services\.json|google-play\.json
 fi
 
 bash scripts/verify-android-16k.sh "$bundle"
-echo "Android artifact check: identity, version, signing, permissions, transport security, room UI contract and secret hygiene verified."
+echo "Android artifact check: identity, version, signing, least-privilege permissions, transport security, consent, legal notices, room UI contract and secret hygiene verified."

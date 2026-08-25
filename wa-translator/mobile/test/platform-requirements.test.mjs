@@ -38,8 +38,16 @@ test("Android AAB is inspected before CI artifact publication and Play upload", 
                       "release verification cannot regress to the Maven library JAR");
   assert.match(verifier, /dump manifest/);
   assert.match(verifier, /com\.javin23863\.linguarelay/);
+  assert.match(verifier, /android\.permission\.INTERNET/,
+               "the final merged manifest must retain network access");
   assert.match(verifier, /android\.permission\.CAMERA/);
   assert.match(verifier, /android\.permission\.RECORD_AUDIO/);
+  assert.match(verifier, /for forbidden_permission in/,
+               "the final merged manifest is checked for permission expansion");
+  assert.match(verifier, /com\.google\.android\.gms\.permission\.AD_ID/,
+               "advertising ID permission is rejected if an SDK adds it");
+  assert.match(verifier, /android\.permission\.MANAGE_EXTERNAL_STORAGE/,
+               "broad storage permission is rejected if an SDK adds it");
   assert.match(verifier, /android:allowBackup=\"false\"/);
   assert.match(verifier, /android:usesCleartextTraffic=\"false\"/);
   assert.match(verifier, /LINGUA_ANDROID_VERSION_CODE/,
@@ -58,6 +66,12 @@ test("Android AAB is inspected before CI artifact publication and Play upload", 
                "the packaged signer fingerprint must equal the configured release alias fingerprint");
   assert.match(verifier, /base\/assets\/public\/room\.css/);
   assert.match(verifier, /base\/assets\/public\/room\.js/);
+  assert.match(verifier, /base\/assets\/public\/third-party-notices\.txt/,
+               "the distributable AAB must contain runtime legal notices");
+  assert.match(verifier, /termsAgree/,
+               "the distributable AAB verifies affirmative Terms consent");
+  assert.match(verifier, /lingua-relay\.terms\.2026-08-25/,
+               "the distributable AAB pins the current Terms version");
   assert.match(verifier, /verify-android-16k\.sh/);
 
   const workflow = await read("../../../.github/workflows/mobile-build.yml");
@@ -104,6 +118,20 @@ test("iOS CI and TestFlight verify the packaged app before upload", async () => 
                "enterprise distribution profiles are rejected");
   assert.match(verifier, /lipo -archs/);
   assert.match(verifier, /PrivacyInfo\.xcprivacy/);
+  assert.match(verifier, /NSPrivacyCollectedDataTypeName/,
+               "the packaged privacy manifest declares retained display names");
+  assert.match(verifier, /NSPrivacyCollectedDataTypeOtherUsageData/,
+               "the packaged privacy manifest declares retained usage data");
+  assert.match(verifier, /NSPrivacyCollectedDataTypeOtherUserContent/,
+               "the packaged privacy manifest declares retained category-only report content");
+  assert.match(verifier, /NSPrivacyCollectedDataTypeAudioData\|NSPrivacyCollectedDataTypeEmailsOrTextMessages/,
+               "the verifier rejects declaring ephemeral conversation content as retained");
+  assert.match(verifier, /third-party-notices\.txt/,
+               "the distributable app must contain runtime legal notices");
+  assert.match(verifier, /termsAgree/,
+               "the distributable app verifies affirmative Terms consent");
+  assert.match(verifier, /lingua-relay\.terms\.2026-08-25/,
+               "the distributable app pins the current Terms version");
   assert.match(verifier, /room\.css/);
   assert.match(verifier, /room\.js/);
   assert.match(verifier, /0 \/ 2 people/);
