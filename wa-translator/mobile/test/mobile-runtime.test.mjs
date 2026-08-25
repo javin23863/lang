@@ -126,7 +126,7 @@ test("installed clients fail closed on incompatible backend bootstrap", () => {
     max_room_participants: PARTICIPANT_LIMIT,
   };
   assert.equal(validateBootstrap(valid, MOBILE_BUILD), true);
-  assert.equal(validateBootstrap({...valid, protocol: 2}, MOBILE_BUILD), false);
+  assert.equal(validateBootstrap({...valid, protocol: 1}, MOBILE_BUILD), false);
   assert.equal(validateBootstrap({...valid, minimum_client_build: MOBILE_BUILD + 1}, MOBILE_BUILD), false);
   assert.equal(validateBootstrap({...valid, public_origin: "https://attacker.test"}, MOBILE_BUILD), false);
   assert.equal(validateBootstrap({...valid, max_room_participants: 4}, MOBILE_BUILD), false);
