@@ -1,17 +1,16 @@
 import launchEntry, { AbuseGate, ReportInbox, Room, UserDirectory } from "./launch-entry";
+import { inspectSessionToken, mintSessionV2, type SessionIdentity } from "./session-v2";
 import type { Env } from "./worker";
 
 export { AbuseGate, ReportInbox, Room, UserDirectory };
 
 const NATIVE_ORIGINS = new Set(["https://localhost", "capacitor://localhost"]);
 const SESSION_COOKIE = "lr_s";
-const SESSION_TOKEN_PATTERN = /^s1\.([A-Za-z0-9_-]{22})\.(\d{10})\.[A-Za-z0-9_-]{43}$/;
 const ROOM_CREATE_PATHS = new Set(["/api/rooms", "/api/v1/rooms"]);
 const ACCOUNT_DELETE_PATHS = new Set(["/api/account/delete", "/api/v1/account/delete"]);
 const ACCOUNT_SNAPSHOT_PATHS = new Set(["/api/me", "/api/v1/me"]);
 const LOGOUT_PATHS = new Set(["/auth/logout", "/api/v1/auth/logout"]);
-
-type SessionIdentity = {token: string; userId: string; expiresAt: number; digest: string};
+const OAUTH_CALLBACK_PATTERN = /^\/auth\/(google|apple|facebook)\/callback$/;
 
 function nativeOrigin(request: Request): string | null {
   const origin = request.headers.get("Origin");
@@ -57,25 +56,87 @@ function hasBrowserSession(request: Request): boolean {
   return browserSessionToken(request) !== null;
 }
 
+async function sessionIdentity(request: Request, env: Env): Promise<SessionIdentity | null> {
+  const token = requestSessionToken(request);
+  return token ? inspectSessionToken(token, env.ROOM_SIGNING_KEY) : null;
+}
+
+function withLegacySession(request: Request, identity: SessionIdentity): Request {
+  if (identity.version === 1) return request;
+  const url = new URL(request.url);
+  const headers = new Headers(request.headers);
+  if (url.pathname.startsWith("/api/v1/")) {
+    headers.set("Authorization", `Bearer ${identity.legacyToken}`);
+  } else {
+    const cookies = (headers.get("Cookie") || "").split(";").map(pair => pair.trim()).filter(pair => {
+      if (!pair) return false;
+      const separator = pair.indexOf("=");
+      return separator <= 0 || pair.slice(0, separator).trim() !== SESSION_COOKIE;
+    });
+    cookies.push(`${SESSION_COOKIE}=${identity.legacyToken}`);
+    headers.set("Cookie", cookies.join("; "));
+  }
+  return new Request(request, {headers});
+}
+
 function base64url(bytes: ArrayBuffer): string {
   let binary = "";
   for (const byte of new Uint8Array(bytes)) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-async function sessionIdentity(request: Request): Promise<SessionIdentity | null> {
-  const token = requestSessionToken(request);
-  if (!token) return null;
-  const match = token.match(SESSION_TOKEN_PATTERN);
-  if (!match) return null;
-  const expiresAt = Number(match[2]);
-  if (!Number.isSafeInteger(expiresAt) || expiresAt <= Math.floor(Date.now() / 1000)) return null;
-  const digest = base64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token)));
-  return {token, userId: match[1], expiresAt, digest};
-}
-
 function clearSessionCookie(): string {
   return `${SESSION_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`;
+}
+
+function setCookieValues(headers: Headers): string[] {
+  return typeof headers.getSetCookie === "function"
+    ? headers.getSetCookie() : [headers.get("Set-Cookie") || ""].filter(Boolean);
+}
+
+async function upgradeBrowserOAuthSession(
+  request: Request, env: Env, ctx: ExecutionContext
+): Promise<Response | null> {
+  const url = new URL(request.url);
+  if (!OAUTH_CALLBACK_PATTERN.test(url.pathname)) return null;
+
+  const response = await launchEntry.fetch(request, env, ctx);
+  const cookies = setCookieValues(response.headers);
+  const sessionIndex = cookies.findIndex(value => /^lr_s=s1\./.test(value));
+  if (sessionIndex < 0) return response;
+
+  const token = cookies[sessionIndex].slice(`${SESSION_COOKIE}=`.length).split(";")[0];
+  try {
+    const legacy = await inspectSessionToken(token, env.ROOM_SIGNING_KEY);
+    if (!legacy || legacy.version !== 1) throw new Error("legacy callback session is invalid");
+    const upgraded = await mintSessionV2(legacy.userId, env.ROOM_SIGNING_KEY, legacy.expiresAt);
+    cookies[sessionIndex] = cookies[sessionIndex].replace(
+      /^lr_s=[^;]+/, `${SESSION_COOKIE}=${upgraded.token}`
+    );
+    const headers = new Headers(response.headers);
+    headers.delete("Set-Cookie");
+    for (const cookie of cookies) headers.append("Set-Cookie", cookie);
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  } catch {
+    // Never fall back to issuing the deterministic legacy bearer if v2 minting
+    // fails. Preserve non-session cookie cleanup (notably spent OAuth state),
+    // explicitly clear any session cookie, and fail closed.
+    await response.body?.cancel().catch(() => {});
+    const headers = new Headers(response.headers);
+    headers.delete("Location");
+    headers.delete("Content-Length");
+    headers.delete("Set-Cookie");
+    for (const cookie of cookies) {
+      if (!cookie.startsWith(`${SESSION_COOKIE}=`)) headers.append("Set-Cookie", cookie);
+    }
+    headers.append("Set-Cookie", clearSessionCookie());
+    headers.set("Cache-Control", "no-store");
+    return new Response("Authentication unavailable", {status: 503, headers});
+  }
 }
 
 function retiredRoomCreate(request: Request): Response | null {
@@ -160,9 +221,10 @@ async function revokeSession(identity: SessionIdentity, env: Env): Promise<void>
 }
 
 async function signedInProbe(
-  request: Request, env: Env, ctx: ExecutionContext
+  request: Request, env: Env, ctx: ExecutionContext, identity: SessionIdentity | null
 ): Promise<{response: Response; signedIn: boolean} | null> {
-  const response = await launchEntry.fetch(accountProbe(request), env, ctx);
+  const compatible = identity ? withLegacySession(request, identity) : request;
+  const response = await launchEntry.fetch(accountProbe(compatible), env, ctx);
   if (!response.ok) return {response, signedIn: false};
   try {
     const body = await response.clone().json() as {signed_in?: unknown};
@@ -182,9 +244,12 @@ async function accountGuardedMutation(
     return null;
   }
 
-  // Reuse the normal account endpoint for cryptographic session verification
-  // and account existence, then apply the independent logout-revocation check.
-  const probe = await signedInProbe(request, env, ctx);
+  const identity = await sessionIdentity(request, env);
+  // Reuse the normal account endpoint for account existence, but expose only a
+  // verified legacy representation to the pre-v2 Worker. Revocation remains
+  // keyed to the original external token above, so independently minted v2
+  // sessions never collapse into the same logout identity.
+  const probe = await signedInProbe(request, env, ctx, identity);
   if (!probe) return sessionServiceUnavailable(request);
   if (!probe.response.ok) return probe.response;
   if (!probe.signedIn) {
@@ -193,14 +258,13 @@ async function accountGuardedMutation(
   }
   await probe.response.body?.cancel().catch(() => {});
 
-  const identity = await sessionIdentity(request);
   if (!identity) return staleSessionResponse(request);
   try {
     if (await sessionRevoked(identity, env)) return staleSessionResponse(request);
   } catch {
     return sessionServiceUnavailable(request);
   }
-  return launchEntry.fetch(request, env, ctx);
+  return launchEntry.fetch(withLegacySession(request, identity), env, ctx);
 }
 
 async function signedOutSnapshot(
@@ -223,7 +287,9 @@ async function accountSnapshot(
   const url = new URL(request.url);
   if (request.method !== "GET" || !ACCOUNT_SNAPSHOT_PATHS.has(url.pathname)) return null;
 
-  const response = await launchEntry.fetch(request, env, ctx);
+  const identity = await sessionIdentity(request, env);
+  const compatible = identity ? withLegacySession(request, identity) : request;
+  const response = await launchEntry.fetch(compatible, env, ctx);
   if (!response.ok) return response;
   let body: {signed_in?: unknown; providers?: unknown};
   try {
@@ -246,7 +312,6 @@ async function accountSnapshot(
     return response;
   }
 
-  const identity = await sessionIdentity(request);
   if (!identity) return sessionServiceUnavailable(request);
   try {
     if (!await sessionRevoked(identity, env)) return response;
@@ -265,7 +330,8 @@ async function revokingLogout(
   // logout attempt into a credential-denial side effect.
   if (!sessionMutationOriginAllowed(request, env)) return launchEntry.fetch(request, env, ctx);
 
-  const probe = await signedInProbe(request, env, ctx);
+  const identity = await sessionIdentity(request, env);
+  const probe = await signedInProbe(request, env, ctx, identity);
   if (!probe) return sessionServiceUnavailable(request);
   if (!probe.response.ok) return probe.response;
   if (!probe.signedIn) {
@@ -274,7 +340,6 @@ async function revokingLogout(
   }
   await probe.response.body?.cancel().catch(() => {});
 
-  const identity = await sessionIdentity(request);
   if (!identity) return staleSessionResponse(request);
   try {
     await revokeSession(identity, env);
@@ -283,13 +348,15 @@ async function revokingLogout(
     // otherwise the UI would report logout while a copied bearer stayed valid.
     return sessionServiceUnavailable(request);
   }
-  return launchEntry.fetch(request, env, ctx);
+  return launchEntry.fetch(withLegacySession(request, identity), env, ctx);
 }
 
 export default {
   async fetch(request, env, ctx): Promise<Response> {
     const retired = retiredRoomCreate(request);
     if (retired) return retired;
+    const oauth = await upgradeBrowserOAuthSession(request, env, ctx);
+    if (oauth) return oauth;
     const account = await accountSnapshot(request, env, ctx);
     if (account) return account;
     const logout = await revokingLogout(request, env, ctx);
