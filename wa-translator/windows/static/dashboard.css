@@ -1,0 +1,61 @@
+*{box-sizing:border-box}:root{color-scheme:light dark;--font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;--bg:#F2F2F7;--card:#FFFFFF;--fill:#F2F2F7;--separator:#C6C6C8;--label:#000;--label-2:#8E8E93;--accent:#007AFF;--destructive:#FF3B30;--confirm:#34C759;--focus:#007AFF}
+@media (prefers-color-scheme: dark){:root{--bg:#000;--card:#1C1C1E;--fill:#2C2C2E;--separator:#38383A;--label:#FFF;--label-2:#8E8E93;--focus:#0A84FF}}
+body{margin:0;min-height:100vh;background:var(--bg);color:var(--label);font-family:var(--font);font-size:17px;-webkit-font-smoothing:antialiased;padding:clamp(16px,4vw,42px) clamp(12px,4vw,42px) calc(24px + env(safe-area-inset-bottom));display:flex;justify-content:center}
+.page{width:min(560px,100%);display:grid;gap:16px;align-content:start}
+.title{font-size:34px;font-weight:700;letter-spacing:-.022em;line-height:1.1;margin:8px 0 0}
+.card{background:var(--card);border-radius:16px;overflow:hidden}
+.state{margin:0;padding:14px 16px;font-size:17px;font-weight:600;letter-spacing:-.01em;color:var(--label)}
+.state[data-state="open"]{color:var(--confirm)}.state[data-state="closed"],.state[data-state="expired"],.state[data-state="error"]{color:var(--destructive)}
+.room{display:grid;gap:14px;padding:16px}.room[hidden]{display:none}
+.field{display:grid;gap:7px;color:var(--label-2);font-size:13px}
+input{width:100%;min-width:0;min-height:44px;border:none;border-radius:10px;background:var(--fill);color:var(--label);font:15px ui-monospace,SFMono-Regular,Consolas,monospace;padding:12px;direction:ltr;text-align:left}
+.actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}.actions button{overflow-wrap:anywhere;line-height:1.2;font-size:15px}
+button{border:none;border-radius:12px;min-height:44px;padding:10px 12px;font:600 17px var(--font);letter-spacing:-.01em;cursor:pointer;background:var(--fill);color:var(--accent)}
+button.primary{background:var(--accent);color:#FFF;min-height:50px}
+button.danger{background:transparent;color:var(--destructive)}
+button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+button:disabled{cursor:wait;opacity:.4}
+.share{grid-template-columns:repeat(3,minmax(0,1fr))}
+/* A camera reads dark modules on a light field: the code carries its own paper
+   rather than inheriting a dark-appearance card. */
+#qrBox{display:grid;place-items:center;margin:0;padding:12px;border-radius:12px;background:#FFF;color:#000}
+#qrBox[hidden]{display:none}
+#qrBox svg{display:block;width:min(228px,58vw);height:auto}
+.notice{min-height:20px;margin:-6px 4px 0;color:var(--label-2);font-size:13px}
+.roomLabel{font-size:13px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;margin:0;color:var(--label-2)}
+/* Until /api/me answers, neither the sign-in card nor the account surfaces are
+   shown: a signed-in host must never see a sign-in button flash by. */
+body:not([data-auth="in"]) .authed{display:none}
+body:not([data-auth="out"]) #authPanel{display:none}
+body[data-auth="out"] #authPanel{display:grid}
+#authPanel{gap:12px;padding:16px}
+.prompt{margin:0;color:var(--label-2);font-size:15px;line-height:1.4}
+.signIn{display:flex;align-items:center;justify-content:center;min-height:50px;border-radius:12px;background:var(--accent);color:#FFF;font:600 17px var(--font);text-decoration:none;padding:10px 12px;text-align:center}
+.signIn~.signIn{background:var(--fill);color:var(--accent)}
+#authStatus{margin:0;color:var(--destructive);font-size:13px;min-height:0}
+/* An id carrying `display` outranks the `.authed` rule above and the card can
+   never be hidden, so the account surfaces state their layout only for the
+   state that shows them — same shape as #authPanel's hide rule. */
+body[data-auth="in"] #accountChip{display:flex}
+#accountChip{align-items:center;gap:12px;padding:8px 16px}
+#accountName{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#signOutBtn{background:transparent;min-height:44px}
+.modes{display:grid;gap:12px}
+.tile{display:flex;align-items:center;justify-content:center;width:100%;min-height:64px;border-radius:16px;background:var(--card);color:var(--accent);font-size:17px}
+.calleeField{padding:14px 16px;gap:7px}
+.hint{color:var(--label-2);font-size:13px}
+.credits{display:grid;gap:12px;padding:16px}
+#creditsBalance{margin:0;font-size:28px;font-weight:700;letter-spacing:-.02em}
+#buyCreditsBtn{width:100%}
+#usageList{list-style:none;margin:0;padding:0;display:grid}
+#usageList li{display:flex;justify-content:space-between;gap:12px;align-items:baseline;min-height:34px;padding:7px 0;border-top:.5px solid var(--separator);font-size:15px}
+#usageList li:first-child{border-top:none}
+#usageList .when{color:var(--label-2);font-size:13px}
+#deleteAccountBtn{width:calc(100% + 32px);text-align:center;font-weight:400;border-top:.5px solid var(--separator);border-radius:0;margin:2px -16px -16px}
+.appLocale{display:grid;gap:7px;padding:14px 16px;color:var(--label-2);font-size:13px}
+.appLocale select{width:100%;min-width:0;min-height:44px;border:none;border-radius:10px;background:var(--fill);color:var(--label);font:17px var(--font);padding:11px 10px}
+.legal{display:grid}
+.legal a{display:flex;align-items:center;min-height:44px;padding:0 16px;color:var(--accent);font-size:17px;text-decoration:none;border-top:.5px solid var(--separator)}
+.legal a:first-child{border-top:none}
+@media(max-width:500px){.actions{grid-template-columns:1fr 1fr}}
+@media(max-width:380px){body{padding:12px 8px}.actions{gap:7px}.actions button{font-size:14px;padding:9px 7px}input{font-size:13px}}
