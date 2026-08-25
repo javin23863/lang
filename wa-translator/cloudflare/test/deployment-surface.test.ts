@@ -28,12 +28,30 @@ describe("permanent deployment surface", () => {
     const room = await exports.default.fetch(`${ORIGIN}/room.html`);
     expect(room.status).toBe(200);
     expect(room.headers.get("Content-Security-Policy"))
-      .toBe("frame-ancestors 'none'; base-uri 'none'; object-src 'none'");
+      .toBe("frame-ancestors 'none'; base-uri 'none'; object-src 'none'; style-src 'self'; script-src 'self'");
     expect(room.headers.get("X-Frame-Options")).toBe("DENY");
     expect(room.headers.get("Permissions-Policy")).toBe("camera=(self), microphone=(self)");
     const roomHtml = await room.text();
+    expect(roomHtml).toContain('<link rel="stylesheet" href="/room.css">');
+    expect(roomHtml).toContain('<script src="/room.js"></script>');
+    expect(roomHtml).not.toContain("<style>");
+    expect(roomHtml).not.toContain("<script>\nconst $ =");
     expect(roomHtml).toContain('id="participantCount" aria-live="polite">0 / 2 people<');
     expect(roomHtml).not.toContain('id="participantCount" aria-live="polite">0 / 4 people<');
+
+    const roomCss = await exports.default.fetch(`${ORIGIN}/room.css`);
+    expect(roomCss.status).toBe(200);
+    expect(roomCss.headers.get("Content-Type")).toContain("text/css");
+    expect(roomCss.headers.get("Cache-Control")).toBe("no-store");
+    expect(await roomCss.text()).toContain("#stage{");
+
+    const roomJs = await exports.default.fetch(`${ORIGIN}/room.js`);
+    expect(roomJs.status).toBe(200);
+    expect(roomJs.headers.get("Content-Type")).toContain("text/javascript");
+    expect(roomJs.headers.get("Cache-Control")).toBe("no-store");
+    const roomJsSource = await roomJs.text();
+    expect(roomJsSource).toContain("const $ = (id) => document.getElementById(id);");
+    expect(roomJsSource).toContain("async function connect()");
 
     const worklet = await exports.default.fetch(`${ORIGIN}/static/pcm-worklet.js`);
     expect(worklet.status).toBe(200);
