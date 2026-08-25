@@ -11,7 +11,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "spoken-translation-room-dev",
-  "main": "src/launch-entry.ts",
+  "main": "src/account-guard-entry.ts",
   "compatibility_date": "2026-08-13",
   "rules": [
     {
