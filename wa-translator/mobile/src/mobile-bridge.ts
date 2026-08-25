@@ -79,23 +79,35 @@ async function bindingChallenge(binding: string): Promise<string> {
 
 async function prepareAuthBinding(provider: string): Promise<void> {
   let binding: string | null = null;
+  let migratedLegacy = false;
   try { binding = canonicalBinding(await hostStorage.getItem(authBindingKey(provider))); }
   catch { /* memory fallback below */ }
 
-  // Preserve an in-flight OAuth attempt started by the previous build, then
-  // remove its raw localStorage copy as soon as it has been migrated.
+  // Preserve an in-flight OAuth attempt started by the previous build. Its raw
+  // localStorage copy is removed only after the secure-storage migration has
+  // actually succeeded; otherwise a process death could strand the callback.
   if (!binding) {
-    try { binding = canonicalBinding(localStorage.getItem(legacyAuthBindingKey(provider))); }
-    catch { /* no legacy WebView storage */ }
+    try {
+      const legacy = canonicalBinding(localStorage.getItem(legacyAuthBindingKey(provider)));
+      if (legacy) {
+        binding = legacy;
+        migratedLegacy = true;
+      }
+    } catch { /* no legacy WebView storage */ }
   }
   if (!binding) binding = base64url(crypto.getRandomValues(new Uint8Array(32)));
 
   memoryAuthBindings.set(provider, binding);
   authChallenges.set(provider, await bindingChallenge(binding));
-  try { await hostStorage.setItem(authBindingKey(provider), binding); }
-  catch { /* same-process auth still retains the binding in memory */ }
-  try { localStorage.removeItem(legacyAuthBindingKey(provider)); }
-  catch { /* legacy storage may be unavailable */ }
+  let persisted = false;
+  try {
+    await hostStorage.setItem(authBindingKey(provider), binding);
+    persisted = true;
+  } catch { /* same-process auth still retains the binding in memory */ }
+  if (!migratedLegacy || persisted) {
+    try { localStorage.removeItem(legacyAuthBindingKey(provider)); }
+    catch { /* legacy storage may be unavailable */ }
+  }
 }
 
 const authBindingsReady: Promise<void> = isNative
