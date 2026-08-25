@@ -45,6 +45,10 @@ test("native room shell is decomposed, accessible, bridge-enabled and two-person
                "the installed client fails closed on a mismatched server room contract");
   assert.match(js, /m\.peers\.length > 1/,
                "a welcome payload cannot smuggle multiple remote peers into a two-person room");
+  assert.match(js, /setStatus\('status\.micUnavailable', null, true\)/,
+               "an active microphone track ending is surfaced to the user");
+  assert.match(js, /setStatus\('status\.cameraUnavailable', null, true\)/,
+               "an active camera track ending is surfaced to the user");
 
   assert.match(html, /id="participantCount" aria-live="polite">0 \/ 2 people</,
                "the first rendered room shell matches the two-person contract");
