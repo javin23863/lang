@@ -1,7 +1,8 @@
 import worker, { type Env } from "./worker";
 import { PARTICIPANT_LIMIT, Room } from "./two-party-room";
 
-export { AbuseGate, ReportInbox, UserDirectory } from "./worker";
+export { AbuseGate, ReportInbox } from "./worker";
+export { UserDirectory } from "./account-directory";
 export { Room };
 
 const NATIVE_ORIGINS = new Set(["https://localhost", "capacitor://localhost"]);
@@ -22,6 +23,7 @@ const NONCE_PATTERN = /^[A-Za-z0-9_-]{22}$/;
 const SESSION_PATTERN = /^s1\.[A-Za-z0-9_-]{22}\.\d{10}\.[A-Za-z0-9_-]{43}$/;
 const PROVIDERS = new Set(["google", "apple", "facebook"]);
 const NATIVE_SESSION_PATHS = new Map([
+  ["/api/v1/rooms", "/api/rooms"],
   ["/api/v1/me", "/api/me"],
   ["/api/v1/account/delete", "/api/account/delete"],
   ["/api/v1/auth/logout", "/auth/logout"],
@@ -67,6 +69,10 @@ async function twoPartyBootstrap(
   if (!response.ok || request.method !== "GET") return response;
   const body = await response.json<Record<string, unknown>>();
   body.max_room_participants = PARTICIPANT_LIMIT;
+  // Compute capacity is an operator/deployment property, not a compatibility
+  // promise to an installed client. The base worker's retired beta number must
+  // not leak through the mobile bootstrap after horizontal scaling is enabled.
+  delete body.compute_capacity;
   const headers = new Headers(response.headers);
   headers.delete("Content-Length");
   return Response.json(body, {status: response.status, headers});
@@ -389,11 +395,7 @@ async function nativeSessionApi(
   request: Request, env: Env, ctx: ExecutionContext
 ): Promise<Response | null> {
   if (request.method === "OPTIONS") return null;
-  const url = new URL(request.url);
-  if (url.pathname === "/api/v1/rooms") {
-    return routeWorker(withNativeSession(request), env, ctx);
-  }
-  const target = NATIVE_SESSION_PATHS.get(url.pathname);
+  const target = NATIVE_SESSION_PATHS.get(new URL(request.url).pathname);
   if (!target) return null;
   if (!nativeOrigin(request)) {
     return new Response("Forbidden", {status: 403, headers: privateHeaders()});
