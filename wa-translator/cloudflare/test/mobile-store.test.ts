@@ -30,6 +30,15 @@ function nativeBinding(fill: number): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+async function nativeBindingChallenge(binding: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest(
+    "SHA-256", new TextEncoder().encode(binding)
+  ));
+  let binary = "";
+  for (const byte of digest) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
 describe("mobile store interface", () => {
   it("is accepted by the installed-client bootstrap validator", async () => {
     // The installed client deliberately remains plain ESM so Android, iOS and
@@ -140,7 +149,7 @@ describe("mobile store interface", () => {
     expect(unknown.headers.get("Cache-Control")).toBe("no-store");
   });
 
-  it("returns OAuth through the app scheme and requires the initiating app binding", async () => {
+  it("returns OAuth through the app scheme while browser URLs carry only the app challenge", async () => {
     expect((await exports.default.fetch(`${PUBLIC_ORIGIN}/auth/native/google/start`, {
       redirect: "manual"
     })).status).toBe(400);
@@ -152,14 +161,16 @@ describe("mobile store interface", () => {
     })).status).toBe(404);
 
     const binding = nativeBinding(7);
+    const challenge = await nativeBindingChallenge(binding);
     const nativeStart = await exports.default.fetch(
-      `${PUBLIC_ORIGIN}/auth/native/google/start?binding=${encodeURIComponent(binding)}`,
+      `${PUBLIC_ORIGIN}/auth/native/google/start?challenge=${encodeURIComponent(challenge)}`,
       { redirect: "manual" }
     );
     expect(nativeStart.status).toBe(302);
     expect(nativeStart.headers.get("Location")).toBe(`${PUBLIC_ORIGIN}/auth/google/start`);
+    expect(nativeStart.url).not.toContain(binding);
     const marker = setCookies(nativeStart).find(value => value.startsWith("lr_native_oauth="))!;
-    expect(marker).toMatch(/^lr_native_oauth=google\.[A-Za-z0-9_-]{43};/);
+    expect(marker).toContain(`lr_native_oauth=google.${challenge};`);
     expect(marker).toContain("SameSite=None");
     expect(marker).toContain("HttpOnly");
 
@@ -191,8 +202,9 @@ describe("mobile store interface", () => {
         body: JSON.stringify({handoff, binding: candidate})
       }
     );
-    // A scheme-hijacking app can see the handoff but not the initiating app's
-    // binding. A wrong proof must not burn the one-time nonce for the real app.
+    // A scheme-hijacking app can see the handoff and its public challenge but
+    // still cannot derive the app-held 256-bit binding needed for exchange. A
+    // wrong proof must not burn the one-time nonce for the real app.
     expect((await exchange(nativeBinding(8))).status).toBe(401);
 
     const exchanged = await exchange(binding);
@@ -220,6 +232,18 @@ describe("mobile store interface", () => {
       headers: {Origin: NATIVE_ORIGIN, Authorization: `Bearer ${session}`}
     });
     expect(created.status).toBe(201);
+  });
+
+  it("temporarily accepts the previous raw-binding native start for installed-build compatibility", async () => {
+    const binding = nativeBinding(4);
+    const response = await exports.default.fetch(
+      `${PUBLIC_ORIGIN}/auth/native/google/start?binding=${encodeURIComponent(binding)}`,
+      {redirect: "manual"}
+    );
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe(`${PUBLIC_ORIGIN}/auth/google/start`);
+    expect(setCookies(response).find(value => value.startsWith("lr_native_oauth=")))
+      .toMatch(/^lr_native_oauth=google\.[A-Za-z0-9_-]{43};/);
   });
 
   it("rejects native handoff exchange outside the installed app origin", async () => {
