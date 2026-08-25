@@ -173,8 +173,20 @@ async function boot() {
   }
   if (startupAuthFailed) setAuthStatus("auth.failed");
   account = await accountPresenter.load();
+  // A confirmed signed-out state must not inherit a prior account's local
+  // host-control bearer. An account-service outage is different: preserve the
+  // encrypted local record, but do not restore or poll it until identity is known.
+  if (!account.signed_in && !account.unavailable) {
+    try {
+      await roomController.discard();
+    } catch (_) {
+      // If secure-storage cleanup fails, fail closed on account transition:
+      // hide providers so another account cannot be signed in over stale admin state.
+      account = {...account, providers: [], unavailable: true};
+    }
+  }
   accountPresenter.render(account);
   applyAccountAvailability();
-  await roomController.restore();
+  if (account.signed_in) await roomController.restore();
 }
 boot();
