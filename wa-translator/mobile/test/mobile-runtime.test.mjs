@@ -13,7 +13,7 @@ const FUTURE = Math.floor(Date.now() / 1000) + 600;
 const USER = "TestHostUser0123456789";
 const NONCE = "ABCDEFGHIJKLMNOPQRSTUV";
 const CHALLENGE = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq";
-const SIGNATURE = "BCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqr";
+const SIGNATURE = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq";
 const HANDOFF = `nh2.google.${USER}.${FUTURE}.${NONCE}.${CHALLENGE}.${SIGNATURE}`;
 const SESSION = `s1.${USER}.${FUTURE}.${CHALLENGE}`;
 
