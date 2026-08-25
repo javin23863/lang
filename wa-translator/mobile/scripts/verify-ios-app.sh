@@ -3,12 +3,14 @@ set -euo pipefail
 
 input="${1:-build/ios/Build/Products/Release-iphoneos/App.app}"
 tmp=""
+signed_ipa=false
 cleanup() {
   if [[ -n "$tmp" ]]; then rm -rf "$tmp"; fi
 }
 trap cleanup EXIT
 
 if [[ "$input" == *.ipa ]]; then
+  signed_ipa=true
   if [[ ! -s "$input" ]]; then
     echo "iOS IPA not found: $input" >&2
     exit 1
@@ -75,6 +77,48 @@ if [[ " $archs " != *" arm64 "* || " $archs " == *" x86_64 "* ]]; then
   exit 1
 fi
 
+if [[ "$signed_ipa" == true ]]; then
+  profile="$app/embedded.mobileprovision"
+  [[ -f "$profile" ]] || {
+    echo "Signed iOS IPA is missing embedded.mobileprovision." >&2
+    exit 1
+  }
+  [[ "${APPLE_TEAM_ID:-}" =~ ^[A-Z0-9]{10}$ ]] || {
+    echo "Signed iOS verification requires a valid APPLE_TEAM_ID." >&2
+    exit 1
+  }
+  codesign --verify --deep --strict "$app" || {
+    echo "Signed iOS IPA failed code-signature verification." >&2
+    exit 1
+  }
+  profile_plist="$tmp/embedded-profile.plist"
+  security cms -D -i "$profile" > "$profile_plist"
+  profile_team="$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$profile_plist")"
+  profile_app_id="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$profile_plist")"
+  [[ "$profile_team" == "$APPLE_TEAM_ID" ]] || {
+    echo "Signed iOS IPA provisioning Team ID does not match APPLE_TEAM_ID." >&2
+    exit 1
+  }
+  [[ "$profile_app_id" == "$APPLE_TEAM_ID.com.javin23863.linguarelay" ]] || {
+    echo "Signed iOS IPA provisioning profile does not match the Lingua Relay bundle identity." >&2
+    exit 1
+  }
+  get_task_allow="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:get-task-allow' "$profile_plist" 2>/dev/null || echo false)"
+  [[ "$get_task_allow" != "true" ]] || {
+    echo "Signed iOS IPA uses a development/debug provisioning entitlement." >&2
+    exit 1
+  }
+  if /usr/libexec/PlistBuddy -c 'Print :ProvisionedDevices' "$profile_plist" >/dev/null 2>&1; then
+    echo "Signed iOS IPA uses a device-scoped provisioning profile instead of App Store distribution." >&2
+    exit 1
+  fi
+  provisions_all_devices="$(/usr/libexec/PlistBuddy -c 'Print :ProvisionsAllDevices' "$profile_plist" 2>/dev/null || echo false)"
+  [[ "$provisions_all_devices" != "true" ]] || {
+    echo "Signed iOS IPA uses an enterprise provisioning profile instead of App Store distribution." >&2
+    exit 1
+  }
+fi
+
 tracking="$(/usr/libexec/PlistBuddy -c 'Print :NSPrivacyTracking' "$app/PrivacyInfo.xcprivacy")"
 [[ "$tracking" == "false" ]] || {
   echo "App privacy manifest must declare tracking disabled." >&2
@@ -136,4 +180,4 @@ if find "$app" -type f \( -name '*.p12' -o -name '*.p8' -o -name '*.keystore' -o
   exit 1
 fi
 
-echo "iOS artifact check: identity, version, privacy, architecture, room UI contract and secret hygiene verified."
+echo "iOS artifact check: identity, version, signing, provisioning, privacy, architecture, room UI contract and secret hygiene verified."
