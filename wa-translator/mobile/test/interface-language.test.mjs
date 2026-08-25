@@ -21,6 +21,14 @@ function declaredLanguages() {
   return new Set([...block[1].matchAll(/"([a-z]{2,3})"/g)].map(match => match[1]));
 }
 
+function signOutFailedTranslations() {
+  const block = runtimeSource.match(
+    /const SIGN_OUT_FAILED_TRANSLATIONS = Object\.freeze\((\{[\s\S]*?\})\);/
+  );
+  assert.ok(block, "app-runtime.js still declares the sign-out failure translation closure");
+  return JSON.parse(block[1]);
+}
+
 test("every declared interface language ships a dictionary", async () => {
   const files = (await readdir(new URL("i18n/", staticRoot))).filter(name => name.endsWith(".json"));
   const shipped = new Set(files.map(name => name.replace(/\.json$/, "")));
@@ -32,17 +40,37 @@ test("every declared interface language ships a dictionary", async () => {
                    "dictionaries the runtime will never load");
 });
 
-test("every dictionary covers the English base exactly", async () => {
+test("the sign-out failure has explicit copy in every translated locale", () => {
+  const translations = signOutFailedTranslations();
+  const expected = [...declaredLanguages()].filter(code => code !== "en").sort();
+  assert.deepEqual(Object.keys(translations).sort(), expected,
+                   "the transitional translation closure covers every non-English locale exactly");
+  for (const [code, text] of Object.entries(translations)) {
+    assert.equal(typeof text, "string", `${code}:auth.signOutFailed is a string`);
+    assert.ok(text.trim(), `${code}:auth.signOutFailed is not empty`);
+    assert.doesNotMatch(text, /[<>]/, `${code}:auth.signOutFailed carries no markup`);
+  }
+  assert.match(runtimeSource,
+    /loaded = \{\.\.\.value, "auth\.signOutFailed": signOutFailed\}/,
+    "loaded translated dictionaries receive the explicit locale-specific closure value");
+});
+
+test("every effective dictionary covers the English base exactly", async () => {
   const expected = baseKeys();
+  const translations = signOutFailedTranslations();
   assert.ok(expected.size > 100, "the base dictionary is populated");
   const files = (await readdir(new URL("i18n/", staticRoot))).filter(name => name.endsWith(".json"));
   assert.ok(files.length > 0, "dictionaries are present");
   for (const name of files) {
+    const code = name.replace(/\.json$/, "");
     const value = JSON.parse(await readFile(new URL(`i18n/${name}`, staticRoot), "utf8"));
-    const keys = new Set(Object.keys(value));
+    assert.equal(Object.hasOwn(value, "auth.signOutFailed"), false,
+                 `${name} keeps the transitional sign-out key in one source only`);
+    const effective = {...value, "auth.signOutFailed": translations[code]};
+    const keys = new Set(Object.keys(effective));
     assert.deepEqual([...expected].filter(key => !keys.has(key)), [], `${name} is missing keys`);
     assert.deepEqual([...keys].filter(key => !expected.has(key)), [], `${name} has unknown keys`);
-    for (const [key, text] of Object.entries(value)) {
+    for (const [key, text] of Object.entries(effective)) {
       assert.equal(typeof text, "string", `${name}:${key} is a string`);
       assert.doesNotMatch(text, /[<>]/, `${name}:${key} carries no markup`);
     }
@@ -66,6 +94,10 @@ test("placeholders survive translation in every dictionary", async () => {
       assert.deepEqual(placeholders(text), expected.get(key) ?? [],
                        `${name}:${key} keeps the same placeholders as English`);
     }
+  }
+  for (const [code, text] of Object.entries(signOutFailedTranslations())) {
+    assert.deepEqual(placeholders(text), expected.get("auth.signOutFailed") ?? [],
+                     `${code}:auth.signOutFailed keeps the same placeholders as English`);
   }
 });
 
