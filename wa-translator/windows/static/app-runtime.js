@@ -357,6 +357,11 @@
     return new URL(path, publicOrigin).toString();
   }
 
+  function currentRoomMode() {
+    const mode = new URLSearchParams(location.search).get("m");
+    return mode === "voice" || mode === "chat" ? mode : "";
+  }
+
   function contentUrl(page, hash = "") {
     if (!["privacy", "terms", "support"].includes(page)) {
       throw new Error("Unsupported content page");
@@ -365,9 +370,11 @@
                         native ? location.href : publicOrigin);
     const token = roomToken();
     if (token) {
-      url.searchParams.set("return", native
-        ? `room.html?room=${encodeURIComponent(token)}`
-        : `/room/${token}`);
+      const mode = currentRoomMode();
+      const returnPath = native
+        ? `room.html?room=${encodeURIComponent(token)}${mode ? `&m=${mode}` : ""}`
+        : `/room/${token}${mode ? `?m=${mode}` : ""}`;
+      url.searchParams.set("return", returnPath);
     }
     if (hash) url.hash = hash;
     return url.toString();
@@ -417,15 +424,15 @@
   function openRoom(room, mode) {
     const token = String((typeof room === "string" ? room : room?.path) || "")
       .split("/").filter(Boolean).pop();
-    const name = mode === "voice" && room?.callee ? room.callee : undefined;
-    if (native) return window.LinguaNative.openRoom(token, mode, name);
+    if (native) return window.LinguaNative.openRoom(token, mode);
     const opened = window.open("about:blank", "_blank");
     if (!opened) return false;
     opened.opener = null;
     const url = new URL(inviteUrl(room));
     if (mode && mode !== "video") url.searchParams.set("m", mode);
-    // The host opens the same call screen the invitation opens, name included.
-    if (name) url.searchParams.set("n", name);
+    // Personal labels from older saved-room records are deliberately ignored:
+    // participant bearer URLs contain only the signed room token and call mode.
+    url.searchParams.delete("n");
     opened.location.replace(url.toString());
     return true;
   }
