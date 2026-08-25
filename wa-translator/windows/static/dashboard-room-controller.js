@@ -24,7 +24,7 @@
     let room = null;
     let busy = false;
     let statusTimer = null;
-    let statusRefreshing = false;
+    let statusRefreshRoom = null;
 
     function current() {
       return room;
@@ -60,18 +60,23 @@
     }
 
     async function refresh() {
-      if (!room || busy || statusRefreshing) return;
-      statusRefreshing = true;
+      const targetRoom = room;
+      if (!targetRoom || busy || statusRefreshRoom === targetRoom) return;
+      statusRefreshRoom = targetRoom;
       try {
         const response = await dashboardFetch(runtime.apiUrl("/api/room-control"), {
-          headers: {Authorization: "Bearer " + room.host_control, Accept: "application/json"},
+          headers: {Authorization: "Bearer " + targetRoom.host_control, Accept: "application/json"},
         });
+        // A close/replace can complete while this request is in flight. Never
+        // let an old room's delayed status mutate or clear the new room.
+        if (room !== targetRoom) return;
         if (response.status === 403) {
           await clear("expired", "home.controlLost");
           return;
         }
         if (!response.ok) throw new Error("status unavailable");
         const value = await response.json();
+        if (room !== targetRoom) return;
         if (value.participant_limit !== 2) throw new Error("participant contract mismatch");
         if (value.state === "closed") {
           await clear("closed", "home.roomClosed");
@@ -80,12 +85,14 @@
         if (value.state !== "ready" && value.state !== "open") {
           throw new Error("invalid room state");
         }
-        onRender(room, value.state, value.participant_count);
+        onRender(targetRoom, value.state, value.participant_count);
         onNotice("");
       } catch (_) {
-        onClear("error", "home.statusUnavailable", {preserveRoom: true});
+        if (room === targetRoom) {
+          onClear("error", "home.statusUnavailable", {preserveRoom: true});
+        }
       } finally {
-        statusRefreshing = false;
+        if (statusRefreshRoom === targetRoom) statusRefreshRoom = null;
       }
     }
 
