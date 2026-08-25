@@ -55,5 +55,9 @@ describe("permanent deployment surface", () => {
     const serviceWorker = await exports.default.fetch(`${ORIGIN}/sw.js`);
     expect(serviceWorker.status).toBe(200);
     expect(serviceWorker.headers.get("Service-Worker-Allowed")).toBe("/");
+    const serviceWorkerJs = await serviceWorker.text();
+    expect(serviceWorkerJs).toContain("cache: 'no-store'");
+    expect(serviceWorkerJs).not.toContain("caches.open");
+    expect(serviceWorkerJs).not.toContain("cache.put");
   });
 });
