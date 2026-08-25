@@ -6,8 +6,8 @@ const source = await readFile(new URL("../www/dashboard.js", import.meta.url), "
 
 test("account snapshots and persisted host control are reconciled at boot and outage recovery", () => {
   assert.match(source,
-    /async function reconcileAccountRoomCustody\(snapshot\) \{[\s\S]*?if \(snapshot\.signed_in\) \{[\s\S]*?await roomController\.restore\(\);[\s\S]*?return snapshot;[\s\S]*?if \(snapshot\.unavailable\) return snapshot;[\s\S]*?await roomController\.discard\(\);[\s\S]*?return snapshot;[\s\S]*?return \{\.\.\.snapshot, providers: \[\], unavailable: true\};[\s\S]*?\}/,
-    "signed-in state restores, outages preserve without restore, signed-out state purges, and cleanup failure blocks account transition");
+    /async function reconcileAccountRoomCustody\(snapshot\) \{[\s\S]*?if \(snapshot\.signed_in\) \{[\s\S]*?await roomController\.restore\(\);[\s\S]*?return snapshot;[\s\S]*?if \(snapshot\.unavailable\) return snapshot;[\s\S]*?if \(await roomController\.discard\(\)\) return snapshot;[\s\S]*?return \{\.\.\.snapshot, providers: \[\], unavailable: true\};[\s\S]*?\}/,
+    "signed-in state restores, outages preserve without restore, and signed-out providers stay hidden until persistent bearer retirement is confirmed");
   assert.equal((source.match(/await reconcileAccountRoomCustody\(/g) ?? []).length, 2,
     "the same custody reconciliation must run both at startup and after an unavailable account snapshot recovers");
   assert.match(source,

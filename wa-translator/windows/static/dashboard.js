@@ -109,13 +109,12 @@ async function reconcileAccountRoomCustody(snapshot) {
   try {
     // A confirmed signed-out state must not inherit a prior account's local
     // host-control bearer before another provider sign-in can be exposed.
-    await roomController.discard();
-    return snapshot;
-  } catch (_) {
-    // If secure-storage cleanup fails, fail closed on account transition:
-    // hide providers so another account cannot be signed in over stale admin state.
-    return {...snapshot, providers: [], unavailable: true};
-  }
+    if (await roomController.discard()) return snapshot;
+  } catch (_) {}
+  // The controller always drops its in-memory bearer first. If persistent
+  // retirement cannot be confirmed, keep provider entry points hidden until
+  // storage recovers and this reconciliation can prove the bearer is retired.
+  return {...snapshot, providers: [], unavailable: true};
 }
 
 const sharePresenter = window.LinguaDashboardShare.create({

@@ -4,6 +4,7 @@
   const MODES = new Set(["voice", "chat", "video"]);
   const ROOM_PATH_PATTERN = /^\/room\/([A-Za-z0-9_-]{24})\.(\d{10})\.[A-Za-z0-9_-]{43}$/;
   const HOST_CONTROL_PATTERN = /^hc1\.([A-Za-z0-9_-]{24})\.(\d{10})\.[A-Za-z0-9_-]{43}$/;
+  const REVOKED_RECORD = '{"revoked":true}';
 
   function create(runtime) {
     if (!runtime || typeof runtime.inviteUrl !== "function"
@@ -69,7 +70,17 @@
     }
 
     async function forget() {
-      await runtime.forgetHostRoom();
+      // Overwrite the bearer with a checked invalid tombstone before best-effort
+      // deletion. This makes silent native deletion failure safe: once the write
+      // succeeds, no usable host-control capability remains at rest.
+      let retired = false;
+      try {
+        retired = await runtime.saveHostRoom(REVOKED_RECORD) === true;
+      } catch (_) {}
+      try {
+        await runtime.forgetHostRoom();
+      } catch (_) {}
+      return retired;
     }
 
     return Object.freeze({normalizeMode, mode, inviteUrl, valid, load, save, forget});

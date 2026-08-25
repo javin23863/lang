@@ -217,7 +217,7 @@
       invalidationGeneration++;
       stopPolling();
       room = null;
-      await model.forget();
+      return await model.forget();
     }
 
     return Object.freeze({

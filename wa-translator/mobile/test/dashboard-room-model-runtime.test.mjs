@@ -20,7 +20,7 @@ function roomRecord(overrides = {}) {
   };
 }
 
-function loadModel(savedValue = null) {
+function loadModel(savedValue = null, {saveSucceeds = true, deleteSucceeds = true} = {}) {
   let stored = savedValue;
   let writes = 0;
   let forgets = 0;
@@ -29,8 +29,16 @@ function loadModel(savedValue = null) {
   const runtime = {
     inviteUrl: room => new URL(room.path, "https://lingua.test").toString(),
     loadHostRoom: async () => stored,
-    saveHostRoom: async value => { stored = value; writes++; return true; },
-    forgetHostRoom: async () => { stored = null; forgets++; },
+    saveHostRoom: async value => {
+      writes++;
+      if (!saveSucceeds) return false;
+      stored = value;
+      return true;
+    },
+    forgetHostRoom: async () => {
+      forgets++;
+      if (deleteSucceeds) stored = null;
+    },
   };
   const model = context.window.LinguaDashboardRoomModel.create(runtime);
   return {model, state: () => ({stored, writes, forgets})};
@@ -92,4 +100,27 @@ test("valid invite URLs remain on the public origin and add only the normalized 
   assert.equal(invite.pathname, record.path);
   assert.equal(invite.searchParams.get("m"), "voice");
   assert.deepEqual([...invite.searchParams.keys()], ["m"]);
+});
+
+test("retirement overwrites a bearer before best-effort deletion", async () => {
+  const record = roomRecord();
+  const h = loadModel(JSON.stringify(record), {deleteSucceeds: false});
+
+  assert.equal(await h.model.forget(), true,
+    "a checked overwrite is sufficient even when native deletion silently fails");
+  assert.equal(h.state().stored, '{"revoked":true}');
+  assert.equal(h.state().forgets, 1);
+  assert.equal(h.model.valid(JSON.parse(h.state().stored)), false,
+    "the surviving tombstone cannot be used as room administration");
+});
+
+test("retirement fails closed when the bearer cannot be overwritten or deleted", async () => {
+  const persisted = JSON.stringify(roomRecord());
+  const h = loadModel(persisted, {saveSucceeds: false, deleteSucceeds: false});
+
+  assert.equal(await h.model.forget(), false);
+  assert.equal(h.state().stored, persisted,
+    "callers can detect that a usable persisted bearer may still remain");
+  assert.equal(h.state().writes, 1);
+  assert.equal(h.state().forgets, 1);
 });
