@@ -7,12 +7,15 @@ const read = path => readFile(new URL(path, import.meta.url), "utf8");
 test("native room shell is decomposed, accessible, bridge-enabled and two-person", async () => {
   const html = await read("../www/room.html");
   const css = await read("../www/room.css");
+  const uiCss = await read("../www/room-ui.css");
   const js = await read("../www/room.js");
 
   assert.match(html, /<script src="\/mobile-bridge\.js"><\/script><script src="\/app-runtime\.js"><\/script>/,
                "the native bridge loads before the shared runtime");
   assert.match(html, /<link rel="stylesheet" href="\/room\.css">/,
-               "room styling ships as its own asset");
+               "canonical room styling ships as its own asset");
+  assert.match(html, /<link rel="stylesheet" href="\/room-ui\.css">/,
+               "Lingua room presentation ships after the canonical styling");
   assert.match(html, /<script src="\/room\.js"><\/script>/,
                "room behavior ships as its own asset at the original execution point");
   assert.doesNotMatch(html, /<style>/, "the installed room has no inline style block");
@@ -23,6 +26,12 @@ test("native room shell is decomposed, accessible, bridge-enabled and two-person
   assert.match(html, /id="captions" role="log" aria-live="polite" aria-relevant="additions text"/);
   assert.match(css, /#stage\{/);
   assert.match(css, /#chatBar\{/);
+  assert.match(uiCss, /--accent:#64D4C3/,
+               "room presentation uses the Lingua Relay brand accent");
+  assert.match(uiCss, /prefers-reduced-motion:reduce/,
+               "motion-sensitive users get a non-animated room surface");
+  assert.match(uiCss, /orientation:landscape/,
+               "compact landscape call layouts are explicitly supported");
   assert.match(js, /const \$ = \(id\) => document\.getElementById\(id\);/);
   assert.match(js, /async function connect\(\)/);
   assert.match(js, /el\.hidden = !text/);
