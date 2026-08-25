@@ -192,6 +192,7 @@ describe("mobile store interface", () => {
       `^${MOBILE_SCHEME.replaceAll(".", "\\.")}://auth/google#handoff=nh2\\.google\\.`
     ));
     expect(completion).not.toContain("s1.");
+    expect(completion).not.toContain("s2.");
     expect(setCookies(callback).some(cookie => cookie.startsWith("lr_s="))).toBe(false);
     const handoff = new URL(completion).hash.slice("#handoff=".length);
 
@@ -212,7 +213,7 @@ describe("mobile store interface", () => {
     expect(exchanged.headers.get("Access-Control-Allow-Origin")).toBe(NATIVE_ORIGIN);
     expect(exchanged.headers.get("Cache-Control")).toBe("no-store");
     const {session} = await exchanged.json<{session: string}>();
-    expect(session).toMatch(/^s1\.[A-Za-z0-9_-]{22}\.\d{10}\.[A-Za-z0-9_-]{43}$/);
+    expect(session).toMatch(/^s2\.[A-Za-z0-9_-]{22}\.\d{10}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/);
     expect((await exchange(binding)).status).toBe(401);
 
     const account = await exports.default.fetch(`${PUBLIC_ORIGIN}/api/v1/me`, {
