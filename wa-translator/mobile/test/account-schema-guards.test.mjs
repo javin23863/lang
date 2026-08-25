@@ -34,24 +34,31 @@ test("OAuth profile presentation metadata cannot inject control or bidi formatti
                       "presentation sanitization never rewrites the subject-derived account identifier");
 });
 
-test("logout revocation stores only an expiring external-token digest and shares the account retention alarm safely", async () => {
+test("logout revocation and deletion generation retain only bounded opaque session state", async () => {
   const directory = await read("../../cloudflare/src/account-directory.ts");
   const guard = await read("../../cloudflare/src/account-guard-entry.ts");
+  const issuance = await read("../../cloudflare/src/session-issuance-entry.ts");
   const sessions = await read("../../cloudflare/src/session-v2.ts");
 
   assert.match(directory, /const SESSION_REVOCATION_PREFIX = "session-revoked:"/);
+  assert.match(directory, /const SESSION_ISSUANCE_PREFIX = "session-issued:"/);
+  assert.match(directory, /const ACCOUNT_DELETION_KEY = "account-deletion:v1"/);
   assert.match(directory, /const SESSION_REVOCATION_MAX_MS = 31 \* 24 \* 60 \* 60 \* 1000/,
-               "malformed future revocations cannot create unbounded account retention");
+               "malformed future session state cannot create unbounded account retention");
   assert.match(directory, /Object\.keys\(data\)\.sort\(\)\.join\(","\) !== "digest,expires_at"/,
-               "the internal revocation write accepts only the digest and original expiry");
+               "internal session writes accept only the digest and original expiry");
   assert.match(directory, /SESSION_REVOCATION_PATTERN = \/\^\[A-Za-z0-9_-\]\{43\}\$\//,
-               "revocation storage contains a SHA-256-sized opaque digest, never a raw session token");
-  assert.match(directory, /marker\.expiresAt \* 1000 <= now/,
-               "revocations expire with the credential they block");
-  assert.match(directory, /await this\.moveAlarmEarlier\(earliest\)/,
-               "revocation cleanup may move the shared alarm earlier but never extend base retention");
+               "session state contains a SHA-256-sized opaque digest, never a raw session token");
+  assert.match(directory, /validSessionExpiry\(marker\.expiresAt, now\)/,
+               "revocation and issuance records expire with the credential they govern");
+  assert.match(directory, /await this\.ctx\.storage\.put\(ACCOUNT_DELETION_KEY, \{deletedAt, expiresAt\}\)/,
+               "account deletion preserves only a bounded non-identifying generation tombstone");
+  assert.match(directory, /issuance\.issuedAt <= deletion\.deletedAt/,
+               "a session must have a post-deletion issuance record before it can survive account recreation");
+  assert.match(directory, /await this\.moveAlarmEarlier\(Math\.min\(\.\.\.expiries\)\)/,
+               "session cleanup may move the shared alarm earlier but never extend base retention");
   assert.match(directory, /async alarm\(\): Promise<void> \{\s*await super\.alarm\(\);\s*await this\.pruneDeliveryMarkers\(\);\s*await this\.pruneSessionRevocations\(\)/,
-               "usage retention, delivery dedupe, and session revocation share one ordered alarm lifecycle");
+               "usage retention, delivery dedupe, and session state share one ordered alarm lifecycle");
 
   assert.match(sessions, /async function tokenDigest\(token: string\): Promise<string>/);
   assert.match(sessions, /crypto\.subtle\.digest\("SHA-256", new TextEncoder\(\)\.encode\(token\)\)/,
@@ -59,6 +66,10 @@ test("logout revocation stores only an expiring external-token digest and shares
   assert.match(sessions, /SESSION_V2_PURPOSE = "session\.v2"/);
   assert.match(sessions, /crypto\.getRandomValues\(new Uint8Array\(16\)\)/,
                "new sessions contain independent 128-bit issuance entropy");
+  assert.match(issuance, /registerSessionIssuance\(identity: SessionIdentity, env: Env\)/,
+               "external s2 issuance is durably registered before a bearer is returned");
+  assert.match(issuance, /if \(!identity \|\| identity\.version !== 2 \|\| !await registerSessionIssuance\(identity, env\)\)/,
+               "browser callback issuance fails closed when its generation record cannot be stored");
   assert.match(guard, /const identity = await sessionIdentity\(request, env\)/,
                "the outer account boundary authenticates the external token before legacy adaptation");
   assert.match(guard, /return launchEntry\.fetch\(withLegacySession\(request, identity\), env, ctx\)/,
@@ -68,5 +79,5 @@ test("logout revocation stores only an expiring external-token digest and shares
   assert.match(guard, /await revokeSession\(identity, env\)/,
                "logout records server revocation before local credential clearing");
   assert.match(guard, /if \(await sessionRevoked\(identity, env\)\) return staleSessionResponse\(request\)/,
-               "revoked sessions cannot create rooms or delete the account");
+               "revoked or pre-deletion sessions cannot create rooms or delete the account");
 });
