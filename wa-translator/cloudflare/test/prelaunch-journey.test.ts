@@ -61,7 +61,7 @@ describe("prelaunch host-to-guest journey", () => {
   it("creates a private room, serves the guest surface, admits exactly two participants, and closes the invite", async () => {
     const create = await exports.default.fetch(`${ORIGIN}/api/rooms`, {
       method: "POST",
-      headers: {Origin: ORIGIN, Cookie: await hostSessionCookie("PrelaunchJourneyHost001")},
+      headers: {Origin: ORIGIN, Cookie: await hostSessionCookie("PrelaunchJourneyHost01")},
     });
     expect(create.status).toBe(201);
     expect(create.headers.get("Cache-Control")).toBe("no-store");

@@ -1,11 +1,20 @@
 import { exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
+import { hostSessionCookie } from "./session";
 
 const ORIGIN = "https://room.test";
+type CreatedRoom = {path: string};
 
 describe("room activation event seam", () => {
-  it("ships same-origin, content-free activation instrumentation on the room surface", async () => {
-    const room = await exports.default.fetch(`${ORIGIN}/room.html`);
+  it("ships same-origin, content-free activation instrumentation on a real private room surface", async () => {
+    const created = await exports.default.fetch(`${ORIGIN}/api/rooms`, {
+      method: "POST",
+      headers: {Origin: ORIGIN, Cookie: await hostSessionCookie("ProductEventHost123456")},
+    });
+    expect(created.status).toBe(201);
+    const {path} = await created.json<CreatedRoom>();
+
+    const room = await exports.default.fetch(`${ORIGIN}${path}`);
     expect(room.status).toBe(200);
     const html = await room.text();
     const runtime = html.indexOf('<script src="/app-runtime.js"></script>');

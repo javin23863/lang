@@ -135,8 +135,27 @@ describe("permanent deployment surface", () => {
     expect(serviceWorker.headers.get("Service-Worker-Allowed")).toBe("/");
     const serviceWorkerJs = await serviceWorker.text();
     expect(serviceWorkerJs).toContain("cache: 'no-store'");
-    expect(serviceWorkerJs).not.toContain("caches.open");
-    expect(serviceWorkerJs).not.toContain("cache.put");
+    expect(serviceWorkerJs).toContain("const SHELL_PATHS = new Set([");
+    const shellBlock = serviceWorkerJs.match(/const SHELL_PATHS = new Set\(\[([\s\S]*?)\]\);/)?.[1] ?? "";
+    for (const path of ["'/'", "'/index.html'", "'/dashboard.css'", "'/product-events.js'", "'/manifest.webmanifest'"]) {
+      expect(shellBlock).toContain(path);
+    }
+    for (const capabilityPath of ["/room.html", "/room/", "/ws/", "/api/", "/auth/", "/static/i18n/"]) {
+      expect(shellBlock).not.toContain(capabilityPath);
+    }
+    for (const networkOnlyMarker of [
+      "path === '/room.html'",
+      "path.startsWith('/room/')",
+      "path.startsWith('/ws/')",
+      "path.startsWith('/api/')",
+      "path.startsWith('/auth/')",
+      "path.startsWith('/static/i18n/')",
+      "if (request.method !== 'GET' || networkOnly(path))",
+      "if (!SHELL_PATHS.has(path))",
+    ]) expect(serviceWorkerJs).toContain(networkOnlyMarker);
+    expect(serviceWorkerJs).toContain("const cache = await caches.open(CACHE_NAME)");
+    expect(serviceWorkerJs).toContain("await cache.put(request, response.clone())");
+    expect(serviceWorkerJs).toContain("const cached = await caches.match(request)");
   });
 
   it("never caches dynamic auth, API, or room errors", async () => {
