@@ -5,10 +5,16 @@ Historical deployment receipts elsewhere in the repository may describe older
 four-person experiments. Version 1.0 is a **two-person product**: one local
 participant and one remote participant.
 
+The development pass intentionally does **not** run GitHub Actions/CI or signed
+release workflows. Checked build/automation items below mean the source/config
+for that gate exists; the exact release commit must run the full verification
+matrix after development is declared complete.
+
 ## Product contract
 
-- [x] Room capacity is exactly two joined participants.
-- [x] A third joined participant is rejected by the deployed `Room` boundary.
+- [x] Room capacity is exactly two joined participants at the active exported
+  `Room` boundary.
+- [x] A third joined participant is rejected by the two-person wrapper.
 - [x] Installed clients require `max_room_participants: 2` in bootstrap and fail
   closed against a different backend contract.
 - [x] Shared room UI renders a two-person participant count.
@@ -16,7 +22,10 @@ participant and one remote participant.
   voice use the same private room bearer lifecycle.
 - [x] Starting a room requires an OAuth account; joining an invite does not.
 - [x] Account deletion is available in the app and removes account-held data.
-- [x] Version 1.0 has no purchase flow; the credits purchase control is disabled.
+- [x] Version 1.0 is non-monetized: no purchase surface, stored credit balance,
+  StoreKit product, or Google Play Billing product is part of the active app.
+- [x] New participant/share/QR/native room URLs contain only the signed room
+  token and optional call mode; the retired personal-name query is not emitted.
 
 ## Native authentication
 
@@ -26,27 +35,32 @@ participant and one remote participant.
   than relying on a same-domain Safari Universal Link redirect.
 - [x] The short auth handoff is one-time, expires after 90 seconds, and is bound
   to 256 random bits held by the app that initiated the provider flow.
+- [x] Duplicate cold-launch delivery of the same native handoff is idempotent.
 - [x] The exchanged native session is stored in platform secure storage and is
   sent only to the versioned account/room-creation endpoints that require it.
+- [x] Every native session endpoint, including room creation, requires the exact
+  installed-app origin in addition to the bearer.
 - [x] Native logout and account deletion clear the stored native session.
 - [x] Apple `form_post`, ES256 client-secret generation, token exchange, claims,
-  native return and handoff exchange are covered by the Worker regression suite.
+  native return and handoff exchange have regression contracts in source.
 - [ ] **Production iOS gate:** the live `/api/v1/me` provider list includes
   `apple`. Do not submit iOS while Google/Facebook is offered without Apple.
 
 ## Links and signing identity
 
 - [x] Public room invitations remain HTTPS App/Universal Links.
-- [x] Android declares verified room links for the production Worker host.
+- [x] Android declares verified room links for the configured public host.
 - [x] iOS carries the matching `applinks:` entitlement.
+- [x] Native sync derives Android/iOS association hosts from the mobile runtime
+  `PUBLIC_ORIGIN`, avoiding three independent hostname edits.
 - [x] The auth-only custom scheme is registered on Android and iOS and its input
   parser accepts only the expected bound handoff shape/provider.
 - [ ] **Android signed-build gate:** production `assetlinks.json` contains the
   SHA-256 fingerprint of the actual release signing certificate.
 - [ ] **iOS signed-build gate:** production AASA contains the real Apple Team ID
   plus `com.javin23863.linguarelay` and claims `/room/*`.
-- [x] The credential-gated beta workflow checks these live associations before
-  it uploads a signed build.
+- [x] The credential-gated beta workflow source checks these live associations
+  before it uploads a signed build.
 
 ## Store metadata and assets
 
@@ -59,8 +73,11 @@ participant and one remote participant.
 - [x] iOS name and subtitle are at most 30 characters each.
 - [x] iOS description is at most 4000 characters.
 - [x] iOS keywords are at most 100 UTF-8 bytes.
-- [x] iOS listing has phone screenshots and production privacy/support URLs.
-- [x] Privacy, Terms, and Support pages are served by the production Worker.
+- [x] iOS listing has phone screenshots and configured privacy/support URLs.
+- [x] Privacy, Terms, and Support pages exist in shared web/native assets and are
+  routed by the Worker.
+- [x] Legal pages use one fail-closed room-return validator and preserve only
+  `voice`/`chat` mode, never arbitrary origins or retired personal labels.
 - [x] Owner-supplied App Review / Play review inputs are enumerated in
   `REVIEW-INPUTS.md`, with secrets explicitly kept out of Git.
 - [ ] **App Review gate:** create a dedicated public product-support contact and
@@ -79,26 +96,64 @@ participant and one remote participant.
 - [x] iOS privacy manifest is source controlled and declares no tracking.
 - [x] No advertising or analytics SDK is included in version 1.0.
 - [x] No transcript history or call recording is intentionally stored.
+- [x] Active account responses/storage retire the zero-only legacy credits field;
+  existing accounts delete it on their next account read/write.
 - [x] Abuse reporting is category-only and excludes names, room links, message
   content, captions, audio, video, screenshots and free text.
-- [x] Store declarations are maintained in `STORE-DECLARATIONS.md`.
+- [x] Store declarations are maintained in `STORE-DECLARATIONS.md` and match the
+  non-monetized account schema.
 - [ ] Complete the final App Store age-rating/export-compliance questionnaires
   from actual product behavior and signing configuration.
 - [ ] Complete the final Google Play Data safety/content-rating/app-access forms
   from actual product behavior and production account settings.
 
-## Build and beta gates
+## Frontend and runtime structure
 
-- [x] Credential-free CI typechecks and tests the mobile client.
-- [x] Credential-free CI runs the Worker/product regression suite.
-- [x] Credential-free CI builds an Android release AAB.
-- [x] Credential-free CI builds the iOS Release target with signing disabled.
-- [x] Signed Android automation stops at the Play internal track.
-- [x] Signed iOS automation stops at TestFlight.
-- [x] Signed uploads run the live mobile-contract/provider/link-association
-  preflight before store upload.
-- [x] npm install scripts are version-pinned in `allowScripts`; CI uses
-  `strict-allow-scripts=true` so a new unreviewed install script fails closed.
+- [x] Host dashboard behavior and styles are extracted from `index.html` into
+  `dashboard.js` and `dashboard.css` while keeping the existing runtime/API seam.
+- [x] Dashboard deployment/native-bundle contracts assert those assets ship.
+- [x] Dashboard presentation uses the Lingua Relay green/blue identity, adaptive
+  appearance, reduced-motion handling and 44pt-or-larger primary touch targets.
+- [x] Shipping room delivery decomposes canonical `room.html` styling/behavior
+  into `room.css`, `room-ui.css`, and `room.js` without rewriting WebRTC state.
+- [x] Room presentation has the Lingua Relay visual pass, safe-area/landscape
+  handling, reduced motion and accessible live status/caption regions.
+- [x] Active microphone/camera track loss produces a visible localized recovery
+  state rather than silently changing controls.
+- [x] Background teardown closes CONNECTING/OPEN sockets and reconnect generation
+  guards prevent duplicate room WebSockets after foreground restoration.
+
+## Compute/backend structure
+
+- [x] Cloudflare remains the room/account/signalling control plane; Modal owns
+  only authenticated ASR/MT/TTS compute.
+- [x] Modal per-container stream/short-job admission is bounded.
+- [x] Horizontal GPU scale, warm floor, scale-down window and routing region are
+  validated deployment settings rather than hard-coded application constants.
+- [x] Development defaults preserve the one-scale-to-zero-L4 cost envelope.
+- [x] Resolved per-container admission values are baked into the Modal image so
+  remote runtime and deployment decorator cannot diverge.
+- [x] Mobile bootstrap no longer advertises the retired `4 global streams /
+  beta-limited` compute capacity as an installed-client compatibility promise.
+- [ ] Before raising production GPU ceilings, retain measured latency, memory,
+  scale-out/recovery and cost receipts for the exact release configuration.
+
+## Build and beta gates — run after development is complete
+
+- [x] Credential-free workflow source typechecks/tests the mobile client.
+- [x] Credential-free workflow source runs the Worker/product regression suite.
+- [x] Credential-free workflow source builds an Android release AAB.
+- [x] Credential-free workflow source builds the iOS Release target with signing
+  disabled.
+- [x] Signed Android automation is scoped to the Play internal track.
+- [x] Signed iOS automation is scoped to TestFlight.
+- [x] Signed upload workflow source includes live mobile-contract/provider/link
+  association preflight before store upload.
+- [x] npm install scripts are version-pinned in `allowScripts`; workflow config
+  uses `strict-allow-scripts=true` so a new unreviewed install script fails closed.
+- [ ] Run the complete credential-free test/build matrix against the exact final
+  development commit.
+- [ ] Run the signed Android and iOS beta workflows against that same commit.
 - [ ] Install the signed Android internal build on representative physical
   devices and exercise account, link, media-permission and call lifecycles.
 - [ ] Install the TestFlight build on representative physical iPhones and
@@ -106,22 +161,11 @@ participant and one remote participant.
 - [ ] Test Wi-Fi, cellular, network changes, permission revoke/regrant, app
   foreground/background transitions, interruption, reconnect and room expiry.
 
-## Frontend structure
-
-- [x] Host dashboard behavior and styles are extracted from `index.html` into
-  `dashboard.js` and `dashboard.css` while keeping the existing runtime/API seam.
-- [x] Dashboard deployment/native-bundle tests assert those assets are shipped.
-- [x] Dashboard presentation uses the Lingua Relay green/blue identity, adaptive
-  appearance, reduced-motion handling and 44pt-or-larger primary touch targets.
-- [ ] `room.html` remains the largest frontend monolith. Split its styling and
-  behavior only with a full-file-preserving edit path; do not perform a lossy
-  partial replacement because it contains WebRTC/media/signalling state.
-- [ ] After room decomposition is green, do the room-specific visual pass without
-  changing the proven two-person/media protocol contract.
-
 ## Production operations still requiring credentials or console access
 
-- [ ] Provision live Google OAuth credentials/callback.
+- [ ] Select/configure the final public production origin. A branded domain is
+  preferred; do not invent one in source before it exists.
+- [ ] Provision live Google OAuth credentials/callback for that origin.
 - [ ] Provision live Apple Services ID, Key ID, private key and Team ID.
 - [ ] Provision Facebook only if it will actually be offered at launch.
 - [ ] Configure the production Android release certificate fingerprint in the
@@ -136,7 +180,9 @@ participant and one remote participant.
 
 `cloudflare/src/worker.ts` still contains the legacy four-person implementation
 that predates the version 1.0 decision. Production/dev Wrangler entry points use
-`src/mobile-entry.ts`, which exports the strict two-person `Room` wrapper, and CI
-exercises that boundary. Do not deploy `worker.ts` directly. A later refactor
-should move the two-person invariant into the base Room and delete the wrapper,
-but that is not required to change the currently deployed product contract.
+`src/launch-entry.ts` → `src/mobile-entry.ts`, which exports the strict two-person
+`Room` wrapper, and installed clients independently fail closed on a different
+contract. Do not deploy/export the base `worker.ts` `Room` directly. A later
+refactor should move the two-person invariant into the base Room and delete the
+wrapper, but that refactor should be performed only with the complete room suite
+available to run.
