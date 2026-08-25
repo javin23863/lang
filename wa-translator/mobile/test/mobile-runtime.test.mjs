@@ -3,8 +3,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
-  MOBILE_AUTH_COMPLETE_PATH, MOBILE_BUILD, MOBILE_PROTOCOL, PUBLIC_ORIGIN, apiPath,
-  createSecureHostStorage, isSessionToken, parseNativeAuthLink, parseRoomLink,
+  MOBILE_AUTH_COMPLETE_PATH, MOBILE_BUILD, MOBILE_PROTOCOL, PARTICIPANT_LIMIT, PUBLIC_ORIGIN,
+  apiPath, createSecureHostStorage, isSessionToken, parseNativeAuthLink, parseRoomLink,
   roomPageUrl, validateBootstrap, websocketPath,
 } from "../src/runtime-core.mjs";
 
@@ -101,11 +101,13 @@ test("installed clients fail closed on incompatible backend bootstrap", () => {
   const valid = {
     protocol: MOBILE_PROTOCOL, minimum_client_build: MOBILE_BUILD,
     public_origin: PUBLIC_ORIGIN, account_mode: "session", call_lifecycle: "foreground",
+    max_room_participants: PARTICIPANT_LIMIT,
   };
   assert.equal(validateBootstrap(valid, MOBILE_BUILD), true);
   assert.equal(validateBootstrap({...valid, protocol: 2}, MOBILE_BUILD), false);
   assert.equal(validateBootstrap({...valid, minimum_client_build: MOBILE_BUILD + 1}, MOBILE_BUILD), false);
   assert.equal(validateBootstrap({...valid, public_origin: "https://attacker.test"}, MOBILE_BUILD), false);
+  assert.equal(validateBootstrap({...valid, max_room_participants: 4}, MOBILE_BUILD), false);
   // Starting a call needs an account now. A backend still answering "none" is
   // an older deployment this build must refuse rather than half-work against.
   assert.equal(validateBootstrap({...valid, account_mode: "none"}, MOBILE_BUILD), false);
