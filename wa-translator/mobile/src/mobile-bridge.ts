@@ -172,20 +172,17 @@ async function acceptNativeHandoff(provider: string, handoff: string): Promise<v
       body: JSON.stringify({handoff, binding}),
       cache: "no-store",
     });
-    if (!response.ok) {
-      clearAuthBinding(provider);
-      throw new Error("handoff refused");
-    }
+    if (!response.ok) throw new Error("handoff refused");
     const body = await response.json() as {session?: unknown};
-    if (!isSessionToken(body.session)) {
-      clearAuthBinding(provider);
-      throw new Error("invalid native session");
-    }
+    if (!isSessionToken(body.session)) throw new Error("invalid native session");
     nativeSession = String(body.session);
     await hostStorage.setItem(NATIVE_SESSION_KEY, nativeSession);
     clearAuthBinding(provider);
     window.location.replace("index.html");
   } catch {
+    // The handoff is one-shot and a failed exchange cannot safely be resumed.
+    // Never leave its binding behind in WebView storage after the attempt ends.
+    clearAuthBinding(provider);
     window.location.replace("index.html?auth=failed");
   }
 }
