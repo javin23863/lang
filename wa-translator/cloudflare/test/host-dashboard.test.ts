@@ -19,23 +19,25 @@ describe("installed host dashboard client", () => {
 
     for (const id of [
       "roomState", "createBtn", "shareLink", "copyBtn", "shareBtn", "openBtn", "closeBtn",
-      // Accounts: the sign-in card, the account chip, and the credits panel.
-      "authPanel", "accountChip", "signOutBtn", "creditsPanel", "creditsBalance",
-      "buyCreditsBtn", "usageList", "deleteAccountBtn",
+      // Accounts: sign-in, account identity, recent usage, and deletion.
+      "authPanel", "accountChip", "signOutBtn", "creditsPanel", "usageList", "deleteAccountBtn",
       // The three call surfaces. createBtn above is the video tile, unchanged.
       "createVoiceBtn", "createChatBtn",
       // Sharing the invite: two apps by URL scheme, and a code for the ones
       // that have none.
       "waBtn", "lineBtn", "qrBtn", "qrBox"
     ]) expect(html).toContain(`id="${id}"`);
+    // Version 1.0 is deliberately non-monetized. Do not ship a disabled or
+    // misleading purchase affordance before StoreKit/Play Billing exists.
+    expect(html).not.toContain("data-stub");
+    expect(html).not.toContain('id="buyCreditsBtn"');
+    expect(html).not.toContain('id="creditsBalance"');
+    expect(script).not.toContain("creditsBalance");
     // Provider buttons are rendered from /api/me, so the provider ids belong to
     // dashboard behavior rather than the markup shell.
     expect(script).toContain('"signInGoogle"');
     expect(script).toContain('"signInApple"');
     expect(script).toContain('"signInFacebook"');
-    // Purchase is a stub and says so: a live-looking dead button is a store
-    // review finding, and an enabled one would take money for nothing.
-    expect(html).toContain("data-stub");
     expect(html).toContain('aria-live="polite"');
     expect(html).toContain('<script src="/app-runtime.js"></script>');
     expect(html).toContain('<script src="/qr.js" defer></script>');
@@ -70,6 +72,8 @@ describe("installed host dashboard client", () => {
     expect(html).not.toContain('type="password"');
     expect(script).toContain('fetch(runtime.apiUrl("/api/room-control")');
     expect(script).toContain('fetch(runtime.apiUrl("/api/room-control/close")');
+    expect(script).toContain("participantCount <= 2");
+    expect(script).toContain("value.participant_limit !== 2");
     expect(script).not.toContain('fetch("/api/capabilities"');
     expect(html).not.toContain('id="catalogSummary"');
     expect(html).not.toContain('Private multilingual rooms');
