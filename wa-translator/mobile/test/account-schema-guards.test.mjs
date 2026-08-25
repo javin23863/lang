@@ -17,6 +17,21 @@ test("active account wrapper retires the legacy credits field on any successful 
                "rewritten account JSON cannot reuse a stale byte length");
 });
 
+test("OAuth profile presentation metadata cannot inject control or bidi formatting", async () => {
+  const source = await read("../../cloudflare/src/account-directory.ts");
+
+  assert.match(source,
+    /const UNSAFE_PROFILE_FORMAT = \/\[\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069\]\/g/,
+    "C0/C1 controls and Unicode bidi override/isolate controls are removed from stored presentation metadata");
+  assert.match(source, /private async sanitizeProviderProfile\(request: Request\): Promise<Request>/);
+  assert.match(source, /const email = cleanProfileText\(data\.email, 160\)/);
+  assert.match(source, /const name = cleanProfileText\(data\.name, 80\) \|\| cleanProfileText\(email, 80\)/);
+  assert.match(source, /const sanitized = await this\.sanitizeProviderProfile\(request\);\s*const forwarded = await this\.preserveAppleProfileName\(sanitized\)/,
+               "all OAuth profile writes are sanitized before provider-specific preservation logic");
+  assert.doesNotMatch(source, /data\.user_id\s*=/,
+                      "presentation sanitization never rewrites the subject-derived account identifier");
+});
+
 test("logout revocation stores only an expiring token digest and shares the account retention alarm safely", async () => {
   const directory = await read("../../cloudflare/src/account-directory.ts");
   const guard = await read("../../cloudflare/src/account-guard-entry.ts");
