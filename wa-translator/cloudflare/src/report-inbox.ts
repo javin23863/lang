@@ -2,11 +2,20 @@ import { ReportInbox as WorkerReportInbox } from "./worker";
 
 const REPORT_KEY_PREFIX = "report:";
 const ALARM_FLOOR_MS = 1_000;
+const MAX_ROUTING_LIFETIME_SECONDS = 24 * 60 * 60;
+const ROOM_ID_PATTERN = /^[A-Za-z0-9_-]{24}$/;
 
 type StoredReportShape = Record<string, unknown> & {
   room_id?: unknown;
   room_expires?: unknown;
 };
+
+function withoutRouting(value: StoredReportShape): StoredReportShape {
+  const retained = {...value};
+  delete retained.room_id;
+  delete retained.room_expires;
+  return retained;
+}
 
 // The category-only moderation record is retained for its documented 30-day
 // window, but its internal room routing ID is useful only while that room can
@@ -20,17 +29,22 @@ export class ReportInbox extends WorkerReportInbox {
     let nextRoomExpiryMs: number | null = null;
 
     for (const [key, value] of rows) {
+      const hasRouting = "room_id" in value || "room_expires" in value;
+      if (!hasRouting) continue;
       const expires = typeof value.room_expires === "number"
         && Number.isSafeInteger(value.room_expires) ? value.room_expires : null;
-      if (expires === null) continue;
-      if (expires <= nowSeconds) {
-        const retained = {...value};
-        delete retained.room_id;
-        delete retained.room_expires;
-        await this.ctx.storage.put(key, retained);
+      const validRoomId = typeof value.room_id === "string" && ROOM_ID_PATTERN.test(value.room_id);
+      const validLifetime = expires !== null
+        && expires <= nowSeconds + MAX_ROUTING_LIFETIME_SECONDS;
+
+      // Corrupt/legacy routing metadata is less useful than no routing metadata
+      // and must not outlive the privacy bound simply because its expiry cannot
+      // be trusted. Fail closed by retaining only the category record.
+      if (!validRoomId || !validLifetime || expires! <= nowSeconds) {
+        await this.ctx.storage.put(key, withoutRouting(value));
         continue;
       }
-      const expiryMs = expires * 1000;
+      const expiryMs = expires! * 1000;
       nextRoomExpiryMs = nextRoomExpiryMs === null
         ? expiryMs : Math.min(nextRoomExpiryMs, expiryMs);
     }
@@ -53,7 +67,7 @@ export class ReportInbox extends WorkerReportInbox {
     if (request.method === "GET" && resolve) {
       const report = await this.ctx.storage.get<StoredReportShape>(`${REPORT_KEY_PREFIX}${resolve[1]}`);
       const expires = report?.room_expires;
-      if (!report || typeof report.room_id !== "string"
+      if (!report || typeof report.room_id !== "string" || !ROOM_ID_PATTERN.test(report.room_id)
           || typeof expires !== "number" || !Number.isSafeInteger(expires)
           || expires <= Math.floor(Date.now() / 1000)) {
         return new Response("Not found", {status: 404});
