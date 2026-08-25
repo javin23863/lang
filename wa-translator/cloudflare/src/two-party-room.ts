@@ -3,6 +3,7 @@ import { Room as WorkerRoom, type Env } from "./worker";
 export const PARTICIPANT_LIMIT = 2;
 const COMPUTE_FETCH_TIMEOUT_MS = 30_000;
 const PRESENCE_LEASE_MS = 90_000;
+const USAGE_PENDING_KEY = "usagePendingV1";
 
 type RoomBaseShape = {
   ctx: DurableObjectState;
@@ -14,12 +15,17 @@ type RoomBaseShape = {
 };
 
 // The original room implementation predates the final two-person product
-// decision and owns private send()/computeFetch() helpers. Cast only the
-// inheritance surface so this wrapper can replace those runtime methods without
-// duplicating the room protocol, metering, signalling, quotas, or lifecycle.
+// decision and owns private send()/computeFetch()/flushUsage() helpers. Cast
+// only the inheritance surface so this wrapper can replace those runtime
+// methods without duplicating the room protocol, signalling, quotas, or media
+// lifecycle.
 const RoomBase = WorkerRoom as unknown as new (...args: any[]) => RoomBaseShape;
 
 type SocketAttachment = { joined?: unknown; lastSeenAt?: unknown } | null;
+type RoomUsage = { callMs: number; chat: number; tts: number };
+type UsageKind = "call" | "chat" | "tts";
+
+const EMPTY_USAGE: RoomUsage = {callMs: 0, chat: 0, tts: 0};
 
 function withTwoPartyLimit(message: object): object {
   const value = {...message} as Record<string, unknown>;
@@ -28,7 +34,25 @@ function withTwoPartyLimit(message: object): object {
   return value;
 }
 
+function usageEmpty(usage: RoomUsage): boolean {
+  return usage.callMs <= 0 && usage.chat <= 0 && usage.tts <= 0;
+}
+
+function base64url(bytes: ArrayBuffer): string {
+  let binary = "";
+  for (const byte of new Uint8Array(bytes)) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+async function roomUsageRef(roomId: string): Promise<string> {
+  return base64url(await crypto.subtle.digest(
+    "SHA-256", new TextEncoder().encode(roomId)
+  )).slice(0, 16);
+}
+
 export class Room extends RoomBase {
+  private usageFlush: Promise<void> | null = null;
+
   private joinedCount(now = Date.now()): number {
     return this.ctx.getWebSockets("browser").filter(socket => {
       const value = socket.deserializeAttachment() as SocketAttachment;
@@ -64,6 +88,93 @@ export class Room extends RoomBase {
     ]);
     const bounded = new Request(request, {signal});
     return this.env.MODAL_TEST ? this.env.MODAL_TEST.fetch(bounded) : fetch(bounded);
+  }
+
+  private async settleCallUsage(): Promise<void> {
+    if (this.joinedCount() > 0) return;
+    const activeSince = await this.ctx.storage.get<number>("activeSince");
+    if (activeSince === undefined) return;
+    await this.ctx.storage.delete("activeSince");
+    const usage = await this.ctx.storage.get<RoomUsage>("usage") || {...EMPTY_USAGE};
+    usage.callMs += Math.max(0, Date.now() - activeSince);
+    await this.ctx.storage.put("usage", usage);
+  }
+
+  private flushUsage(): Promise<void> {
+    // Last-socket close and host close can arrive close together. Serialize the
+    // delivery side so one pending snapshot cannot be sent twice by concurrent
+    // flush calls on the same live Durable Object instance.
+    if (this.usageFlush) return this.usageFlush;
+    const operation = this.flushUsageOnce().finally(() => {
+      if (this.usageFlush === operation) this.usageFlush = null;
+    });
+    this.usageFlush = operation;
+    return operation;
+  }
+
+  private async flushUsageOnce(): Promise<void> {
+    await this.settleCallUsage();
+    const owner = await this.ctx.storage.get<string>("owner");
+    if (!owner) return;
+
+    // Move one immutable snapshot out of the active counter before any network
+    // hop. New room activity can then continue accumulating under `usage` while
+    // a failed account write leaves `usagePendingV1` durable for the next flush.
+    const pending = await this.ctx.storage.transaction(async transaction => {
+      const existing = await transaction.get<RoomUsage>(USAGE_PENDING_KEY);
+      if (existing) return {...existing};
+      const active = await transaction.get<RoomUsage>("usage");
+      if (!active || usageEmpty(active)) return null;
+      await transaction.put(USAGE_PENDING_KEY, {...active});
+      await transaction.put("usage", {...EMPTY_USAGE});
+      return {...active};
+    });
+    if (!pending) return;
+    if (usageEmpty(pending)) {
+      await this.ctx.storage.delete(USAGE_PENDING_KEY);
+      return;
+    }
+
+    const roomRef = await roomUsageRef(this.ctx.id.name || "");
+    const stub = this.env.USERS.get(this.env.USERS.idFromName(owner));
+    const deliveries: Array<[UsageKind, number]> = [
+      ["call", pending.callMs > 0 ? Math.ceil(pending.callMs / 60_000) : 0],
+      ["chat", pending.chat],
+      ["tts", pending.tts],
+    ];
+
+    for (const [kind, units] of deliveries) {
+      if (units <= 0) continue;
+      let response: Response;
+      try {
+        response = await stub.fetch(new Request("https://users.internal/usage", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({kind, units, room_ref: roomRef}),
+        }));
+      } catch {
+        return; // pending storage remains intact for the next close/expiry flush
+      }
+      const status = response.status;
+      await response.body?.cancel().catch(() => {});
+
+      // A missing profile is authoritative account deletion, not a transient
+      // delivery failure. Drop both pending and newly accumulated counters so
+      // room activity can never recreate usage for an erased account.
+      if (status === 404) {
+        await this.ctx.storage.transaction(async transaction => {
+          await transaction.delete(USAGE_PENDING_KEY);
+          await transaction.put("usage", {...EMPTY_USAGE});
+        });
+        return;
+      }
+      if (status < 200 || status >= 300) return;
+
+      if (kind === "call") pending.callMs = 0;
+      else pending[kind] = 0;
+      if (usageEmpty(pending)) await this.ctx.storage.delete(USAGE_PENDING_KEY);
+      else await this.ctx.storage.put(USAGE_PENDING_KEY, {...pending});
+    }
   }
 
   async fetch(request: Request): Promise<Response> {
