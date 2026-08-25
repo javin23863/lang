@@ -39,7 +39,18 @@ matrix after development is declared complete.
 
 ## Native authentication
 
-- [x] Browser accounts continue to use the existing HttpOnly cookie session.
+- [x] Newly issued browser sessions are nonce-bearing `s2` credentials in an
+  HttpOnly/Secure/SameSite cookie; newly issued native sessions use the same
+  `s2` format in platform secure storage.
+- [x] Each `s2` issuance carries a random 128-bit nonce. Two logins for the same
+  user with the same expiry remain different credentials and can be revoked
+  independently.
+- [x] The shipping edge temporarily accepts valid legacy `s1` sessions for
+  migration, but only a verified session may be translated to an internal `s1`
+  representation for the pre-v2 Worker. Revocation always hashes the exact
+  external credential, never that internal representation.
+- [x] Native bootstrap protocol `2` marks the session-format compatibility
+  boundary; pre-v2 installed clients fail closed before starting OAuth.
 - [x] Native Google/Facebook/Apple OAuth starts in the system browser.
 - [x] Native auth returns through the registered Lingua Relay app scheme rather
   than relying on a same-domain Safari Universal Link redirect.
@@ -58,8 +69,11 @@ matrix after development is declared complete.
   grow authentication replay state without bound.
 - [x] Wrong-method provider callback requests use the base `405` path without
   consuming the native marker/state for a legitimate callback still in flight.
-- [x] The exchanged native session is stored in platform secure storage and is
-  sent only to the versioned account/room-creation endpoints that require it.
+- [x] Native handoff responses strip lower-layer `Set-Cookie` state and expose
+  only the upgraded `s2` bearer plus its signed expiry.
+- [x] The exchanged native session is stored in platform secure storage before
+  it becomes active in the in-process fetch interceptor and is sent only to the
+  versioned account/room-creation endpoints that require it.
 - [x] A stale/expired native session self-clears on a protected-endpoint `401` or
   on the signed-out `/api/v1/me` snapshot instead of persisting across launches.
 - [x] A stale browser session cookie is expired when `/api/me` confirms that its
@@ -233,6 +247,14 @@ matrix after development is declared complete.
 - [x] Signed iOS automation is scoped to TestFlight.
 - [x] Signed upload workflow source includes live mobile-contract/provider/link
   association preflight before store upload.
+- [x] Signed-release preflight compares the live backend's minimum client build
+  against the exact Android versionCode/iOS CFBundleVersion being uploaded.
+- [x] Final signed AAB/IPA verification checks the packaged build number, signing
+  identity, platform identity/permissions/privacy contract and credential
+  hygiene before either beta upload command runs.
+- [x] Android release versionCode generation is monotonic across the earlier
+  Unix-seconds strategy, reserves retry space, and fails before Google's
+  2,100,000,000 ceiling.
 - [x] npm install scripts are version-pinned in `allowScripts`; workflow config
   uses `strict-allow-scripts=true` so a new unreviewed install script fails closed.
 - [ ] Run the complete credential-free test/build matrix against the exact final
@@ -266,9 +288,11 @@ matrix after development is declared complete.
 
 `cloudflare/src/worker.ts` still contains the legacy four-person implementation
 that predates the version 1.0 decision. Production/dev Wrangler entry points use
-`src/account-guard-entry.ts` → `src/launch-entry.ts` → `src/mobile-entry.ts`,
-which exports the strict two-person `Room` wrapper, and installed clients
-independently fail closed on a different participant contract. Do not deploy or
-export the base `worker.ts` `Room` directly. A later refactor should move the
-two-person invariant into the base Room and delete the wrapper layers, but that
-refactor should be performed only with the complete room suite available to run.
+`src/session-issuance-entry.ts` → `src/account-guard-entry.ts` →
+`src/launch-entry.ts` → `src/mobile-entry.ts`, which exports the strict
+two-person `Room` wrapper. Installed clients independently fail closed on a
+different participant or native protocol contract. Do not deploy or export the
+base `worker.ts` `Room` directly. A later refactor should move the two-person and
+session-v2 invariants into the base implementation and delete the wrapper layers,
+but that refactor should be performed only with the complete room/auth suite
+available to run.
