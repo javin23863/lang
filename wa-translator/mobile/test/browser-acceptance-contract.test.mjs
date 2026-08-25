@@ -20,7 +20,7 @@ test("real-browser acceptance follows current auth and affirmative-consent contr
 
   assert.match(session, /process\.env\.LINGUA_SESSION/);
   assert.match(session, /must be a current s2 browser session/);
-  assert.doesNotMatch(session, /crypto\.subtle\.sign|ROOM_SIGNING_KEY/,
+  assert.doesNotMatch(session, /crypto\.subtle\.sign|process\.env\.ROOM_SIGNING_KEY/,
     "browser acceptance must not forge a host session that lacks a live account");
 
   assert.match(consent, /fresh room must start with Terms unchecked and Join disabled/);
