@@ -23,7 +23,7 @@ const NATIVE_ORIGINS = new Set(["https://localhost", "capacitor://localhost"]);
 const ROOM_TOKEN_PATTERN = /^([A-Za-z0-9_-]{24})\.(\d{10})\.[A-Za-z0-9_-]{43}$/;
 const MOBILE_PROTOCOL = 2;
 const ROOM_RUNTIME_MARKER = '<script src="/app-runtime.js"></script>';
-const ROOM_PRODUCT_EVENTS = `${ROOM_RUNTIME_MARKER}\n<script src="/product-events.js"></script>\n<script src="/room-product-events.js"></script>`;
+const ROOM_CLIENT_SCRIPTS = `${ROOM_RUNTIME_MARKER}\n<script src="/product-events.js"></script>\n<script src="/room-product-events.js"></script>\n<script src="/room-blocking.js"></script>`;
 
 function setCookieValues(headers: Headers): string[] {
   return typeof headers.getSetCookie === "function"
@@ -214,8 +214,8 @@ async function nativeReportAndBlock(
 
   // The lower Worker validates the room bearer, participant membership, report
   // schema, quotas, and durable inbox write. Only after that write returns 201
-  // do we invalidate the private two-person room server-side. This gives the
-  // installed app a real block boundary without inventing a persistent guest ID.
+  // do we invalidate the private two-person room server-side. The client also
+  // persists the current peer's pseudonymous safety id locally for future rooms.
   const response = await accountGuardEntry.fetch(request, env, ctx);
   if (response.status !== 201) return response;
 
@@ -252,7 +252,7 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext): 
   return report || accountGuardEntry.fetch(request, env, ctx);
 }
 
-async function withRoomProductEvents(request: Request, response: Response): Promise<Response> {
+async function withRoomClientScripts(request: Request, response: Response): Promise<Response> {
   if (response.webSocket || request.method !== "GET" || response.status >= 400) return response;
   const path = new URL(request.url).pathname;
   if (path !== "/room.html" && !path.startsWith("/room/")) return response;
@@ -260,11 +260,11 @@ async function withRoomProductEvents(request: Request, response: Response): Prom
   if (!contentType.toLowerCase().includes("text/html")) return response;
 
   const html = await response.clone().text();
-  if (html.includes('/room-product-events.js')) return response;
+  if (html.includes('/room-blocking.js')) return response;
   if (!html.includes(ROOM_RUNTIME_MARKER)) return response;
   const headers = new Headers(response.headers);
   headers.delete("Content-Length");
-  return new Response(html.replace(ROOM_RUNTIME_MARKER, ROOM_PRODUCT_EVENTS), {
+  return new Response(html.replace(ROOM_RUNTIME_MARKER, ROOM_CLIENT_SCRIPTS), {
     status: response.status,
     statusText: response.statusText,
     headers,
@@ -277,13 +277,13 @@ export default {
     const started = performance.now();
     try {
       let response = await routeRequest(request, env, ctx);
-      response = await withRoomProductEvents(request, response);
+      response = await withRoomClientScripts(request, response);
       const duration = performance.now() - started;
       if (response.status < 400) {
         logOperationalSuccess(operationalSuccessRecord(request, response.status, requestId, duration));
         // Successful responses—including WebSocket upgrades—are observed without
         // transport decoration. The room HTML adapter above is the one explicit
-        // exception: it adds only same-origin, content-free product-event scripts.
+        // exception: it adds only same-origin, content-free room client scripts.
         return response;
       }
       const record = operationalFailureRecord(request, response.status, requestId, duration);
