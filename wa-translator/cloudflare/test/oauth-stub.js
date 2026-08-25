@@ -12,7 +12,10 @@ const APPLE_TEAM_ID = "TESTTEAM01";
 const APPLE_KEY_ID = "TESTKEY123";
 
 function base64url(value) {
-  return btoa(value).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 function decodeBase64url(value) {
