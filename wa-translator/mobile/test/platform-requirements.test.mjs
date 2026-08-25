@@ -35,6 +35,11 @@ test("Android AAB is inspected before CI artifact publication and Play upload", 
                "signed release verification compares the intended version code");
   assert.match(verifier, /android:versionCode=\\\"\$expected_version_code\\\"/,
                "the final AAB manifest must contain that exact version code");
+  assert.match(verifier, /jarsigner -verify/,
+               "a signed beta AAB must pass JAR signature verification");
+  assert.match(verifier, /-keystore "\$LINGUA_ANDROID_KEYSTORE"/);
+  assert.match(verifier, /"\$bundle" "\$LINGUA_ANDROID_KEY_ALIAS"/,
+               "the AAB signer must match the configured release alias");
   assert.match(verifier, /base\/assets\/public\/room\.css/);
   assert.match(verifier, /base\/assets\/public\/room\.js/);
   assert.match(verifier, /verify-android-16k\.sh/);
@@ -69,6 +74,18 @@ test("iOS CI and TestFlight verify the packaged app before upload", async () => 
                "signed release verification compares the intended build number");
   assert.match(verifier, /plist_value CFBundleVersion/,
                "the final app bundle must contain that exact build number");
+  assert.match(verifier, /codesign --verify --deep --strict/,
+               "the exact TestFlight IPA must have a valid code signature");
+  assert.match(verifier, /embedded\.mobileprovision/);
+  assert.match(verifier, /Print :TeamIdentifier:0/);
+  assert.match(verifier, /APPLE_TEAM_ID\.com\.javin23863\.linguarelay/,
+               "the embedded profile must belong to the intended Team ID and bundle ID");
+  assert.match(verifier, /Print :Entitlements:get-task-allow/,
+               "development/debug provisioning is rejected");
+  assert.match(verifier, /Print :ProvisionedDevices/,
+               "device-scoped development/ad-hoc profiles are rejected");
+  assert.match(verifier, /Print :ProvisionsAllDevices/,
+               "enterprise distribution profiles are rejected");
   assert.match(verifier, /lipo -archs/);
   assert.match(verifier, /PrivacyInfo\.xcprivacy/);
   assert.match(verifier, /room\.css/);
