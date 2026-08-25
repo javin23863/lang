@@ -3,11 +3,18 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
-  MOBILE_BUILD, MOBILE_PROTOCOL, PUBLIC_ORIGIN, apiPath, createSecureHostStorage, parseRoomLink,
+  MOBILE_AUTH_COMPLETE_PATH, MOBILE_BUILD, MOBILE_PROTOCOL, PUBLIC_ORIGIN, apiPath,
+  createSecureHostStorage, isSessionToken, parseNativeAuthLink, parseRoomLink,
   roomPageUrl, validateBootstrap, websocketPath,
 } from "../src/runtime-core.mjs";
 
 const TOKEN = "Abcdefghijklmnopqrstuvwx.1786750205.ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq";
+const FUTURE = Math.floor(Date.now() / 1000) + 600;
+const USER = "TestHostUser0123456789";
+const NONCE = "ABCDEFGHIJKLMNOPQRSTUV";
+const SIGNATURE = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq";
+const HANDOFF = `nh1.${USER}.${FUTURE}.${NONCE}.${SIGNATURE}`;
+const SESSION = `s1.${USER}.${FUTURE}.${SIGNATURE}`;
 
 test("deep links accept only exact signed public room URLs", () => {
   assert.deepEqual(
@@ -20,32 +27,71 @@ test("deep links accept only exact signed public room URLs", () => {
   assert.equal(parseRoomLink("not a url"), null);
 });
 
-test("a deep link carries the mode it was shared in, and nothing else", () => {
+test("a deep link carries its mode and bounded voice-call label", () => {
   assert.deepEqual(
     parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?m=voice`), {token: TOKEN, mode: "voice"}
   );
   assert.deepEqual(
     parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?m=chat`), {token: TOKEN, mode: "chat"}
   );
+  assert.deepEqual(
+    parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?m=voice&n=Maria`),
+    {token: TOKEN, mode: "voice", name: "Maria"}
+  );
   // An unknown shell name is furniture this build does not have, not a reason
   // to drop an otherwise valid invitation.
   assert.deepEqual(
     parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?m=hologram`), {token: TOKEN, mode: "video"}
   );
+  assert.equal(parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?m=chat&n=Maria`), null);
+  assert.equal(parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?m=voice&n=${"x".repeat(41)}`), null);
   assert.equal(parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?m=voice&copy=1`), null);
   assert.equal(parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?m=voice&m=chat`), null);
+  assert.equal(parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?m=voice&n=A&n=B`), null);
+});
+
+test("native auth completion accepts only the verified handoff shape", () => {
+  assert.deepEqual(
+    parseNativeAuthLink(`${PUBLIC_ORIGIN}${MOBILE_AUTH_COMPLETE_PATH}#handoff=${HANDOFF}`),
+    {handoff: HANDOFF}
+  );
+  assert.deepEqual(
+    parseNativeAuthLink(`${PUBLIC_ORIGIN}${MOBILE_AUTH_COMPLETE_PATH}#auth=failed`),
+    {error: "failed"}
+  );
+  assert.equal(parseNativeAuthLink(
+    `https://attacker.test${MOBILE_AUTH_COMPLETE_PATH}#handoff=${HANDOFF}`
+  ), null);
+  assert.equal(parseNativeAuthLink(
+    `${PUBLIC_ORIGIN}${MOBILE_AUTH_COMPLETE_PATH}?handoff=${HANDOFF}`
+  ), null);
+  assert.equal(parseNativeAuthLink(
+    `${PUBLIC_ORIGIN}${MOBILE_AUTH_COMPLETE_PATH}#handoff=${HANDOFF}&extra=1`
+  ), null);
+  assert.equal(isSessionToken(SESSION), true);
+  assert.equal(isSessionToken(`s1.${USER}.1.${SIGNATURE}`), false);
 });
 
 test("native traffic stays on the versioned backend seam", () => {
   assert.equal(apiPath("/api/capabilities", true), "/api/v1/capabilities");
   assert.equal(apiPath("/api/reports", true), "/api/v1/reports");
+  assert.equal(apiPath("/api/me", true), "/api/v1/me");
+  assert.equal(apiPath("/api/account/delete", true), "/api/v1/account/delete");
+  assert.equal(apiPath("/auth/logout", true), "/api/v1/auth/logout");
+  assert.equal(apiPath("/auth/google/start", true), "/auth/native/google/start");
+  assert.equal(apiPath("/auth/apple/start", true), "/auth/native/apple/start");
   assert.equal(apiPath("/tts", true), "/api/v1/tts");
   assert.equal(apiPath("/api/capabilities", false), "/api/capabilities");
+  assert.equal(apiPath("/auth/google/start", false), "/auth/google/start");
   assert.throws(() => apiPath("/api/not-a-real-route", true), /Unsupported native API path/);
   assert.equal(websocketPath(TOKEN, true), `/ws/v1/${TOKEN}`);
   assert.equal(websocketPath(TOKEN, false), `/ws/${TOKEN}`);
   assert.equal(roomPageUrl(TOKEN), `room.html?room=${encodeURIComponent(TOKEN)}`);
   assert.equal(roomPageUrl(TOKEN, "voice"), `room.html?room=${encodeURIComponent(TOKEN)}&m=voice`);
+  assert.equal(
+    roomPageUrl(TOKEN, "voice", "Maria"),
+    `room.html?room=${encodeURIComponent(TOKEN)}&m=voice&n=Maria`
+  );
   // Video is the shell an older link already opens, so it stays off the URL.
   assert.equal(roomPageUrl(TOKEN, "video"), roomPageUrl(TOKEN));
   assert.equal(roomPageUrl(TOKEN, "hologram"), roomPageUrl(TOKEN));
