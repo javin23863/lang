@@ -71,6 +71,10 @@ matrix after development is declared complete.
   after a successful server response; revocation failure stays retryable locally.
 - [x] Apple `form_post`, ES256 client-secret generation, token exchange, claims,
   native return and handoff exchange have regression contracts in source.
+- [x] Apple's one-time `user` form field contributes only a bounded display name
+  after normal OAuth validation succeeds. Token-derived email/provider/account
+  identity remain authoritative, and later Apple logins preserve that captured
+  name when Apple no longer sends the one-time field.
 - [ ] **Production iOS gate:** the live `/api/v1/me` provider list includes
   `apple`. Do not submit iOS while Google/Facebook is offered without Apple.
 
@@ -81,6 +85,9 @@ matrix after development is declared complete.
 - [x] iOS carries the matching `applinks:` entitlement.
 - [x] Native sync derives Android/iOS association hosts from the mobile runtime
   `PUBLIC_ORIGIN`, avoiding three independent hostname edits.
+- [x] Production Wrangler, native association sync, and signed-store preflight
+  are source-guarded against the same canonical `PUBLIC_ORIGIN`; local Wrangler
+  remains deliberately isolated on `127.0.0.1`.
 - [x] The auth-only custom scheme is registered on Android and iOS and its input
   parser accepts only the expected bound handoff shape/provider.
 - [ ] **Android signed-build gate:** production `assetlinks.json` contains the
