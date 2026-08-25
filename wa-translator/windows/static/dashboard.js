@@ -6,52 +6,11 @@ const accountPresenter = window.LinguaDashboardAccount.create({
   runtime, fetch: dashboardFetch, t, byId: $
 });
 const roomModel = window.LinguaDashboardRoomModel.create(runtime);
-let currentRoom = null;
 let account = null;
-let statusTimer = null;
-let statusRefreshing = false;
-let busy = false;
 // Every visible line is stored as its key, never as finished text, so a
 // language switch can re-render the screen the person is already looking at.
 let stateKey = "home.noRoom", stateParams = null, noticeKey = "", noticeParams = null;
 let authStatusKey = "";
-const sharePresenter = window.LinguaDashboardShare.create({
-  runtime,
-  t,
-  byId: $,
-  getRoom: () => currentRoom,
-  isBusy: () => busy,
-  roomMode,
-  roomUrl,
-  setNotice,
-  hideQr,
-});
-const settingsPresenter = window.LinguaDashboardSettings.create({runtime, byId: $});
-const lifecycle = window.LinguaDashboardLifecycle.create({runtime, onVisible: refreshStatus});
-
-function roomMode(room) {
-  return roomModel.mode(room);
-}
-
-function roomUrl(room) {
-  return roomModel.inviteUrl(room);
-}
-
-function validRoom(value) {
-  return roomModel.valid(value);
-}
-
-async function loadRoom() {
-  return roomModel.load();
-}
-
-async function saveRoom(room) {
-  return roomModel.save(room);
-}
-
-async function forgetRoom() {
-  await roomModel.forget();
-}
 
 function setNotice(key, params) {
   noticeKey = key || "";
@@ -66,10 +25,16 @@ function setState(state, key, params) {
   $("roomState").textContent = t(key, params);
 }
 
-function renderRoom(state, participantCount) {
-  $("roomPanel").hidden = !currentRoom;
-  if (!currentRoom) return;
-  $("shareLink").value = roomUrl(currentRoom);
+function hideQr() {
+  $("qrBox").replaceChildren();
+  $("qrBox").hidden = true;
+  $("qrBtn").setAttribute("aria-expanded", "false");
+}
+
+function renderRoom(room, state, participantCount) {
+  $("roomPanel").hidden = !room;
+  if (!room) return;
+  $("shareLink").value = roomModel.inviteUrl(room);
   const count = Number.isInteger(participantCount) && participantCount >= 0 && participantCount <= 2
     ? participantCount : 0;
   if (state !== "open") setState(state, "home.roomReady");
@@ -77,8 +42,15 @@ function renderRoom(state, participantCount) {
   else setState(state, "home.roomOpenMany", {count});
 }
 
+function handleRoomClear(state, key, options = {}) {
+  if (options.preserveRoom !== true) {
+    hideQr();
+    $("roomPanel").hidden = true;
+  }
+  setState(state, key);
+}
+
 function setBusy(value) {
-  busy = value;
   for (const id of ["createVoiceBtn", "createChatBtn", "createBtn",
                     "copyBtn", "shareBtn", "openBtn", "closeBtn",
                     "waBtn", "lineBtn", "qrBtn"]) {
@@ -91,156 +63,59 @@ function setAuthStatus(key) {
   $("authStatus").textContent = authStatusKey ? t(authStatusKey) : "";
 }
 
+const roomController = window.LinguaDashboardRoomController.create({
+  runtime,
+  fetch: dashboardFetch,
+  model: roomModel,
+  events: () => window.LinguaProductEvents,
+  confirmAction: key => window.confirm(t(key)),
+  onBusy: setBusy,
+  onNotice: setNotice,
+  onRender: renderRoom,
+  onClear: handleRoomClear,
+});
+const sharePresenter = window.LinguaDashboardShare.create({
+  runtime,
+  t,
+  byId: $,
+  getRoom: roomController.current,
+  isBusy: roomController.isBusy,
+  roomMode: roomModel.mode,
+  roomUrl: roomModel.inviteUrl,
+  setNotice,
+  hideQr,
+});
+const settingsPresenter = window.LinguaDashboardSettings.create({runtime, byId: $});
+const lifecycle = window.LinguaDashboardLifecycle.create({
+  runtime,
+  onVisible: roomController.refresh,
+});
+
 async function deleteAccount() {
   if (!window.confirm(t("auth.deleteConfirm"))) return;
   try {
     const response = await dashboardFetch(runtime.apiUrl("/api/account/delete"),
       {method: "POST", headers: {Accept: "application/json"}});
     if (!response.ok) throw new Error("delete failed");
-    // A room link remains independently valid until room expiry, but the local
-    // host-control bearer belongs to the account/device session that created it.
-    // Do not let the next account on a shared device inherit that control token.
-    await forgetRoom();
+    // Host-control is account/device-local administration state. A successful
+    // account deletion must remove it before another account can use this device.
+    await roomController.discard();
     location.reload();
   } catch (_) {
     setNotice("auth.deleteFailed");
   }
 }
 
-function stopPolling() {
-  clearInterval(statusTimer);
-  statusTimer = null;
-}
-
-// The invite link is a bearer token: its code lives only as long as the room it
-// opens, so a room that changed or ended leaves no scannable copy behind.
-function hideQr() {
-  $("qrBox").replaceChildren();
-  $("qrBox").hidden = true;
-  $("qrBtn").setAttribute("aria-expanded", "false");
-}
-
-async function clearCurrentRoom(state, key) {
-  await forgetRoom();
-  currentRoom = null;
-  stopPolling();
-  hideQr();
-  $("roomPanel").hidden = true;
-  setState(state, key);
-}
-
-function startPolling() {
-  stopPolling();
-  if (!currentRoom) return;
-  statusTimer = setInterval(() => {
-    if (document.visibilityState === "visible") refreshStatus();
-  }, 15000);
-}
-
-async function refreshStatus() {
-  if (!currentRoom || busy || statusRefreshing) return;
-  statusRefreshing = true;
-  try {
-    const response = await dashboardFetch(runtime.apiUrl("/api/room-control"), {
-      headers: {Authorization: "Bearer " + currentRoom.host_control, Accept: "application/json"}
-    });
-    if (response.status === 403) {
-      await clearCurrentRoom("expired", "home.controlLost");
-      return;
-    }
-    if (!response.ok) throw new Error("status unavailable");
-    const value = await response.json();
-    if (value.participant_limit !== 2) throw new Error("participant contract mismatch");
-    if (value.state === "closed") {
-      await clearCurrentRoom("closed", "home.roomClosed");
-      return;
-    }
-    if (value.state !== "ready" && value.state !== "open") throw new Error("invalid room state");
-    renderRoom(value.state, value.participant_count);
-    setNotice("");
-  } catch (_) {
-    setState("error", "home.statusUnavailable");
-  } finally {
-    statusRefreshing = false;
-  }
-}
-
-async function createRoom(mode) {
-  if (busy) return;
-  const requestedMode = roomModel.normalizeMode(mode);
-  if (currentRoom) {
-    if (!window.confirm(t("home.confirmReplace"))) return;
-    await closeRoom(false);
-    if (currentRoom) return;
-  }
-  setBusy(true);
-  setNotice("");
-  try {
-    const response = await dashboardFetch(runtime.apiUrl("/api/rooms"), {
-      method: "POST", headers: {Accept: "application/json"}
-    });
-    if (!response.ok) throw new Error("creation failed");
-    const room = await response.json();
-    if (!validRoom(room)) throw new Error("storage unavailable");
-    // Mode is local presentation metadata; the server signs only the room.
-    room.mode = requestedMode;
-    if (!await saveRoom(room)) throw new Error("storage unavailable");
-    currentRoom = room;
-    hideQr();
-    renderRoom("ready", 0);
-    startPolling();
-    window.LinguaProductEvents?.emit("room.create.result", {mode: requestedMode, result: "success"});
-    setNotice("home.linkReady");
-  } catch (_) {
-    window.LinguaProductEvents?.emit("room.create.result", {mode: requestedMode, result: "failure"});
-    setState("error", "home.createFailed");
-  } finally {
-    setBusy(false);
-  }
-}
-
-function openRoom() {
-  if (!currentRoom || busy) return;
-  // Pass the bearer path, not the whole saved record, so legacy local metadata
-  // can never be promoted into a public navigation URL.
-  if (!runtime.openRoom(currentRoom.path, roomMode(currentRoom))) {
-    setNotice("home.openBlocked");
-  }
-}
-
-async function closeRoom(withConfirmation = true) {
-  if (!currentRoom || busy) return;
-  if (withConfirmation && !window.confirm(t("home.confirmClose"))) return;
-  setBusy(true);
-  try {
-    const response = await dashboardFetch(runtime.apiUrl("/api/room-control/close"), {
-      method: "POST",
-      headers: {Authorization: "Bearer " + currentRoom.host_control, Accept: "application/json"}
-    });
-    if (!response.ok) throw new Error("close failed");
-    window.LinguaProductEvents?.emit("room.close.result", {result: "success"});
-    await clearCurrentRoom("closed", "home.roomClosedLink");
-    setNotice("");
-  } catch (_) {
-    window.LinguaProductEvents?.emit("room.close.result", {result: "failure"});
-    setState("error", "home.closeFailed");
-  } finally {
-    setBusy(false);
-  }
-}
-
-$("createVoiceBtn").onclick = () => createRoom("voice");
-$("createChatBtn").onclick = () => createRoom("chat");
-$("createBtn").onclick = () => createRoom("video");
+$("createVoiceBtn").onclick = () => roomController.create("voice");
+$("createChatBtn").onclick = () => roomController.create("chat");
+$("createBtn").onclick = () => roomController.create("video");
 $("signOutBtn").onclick = async () => {
   try {
     const response = await dashboardFetch(runtime.apiUrl("/auth/logout"), {
       method: "POST", headers: {Accept: "application/json"}
     });
     if (!response.ok) throw new Error("logout failed");
-    // Logout revokes only this account session. Remove its local host-control
-    // bearer as well so a later account on the device cannot inherit room admin.
-    await forgetRoom();
+    await roomController.discard();
     location.reload();
   } catch (_) {
     setAuthStatus("auth.signOutFailed");
@@ -249,8 +124,8 @@ $("signOutBtn").onclick = async () => {
 $("deleteAccountBtn").onclick = deleteAccount;
 $("copyBtn").onclick = sharePresenter.copy;
 $("shareBtn").onclick = sharePresenter.systemShare;
-$("openBtn").onclick = openRoom;
-$("closeBtn").onclick = () => closeRoom(true);
+$("openBtn").onclick = roomController.open;
+$("closeBtn").onclick = () => roomController.close(true);
 $("waBtn").onclick = sharePresenter.whatsapp;
 $("lineBtn").onclick = sharePresenter.line;
 $("qrBtn").onclick = sharePresenter.toggleQr;
@@ -274,15 +149,6 @@ async function boot() {
   if (new URLSearchParams(location.search).get("auth") === "failed") setAuthStatus("auth.failed");
   account = await accountPresenter.load();
   accountPresenter.render(account);
-  currentRoom = await loadRoom();
-  if (currentRoom && currentRoom.expires_at * 1000 > Date.now()) {
-    renderRoom("ready", 0);
-    startPolling();
-    refreshStatus();
-  } else if (currentRoom) {
-    await forgetRoom();
-    currentRoom = null;
-    setState("expired", "home.roomExpired");
-  }
+  await roomController.restore();
 }
 boot();
