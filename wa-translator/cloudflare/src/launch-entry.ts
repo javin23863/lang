@@ -31,8 +31,47 @@ const DISCONNECT_SEAM = "function disconnectRoom(notifyServer, preserveServerClo
 const DISCONNECT_GUARDED = "function disconnectRoom(notifyServer, preserveServerClose = false) {\n  if (leaving) return;\n  leaving = true;\n  connectGeneration++;";
 const NATIVE_AUTH_CHALLENGE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const NATIVE_AUTH_START_PATTERN = /^\/auth\/native\/(google|apple|facebook)\/start$/;
+const MODAL_UPSTREAM_TIMEOUT_MS = 30_000;
+const TURN_UPSTREAM_TIMEOUT_MS = 10_000;
+const OAUTH_UPSTREAM_TIMEOUT_MS = 20_000;
 
 type RoomAssets = { shell: string; css: string; js: string };
+
+type FetchSource = { fetch(request: Request): Promise<Response> };
+
+function boundedFetcher(source: FetchSource | undefined, timeoutMs: number): Fetcher {
+  return {
+    async fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+      const request = new Request(input, init);
+      const signal = AbortSignal.any([
+        request.signal,
+        AbortSignal.timeout(timeoutMs),
+      ]);
+      const bounded = new Request(request, {signal});
+      try {
+        return source ? await source.fetch(bounded) : await fetch(bounded);
+      } catch {
+        // The base Worker already maps non-success upstream responses to the
+        // endpoint-specific fail-closed result (TURN/TTS unavailable or OAuth
+        // failure). Return a response instead of leaking an abort as a generic
+        // unhandled 500 from the outer Worker boundary.
+        return new Response("Upstream unavailable", {
+          status: 504,
+          headers: {"Cache-Control": "no-store"},
+        });
+      }
+    },
+  } as unknown as Fetcher;
+}
+
+function boundedUpstreamEnv(env: Env): Env {
+  return {
+    ...env,
+    MODAL_TEST: boundedFetcher(env.MODAL_TEST, MODAL_UPSTREAM_TIMEOUT_MS),
+    TURN_TEST: boundedFetcher(env.TURN_TEST, TURN_UPSTREAM_TIMEOUT_MS),
+    OAUTH_TEST: boundedFetcher(env.OAUTH_TEST, OAUTH_UPSTREAM_TIMEOUT_MS),
+  };
+}
 
 function normalizeRoomScript(source: string): string {
   for (const seam of [
@@ -184,6 +223,8 @@ export default {
     if (asset && request.method === "GET") return asset;
     const challengeStart = nativeAuthChallengeStart(request, env);
     if (challengeStart) return hardenResponse(request, challengeStart);
-    return hardenResponse(request, await mobileEntry.fetch(request, env, ctx));
+    return hardenResponse(request, await mobileEntry.fetch(
+      request, boundedUpstreamEnv(env), ctx
+    ));
   },
 } satisfies ExportedHandler<Env>;
