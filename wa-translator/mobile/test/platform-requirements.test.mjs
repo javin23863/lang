@@ -10,6 +10,16 @@ test("Android release config targets the current Play API floor", async () => {
   assert.match(gradle, /targetSdkVersion\s*=\s*36\b/);
 });
 
+test("iOS release metadata requires the 64-bit device architecture", async () => {
+  const plist = await read("../ios/App/App/Info.plist");
+  const capabilities = plist.match(
+    /<key>UIRequiredDeviceCapabilities<\/key>\s*<array>([\s\S]*?)<\/array>/
+  );
+  assert.ok(capabilities, "Info.plist declares required device capabilities");
+  assert.match(capabilities[1], /<string>arm64<\/string>/);
+  assert.doesNotMatch(capabilities[1], /<string>armv7<\/string>/);
+});
+
 test("build and signed-beta workflows enforce current store SDK floors", async () => {
   for (const path of ["../../../.github/workflows/mobile-build.yml",
                       "../../../.github/workflows/mobile-beta.yml"]) {
