@@ -12,6 +12,29 @@ export type RouteClass =
   | "api"
   | "other";
 
+export type OperationClass =
+  | "health"
+  | "mobile.bootstrap"
+  | "auth.start"
+  | "auth.handoff"
+  | "auth.logout"
+  | "auth.other"
+  | "account.snapshot"
+  | "account.delete"
+  | "room.page"
+  | "room.create"
+  | "room.preflight"
+  | "room.status"
+  | "room.close"
+  | "room.capabilities"
+  | "room.turn"
+  | "report.submit"
+  | "translation.tts"
+  | "translation.compute"
+  | "asset"
+  | "api.other"
+  | "other";
+
 type FailureResult = "client_error" | "rate_limited" | "server_error";
 type SuccessResult = "success" | "redirect" | "upgrade";
 export type FailureCode =
@@ -32,6 +55,7 @@ export interface OperationalSuccessRecord {
   event: "edge.request.success";
   request_id: string;
   route_class: RouteClass;
+  operation: OperationClass;
   method: string;
   status: number;
   result: SuccessResult;
@@ -42,6 +66,7 @@ export interface OperationalFailureRecord {
   event: "edge.request.failure";
   request_id: string;
   route_class: RouteClass;
+  operation: OperationClass;
   method: string;
   status: number;
   result: FailureResult;
@@ -53,10 +78,13 @@ export interface OperationalExceptionRecord {
   event: "edge.request.exception";
   request_id: string;
   route_class: RouteClass;
+  operation: OperationClass;
   method: string;
   error_type: string;
   duration_ms: number;
 }
+
+type RequestClassification = {routeClass: RouteClass; operation: OperationClass};
 
 function methodClass(method: string): string {
   const normalized = String(method || "").toUpperCase();
@@ -71,6 +99,77 @@ function boundedDuration(value: number): number {
 function safeErrorType(error: unknown): string {
   const value = error instanceof Error ? error.name : "UnknownError";
   return /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(value) ? value : "Error";
+}
+
+function classifyPath(path: string): RequestClassification {
+  if (path === "/health") return {routeClass: "health", operation: "health"};
+  if (path === "/api/v1/mobile/bootstrap") {
+    return {routeClass: "bootstrap", operation: "mobile.bootstrap"};
+  }
+
+  if (path === "/api/v1/auth/handoff") return {routeClass: "auth", operation: "auth.handoff"};
+  if (path === "/auth/logout" || path === "/api/v1/auth/logout") {
+    return {routeClass: "auth", operation: "auth.logout"};
+  }
+  if (/^\/auth\/(?:native\/)?(?:google|apple|facebook)\/start$/.test(path)) {
+    return {routeClass: "auth", operation: "auth.start"};
+  }
+  if (path.startsWith("/auth/") || path.startsWith("/api/v1/auth/")) {
+    return {routeClass: "auth", operation: "auth.other"};
+  }
+
+  if (path === "/api/me" || path === "/api/v1/me") {
+    return {routeClass: "account", operation: "account.snapshot"};
+  }
+  if (path === "/api/account/delete" || path === "/api/v1/account/delete") {
+    return {routeClass: "account", operation: "account.delete"};
+  }
+  if (path.startsWith("/api/account/") || path.startsWith("/api/v1/account/")) {
+    return {routeClass: "account", operation: "api.other"};
+  }
+
+  if (path === "/api/reports" || path === "/api/v1/reports") {
+    return {routeClass: "report", operation: "report.submit"};
+  }
+  if (path === "/tts" || path === "/api/v1/tts") {
+    return {routeClass: "translation", operation: "translation.tts"};
+  }
+  if (path.startsWith("/api/translate") || path.startsWith("/api/v1/translate")) {
+    return {routeClass: "translation", operation: "translation.compute"};
+  }
+
+  if (path.startsWith("/room/") || path === "/room.html") {
+    return {routeClass: "room", operation: "room.page"};
+  }
+  if (path === "/api/rooms" || path === "/api/v1/rooms") {
+    return {routeClass: "room", operation: "room.create"};
+  }
+  if (path === "/api/room" || path === "/api/v1/room") {
+    return {routeClass: "room", operation: "room.preflight"};
+  }
+  if (path === "/api/room-control" || path === "/api/v1/room-control") {
+    return {routeClass: "room", operation: "room.status"};
+  }
+  if (path === "/api/room-control/close" || path === "/api/v1/room-control/close") {
+    return {routeClass: "room", operation: "room.close"};
+  }
+  if (path === "/api/capabilities" || path === "/api/v1/capabilities") {
+    return {routeClass: "room", operation: "room.capabilities"};
+  }
+  if (path === "/api/turn" || path === "/api/v1/turn") {
+    return {routeClass: "room", operation: "room.turn"};
+  }
+
+  if (path.startsWith("/static/") || /\.(?:css|js|json|svg|png|webmanifest|html)$/.test(path)) {
+    return {routeClass: "asset", operation: "asset"};
+  }
+  if (path.startsWith("/api/")) return {routeClass: "api", operation: "api.other"};
+  return {routeClass: "other", operation: "other"};
+}
+
+function classifyRequest(request: Request): RequestClassification {
+  try { return classifyPath(new URL(request.url).pathname); }
+  catch { return {routeClass: "other", operation: "other"}; }
 }
 
 export function failureCodeForStatus(status: number): FailureCode {
@@ -90,32 +189,22 @@ export function failureCodeForStatus(status: number): FailureCode {
 }
 
 export function routeClassForRequest(request: Request): RouteClass {
-  let path = "/";
-  try { path = new URL(request.url).pathname; } catch { return "other"; }
+  return classifyRequest(request).routeClass;
+}
 
-  if (path === "/health") return "health";
-  if (path === "/api/v1/mobile/bootstrap") return "bootstrap";
-  if (path.startsWith("/auth/") || path.startsWith("/api/v1/auth/")) return "auth";
-  if (path === "/api/me" || path === "/api/v1/me" || path.startsWith("/api/account")) return "account";
-  if (path === "/api/reports" || path === "/api/v1/reports") return "report";
-  if (path === "/tts" || path.startsWith("/api/translate") || path.startsWith("/api/v1/translate")) {
-    return "translation";
-  }
-  if (path.startsWith("/room/") || path === "/room.html"
-      || path === "/api/room" || path === "/api/rooms"
-      || path === "/api/v1/room" || path === "/api/v1/rooms") return "room";
-  if (path.startsWith("/static/") || /\.(?:css|js|json|svg|png|webmanifest|html)$/.test(path)) return "asset";
-  if (path.startsWith("/api/")) return "api";
-  return "other";
+export function operationForRequest(request: Request): OperationClass {
+  return classifyRequest(request).operation;
 }
 
 export function operationalSuccessRecord(
   request: Request, status: number, requestId: string, durationMs: number
 ): OperationalSuccessRecord {
+  const classification = classifyRequest(request);
   return {
     event: "edge.request.success",
     request_id: requestId,
-    route_class: routeClassForRequest(request),
+    route_class: classification.routeClass,
+    operation: classification.operation,
     method: methodClass(request.method),
     status,
     result: status === 101 ? "upgrade" : status >= 300 ? "redirect" : "success",
@@ -126,10 +215,12 @@ export function operationalSuccessRecord(
 export function operationalFailureRecord(
   request: Request, status: number, requestId: string, durationMs: number
 ): OperationalFailureRecord {
+  const classification = classifyRequest(request);
   return {
     event: "edge.request.failure",
     request_id: requestId,
-    route_class: routeClassForRequest(request),
+    route_class: classification.routeClass,
+    operation: classification.operation,
     method: methodClass(request.method),
     status,
     result: status === 429 ? "rate_limited" : status >= 500 ? "server_error" : "client_error",
@@ -141,10 +232,12 @@ export function operationalFailureRecord(
 export function operationalExceptionRecord(
   request: Request, error: unknown, requestId: string, durationMs: number
 ): OperationalExceptionRecord {
+  const classification = classifyRequest(request);
   return {
     event: "edge.request.exception",
     request_id: requestId,
-    route_class: routeClassForRequest(request),
+    route_class: classification.routeClass,
+    operation: classification.operation,
     method: methodClass(request.method),
     error_type: safeErrorType(error),
     duration_ms: boundedDuration(durationMs),
