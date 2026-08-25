@@ -28,10 +28,21 @@ const NATIVE_SESSION_PATHS = new Map([
   ["/api/v1/account/delete", "/api/account/delete"],
   ["/api/v1/auth/logout", "/auth/logout"],
 ]);
-
-function expectedOrigin(request: Request, env: Env): string {
-  return env.PUBLIC_ORIGIN || new URL(request.url).origin;
-}
+const NATIVE_PREFLIGHT_PATHS = new Set([
+  "/api/v1/mobile/bootstrap",
+  "/api/v1/auth/handoff",
+  "/api/v1/capabilities",
+  "/api/v1/rooms",
+  "/api/v1/room",
+  "/api/v1/room-control",
+  "/api/v1/room-control/close",
+  "/api/v1/turn",
+  "/api/v1/reports",
+  "/api/v1/tts",
+  "/api/v1/me",
+  "/api/v1/account/delete",
+  "/api/v1/auth/logout",
+]);
 
 function nativeOrigin(request: Request): string | null {
   const origin = request.headers.get("Origin");
@@ -257,14 +268,29 @@ function withNativeSession(request: Request, targetPath?: string): Request {
   const forwarded = new Request(url.toString(), request);
   if (!SESSION_PATTERN.test(token)) return forwarded;
   const headers = new Headers(forwarded.headers);
-  const existing = headers.get("Cookie");
-  headers.set("Cookie", `${existing ? `${existing}; ` : ""}${SESSION_COOKIE}=${token}`);
+  const cookies = (headers.get("Cookie") || "").split(";").map(pair => pair.trim()).filter(pair => {
+    if (!pair) return false;
+    const separator = pair.indexOf("=");
+    return separator <= 0 || pair.slice(0, separator).trim() !== SESSION_COOKIE;
+  });
+  cookies.push(`${SESSION_COOKIE}=${token}`);
+  headers.set("Cookie", cookies.join("; "));
+  // The base Worker authenticates these rewritten routes through its session
+  // cookie. Do not leave the account bearer available for unrelated downstream
+  // Authorization handling if one of those routes evolves later.
+  headers.delete("Authorization");
   return new Request(forwarded, {headers});
 }
 
 async function nativeAuthStart(request: Request, env: Env, provider: string): Promise<Response> {
-  if (request.method !== "GET" || !PROVIDERS.has(provider)) {
+  if (!PROVIDERS.has(provider)) {
     return new Response("Not Found", {status: 404, headers: privateHeaders()});
+  }
+  if (request.method !== "GET") {
+    return new Response("Method Not Allowed", {status: 405, headers: privateHeaders()});
+  }
+  if (!env.PUBLIC_ORIGIN) {
+    return new Response("Sign-in is not configured", {status: 503, headers: privateHeaders()});
   }
   const entries = [...new URL(request.url).searchParams.entries()];
   const binding = entries.length === 1 && entries[0][0] === "binding" ? entries[0][1] : "";
@@ -275,7 +301,7 @@ async function nativeAuthStart(request: Request, env: Env, provider: string): Pr
   }
   const challenge = await bindingChallenge(binding);
   const headers = privateHeaders();
-  headers.set("Location", `${expectedOrigin(request, env)}/auth/${provider}/start`);
+  headers.set("Location", `${env.PUBLIC_ORIGIN}/auth/${provider}/start`);
   headers.append("Set-Cookie", nativeMarkerCookie(provider, challenge));
   return new Response(null, {status: 302, headers});
 }
@@ -407,6 +433,11 @@ async function nativeSessionApi(
 export default {
   async fetch(request, env, ctx): Promise<Response> {
     const url = new URL(request.url);
+    if (request.method === "OPTIONS" && url.pathname.startsWith("/api/v1/")
+        && !NATIVE_PREFLIGHT_PATHS.has(url.pathname)) {
+      return new Response("Not Found", {status: 404, headers: privateHeaders()});
+    }
+
     const nativeStart = url.pathname.match(/^\/auth\/native\/([a-z]{1,20})\/start$/);
     if (nativeStart) return nativeAuthStart(request, env, nativeStart[1]);
 
@@ -416,6 +447,9 @@ export default {
     }
 
     if (url.pathname === "/.well-known/apple-app-site-association") {
+      if (request.method !== "GET") {
+        return new Response("Method Not Allowed", {status: 405, headers: privateHeaders()});
+      }
       return appleAssociation(env);
     }
     if (url.pathname === "/api/v1/mobile/bootstrap") {
