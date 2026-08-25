@@ -12,7 +12,7 @@ const TWO_PERSON_FALLBACK = 'id="participantCount" aria-live="polite">0 / 2 peop
 const ROOM_STYLE_PATTERN = /<style>\n([\s\S]*?)\n<\/style>/;
 const ROOM_SCRIPT_PATTERN = /<script>\n(const \$ = \(id\) => document\.getElementById\(id\);[\s\S]*?)\n<\/script>\n<\/body>/;
 const STATUS_STYLE_SEAM = "el.style.display = text ? 'block' : 'none';";
-const STATUS_TIMEOUT_SEAM = "setTimeout(() => { if (el.textContent === text) el.hidden = true; }, 3000);";
+const STATUS_TIMEOUT_SEAM = "setTimeout(() => { if (el.textContent === text) el.style.display = 'none'; }, 3000);";
 const PARTICIPANT_COUNT_SEAM = "const derived = myId === null ? 0 : peers.size + 1;\n  participantCount = Number.isInteger(serverCount) && serverCount >= 0 && serverCount <= 4\n    ? serverCount : derived;";
 const PARTICIPANT_COUNT_TWO_PERSON = "const derived = myId === null ? 0 : Math.min(2, peers.size + 1);\n  participantCount = Number.isInteger(serverCount) && serverCount >= 0 && serverCount <= 2\n    ? serverCount : derived;";
 const WELCOME_SEAM = "if (m.type === 'welcome') {";
@@ -36,7 +36,7 @@ type RoomAssets = { shell: string; css: string; js: string };
 
 function normalizeRoomScript(source: string): string {
   for (const seam of [
-    STATUS_STYLE_SEAM, PARTICIPANT_COUNT_SEAM, WELCOME_SEAM,
+    STATUS_STYLE_SEAM, STATUS_TIMEOUT_SEAM, PARTICIPANT_COUNT_SEAM, WELCOME_SEAM,
     AUDIO_ENDED_SEAM, VIDEO_ENDED_SEAM, SOCKET_TEARDOWN_SEAM, CONNECTION_STATE_SEAM,
     CONNECT_SEAM, DISCONNECT_SEAM,
   ]) {
@@ -44,6 +44,8 @@ function normalizeRoomScript(source: string): string {
   }
   return source
     .replace(STATUS_STYLE_SEAM, "el.hidden = !text;")
+    .replace(STATUS_TIMEOUT_SEAM,
+      "setTimeout(() => { if (el.textContent === text) el.hidden = true; }, 3000);")
     .replace(PARTICIPANT_COUNT_SEAM, PARTICIPANT_COUNT_TWO_PERSON)
     .replace(WELCOME_SEAM, WELCOME_TWO_PERSON)
     .replace(AUDIO_ENDED_SEAM, AUDIO_ENDED_RECOVERY)
