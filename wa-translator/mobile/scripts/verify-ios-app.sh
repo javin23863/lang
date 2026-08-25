@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+app="${1:-build/ios/Build/Products/Release-iphoneos/App.app}"
+if [[ ! -d "$app" ]]; then
+  echo "iOS app bundle not found: $app" >&2
+  exit 1
+fi
+
+plist="$app/Info.plist"
+exe="$app/App"
+for required in "$plist" "$exe" "$app/PrivacyInfo.xcprivacy" \
+  "$app/Frameworks/Capacitor.framework/PrivacyInfo.xcprivacy" \
+  "$app/Frameworks/Cordova.framework/PrivacyInfo.xcprivacy" \
+  "$app/public/room.html"; do
+  if [[ ! -e "$required" ]]; then
+    echo "iOS artifact is missing required file: $required" >&2
+    exit 1
+  fi
+done
+
+plist_value() {
+  /usr/libexec/PlistBuddy -c "Print :$1" "$plist"
+}
+
+[[ "$(plist_value CFBundleIdentifier)" == "com.javin23863.linguarelay" ]] || {
+  echo "Unexpected iOS bundle identifier." >&2
+  exit 1
+}
+[[ "$(plist_value UIRequiredDeviceCapabilities:0)" == "arm64" ]] || {
+  echo "iOS app must require arm64." >&2
+  exit 1
+}
+[[ -n "$(plist_value NSCameraUsageDescription)" ]] || {
+  echo "iOS camera usage description is missing." >&2
+  exit 1
+}
+[[ -n "$(plist_value NSMicrophoneUsageDescription)" ]] || {
+  echo "iOS microphone usage description is missing." >&2
+  exit 1
+}
+
+archs="$(lipo -archs "$exe")"
+if [[ " $archs " != *" arm64 "* || " $archs " == *" x86_64 "* ]]; then
+  echo "Unexpected iOS executable architectures: $archs" >&2
+  exit 1
+fi
+
+tracking="$(/usr/libexec/PlistBuddy -c 'Print :NSPrivacyTracking' "$app/PrivacyInfo.xcprivacy")"
+[[ "$tracking" == "false" ]] || {
+  echo "App privacy manifest must declare tracking disabled." >&2
+  exit 1
+}
+
+if grep -q 'id="participantCount" aria-live="polite">0 / 4 people<' "$app/public/room.html"; then
+  echo "Packaged iOS room still contains the retired four-person fallback." >&2
+  exit 1
+fi
+grep -q 'id="participantCount" aria-live="polite">0 / 2 people<' "$app/public/room.html" || {
+  echo "Packaged iOS room is missing the two-person fallback." >&2
+  exit 1
+}
+
+if grep -RInaE '127\.0\.0\.1|localhost:8788|test-only-|local-dev-only-|BEGIN PRIVATE KEY|google-play\.json|release\.keystore' \
+    "$app/public" "$app/capacitor.config.json" "$app/config.xml" >/dev/null; then
+  echo "Packaged iOS web assets contain a development/test credential marker." >&2
+  exit 1
+fi
+
+if find "$app" -type f \( -name '*.p12' -o -name '*.p8' -o -name '*.keystore' -o -name 'google-services.json' \) \
+    -print -quit | grep -q .; then
+  echo "Packaged iOS app contains a forbidden credential file." >&2
+  exit 1
+fi
+
+echo "iOS artifact check: identity, privacy, architecture, room contract and secret hygiene verified."
