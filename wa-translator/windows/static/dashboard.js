@@ -1,4 +1,3 @@
-const STORAGE_KEY = "live-translator.host-room.v1";
 const $ = id => document.getElementById(id);
 const runtime = window.LinguaRuntime;
 const t = runtime.t;
@@ -80,7 +79,8 @@ function renderRoom(state, participantCount) {
   $("roomPanel").hidden = !currentRoom;
   if (!currentRoom) return;
   $("shareLink").value = roomUrl(currentRoom);
-  const count = Number.isInteger(participantCount) ? participantCount : 0;
+  const count = Number.isInteger(participantCount) && participantCount >= 0 && participantCount <= 2
+    ? participantCount : 0;
   if (state !== "open") setState(state, "home.roomReady");
   else if (count === 1) setState(state, "home.roomOpenOne");
   else setState(state, "home.roomOpenMany", {count});
@@ -95,11 +95,11 @@ function setBusy(value) {
   }
 }
 
-// ── Account, sign-in and credits ─────────────────────────
+// ── Account and sign-in ───────────────────────────────────
 async function loadAccount() {
   try {
-    // Same-origin, so the session cookie rides along without a credentials
-    // option. A native shell talks to another origin and reads signed-out.
+    // Browser sessions ride same-origin cookies. The native bridge attaches its
+    // securely stored bearer only to the versioned account/room-creation API.
     const response = await fetch(runtime.apiUrl("/api/me"), {headers: {Accept: "application/json"}});
     if (!response.ok) throw new Error("account unavailable");
     return await response.json();
@@ -139,8 +139,6 @@ function renderAccount() {
   renderProviders();
   if (!account?.signed_in) return;
   $("accountName").textContent = t("auth.signedInAs", {name: account.user?.name || ""});
-  $("creditsBalance").textContent =
-    t("credits.balance", {count: Number(account.credits?.balance) || 0});
   const rows = Array.isArray(account.recent) ? account.recent.slice(0, 20) : [];
   const list = $("usageList");
   list.replaceChildren();
@@ -220,6 +218,7 @@ async function refreshStatus() {
     }
     if (!response.ok) throw new Error("status unavailable");
     const value = await response.json();
+    if (value.participant_limit !== 2) throw new Error("participant contract mismatch");
     if (value.state === "closed") {
       await clearCurrentRoom("closed", "home.roomClosed");
       return;
