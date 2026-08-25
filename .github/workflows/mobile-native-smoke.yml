@@ -1,0 +1,124 @@
+name: Native mobile smoke
+
+on:
+  pull_request:
+    paths:
+      - "wa-translator/mobile/**"
+      - "wa-translator/windows/static/**"
+      - ".github/workflows/mobile-native-smoke.yml"
+  push:
+    branches: [main]
+    paths:
+      - "wa-translator/mobile/**"
+      - "wa-translator/windows/static/**"
+      - ".github/workflows/mobile-native-smoke.yml"
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Exact 40-character commit SHA approved for native smoke verification
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-emulator:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: wa-translator/mobile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify exact smoke commit
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          EXPECTED_RELEASE_SHA: ${{ inputs.release_sha }}
+          DISPATCH_RELEASE_SHA: ${{ github.sha }}
+        run: |
+          if [[ ! "$EXPECTED_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "release_sha must be an exact lowercase 40-character commit SHA" >&2
+            exit 1
+          fi
+          if [[ "$DISPATCH_RELEASE_SHA" != "$EXPECTED_RELEASE_SHA" ]]; then
+            echo "Workflow dispatch ref resolves to ${DISPATCH_RELEASE_SHA}, expected ${EXPECTED_RELEASE_SHA}" >&2
+            exit 1
+          fi
+          actual="$(git rev-parse HEAD)"
+          if [[ "$actual" != "$EXPECTED_RELEASE_SHA" ]]; then
+            echo "Checked out ${actual}, expected ${EXPECTED_RELEASE_SHA}" >&2
+            exit 1
+          fi
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: wa-translator/mobile/package-lock.json
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - run: npm ci
+      - run: npm run sync
+      - name: Launch Android app on API 36 emulator
+        shell: bash
+        run: bash scripts/smoke-android-emulator.sh
+
+  ios-simulator:
+    runs-on: macos-26
+    defaults:
+      run:
+        working-directory: wa-translator/mobile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify exact smoke commit
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          EXPECTED_RELEASE_SHA: ${{ inputs.release_sha }}
+          DISPATCH_RELEASE_SHA: ${{ github.sha }}
+        run: |
+          if [[ ! "$EXPECTED_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "release_sha must be an exact lowercase 40-character commit SHA" >&2
+            exit 1
+          fi
+          if [[ "$DISPATCH_RELEASE_SHA" != "$EXPECTED_RELEASE_SHA" ]]; then
+            echo "Workflow dispatch ref resolves to ${DISPATCH_RELEASE_SHA}, expected ${EXPECTED_RELEASE_SHA}" >&2
+            exit 1
+          fi
+          actual="$(git rev-parse HEAD)"
+          if [[ "$actual" != "$EXPECTED_RELEASE_SHA" ]]; then
+            echo "Checked out ${actual}, expected ${EXPECTED_RELEASE_SHA}" >&2
+            exit 1
+          fi
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: wa-translator/mobile/package-lock.json
+      - name: Verify simulator SDK floor
+        shell: bash
+        run: |
+          sdk_version="$(xcrun --sdk iphonesimulator --show-sdk-version)"
+          sdk_major="${sdk_version%%.*}"
+          if [[ ! "$sdk_major" =~ ^[0-9]+$ || "$sdk_major" -lt 26 ]]; then
+            echo "Native smoke requires iOS Simulator SDK 26 or newer; found ${sdk_version}" >&2
+            exit 1
+          fi
+      - run: npm ci
+      - run: npm run sync
+      - name: Launch iOS app in Simulator
+        shell: bash
+        run: bash scripts/smoke-ios-simulator.sh
