@@ -1,63 +1,86 @@
-# Mobile store launch plan
+# Mobile store launch plan — historical August 14 plan
 
-> STATUS 2026-08-14: implementation wave active on `feat/mobile-store-shell`
-> from `origin/main@11ce231b0a32e87939a44b010effb87cef7dc9c4`.
+> **Superseded for Version 1.0.** This document records the August 14, 2026
+> mobile-packaging plan and is retained for engineering history. It is **not**
+> the current product contract. The authoritative release boundary is
+> [`RELEASE-1.0.md`](RELEASE-1.0.md), and implementation/release-gate status is
+> tracked in [`wa-translator/mobile/LAUNCH-CHECKLIST.md`](wa-translator/mobile/LAUNCH-CHECKLIST.md).
+>
+> In particular, the original plan's **accountless** and historical
+> **four-person/four-stream** assumptions are superseded. Version 1.0 is exactly
+> two joined participants; hosts sign in to create rooms; invited participants
+> do not need accounts; and Version 1.0 is non-monetized.
 
-## Adversarial grade of the previous plan
+Original planning date: 2026-08-14.
 
-**42/100.** It was a policy checklist, not a build plan. It did not select a
-native architecture, define installed-client version compatibility, replace
-browser-only secret storage, produce signed build paths, or make the current
-four-stream global compute ceiling a launch gate. It also implied that paying
-store fees was the only operator action, omitting identity verification, legal
-agreements, signing ownership, and store review.
+## What remains valid from this plan
 
-## Release product
+The architecture choice remains valid: use Capacitor 8 to package the existing
+web application for Android and iOS rather than rewrite the UI stack. Cloudflare
+remains the room/signalling/account control plane and Modal remains remote
+speech/translation/optional-voice compute. Public room links use Android App
+Links / iOS Universal Links, and native secrets/host-control state use platform
+secure storage.
 
-The first store release is a free, accountless, foreground-call application
-named **Lingua Relay** with bundle/application ID
-`com.javin23863.linguarelay`. It bundles the existing room interface inside a
-Capacitor 8 native shell while keeping Cloudflare room/signalling and Modal
-translation/TTS remote. WhatsApp carries only the invitation link. Opening a
-signed room link launches the installed app or falls back to the public web
-room.
+The following planning principles also remain valid:
 
-No account, transcript history, advertising SDK, analytics SDK, subscription,
-background camera, or push notification exists in this release. These are
-deliberate privacy and cost ceilings, not incomplete scaffolding.
+- Native projects boot bundled files rather than a remote website shell.
+- Microphone and camera are foreground-only and requested independently.
+- Host-control bearer state belongs in Keychain/Android Keystore-backed secure
+  storage; ordinary language/voice preferences do not need secret storage.
+- Mobile APIs use an explicit compatibility/version seam rather than weakening
+  signed-room validation.
+- Privacy, Terms, Support, account deletion, category-only abuse reporting, and
+  local room blocking are release requirements.
+- Android/iOS unsigned builds and credential-free regressions are development
+  gates; signed store uploads remain credential/owner gates.
+- Store assets and metadata are source-controlled and must match actual product
+  behavior.
+- Physical Android-to-iPhone acceptance is a required launch gate and cannot be
+  replaced by browser-only automation.
 
-## Public seams and acceptance rows
+## Superseded product assumptions
 
-| ID | Acceptance | Receipt |
-|---|---|---|
-| M1 | Android and iOS projects boot bundled files, never a remote website shell. | Native project configuration plus offline boot contract |
-| M2 | A signed `/room/<token>` link enters the same room in the installed app; invalid hosts and malformed tokens fail closed. | Deep-link tests plus association endpoints |
-| M3 | Microphone and camera are requested independently from their respective controls; denying one does not disable the other. Calls stop or reconnect cleanly across lifecycle changes. | Platform manifests plus native/browser lifecycle tests |
-| M4 | Host-control bearer state uses Keychain/Android encrypted storage; locale/voice preferences may remain ordinary local preferences. | Secure-storage adapter test |
-| M5 | Create, status, close, TURN, TTS, capabilities, and WebSocket traffic use a versioned mobile compatibility contract without weakening signed-room validation. | Worker mobile contract and regression suites |
-| M6 | Privacy, terms, and support are available inside the app. A live participant can submit one private category-only report, block the room locally, and no call content or bearer is retained. | Public endpoint, report-inbox, and store declaration tests |
-| M7 | Android targets API 36 and produces a release AAB. iOS targets the iOS 26 SDK and has a reproducible macOS archive/export workflow. | Clean build artifacts or an explicit signing-only hold |
-| M8 | Store assets and metadata are source-controlled and match the product: free, accountless, no transcript history, foreground call only. | Metadata validation and screenshots |
-| M9 | Existing web rooms, host control, captions, voice safety, translation, and free-tier abuse controls remain green. | Existing full suites plus room/TURN quota tests |
-| M10 | Public launch is blocked until relay-only TURN, capacity admission, and real Android-to-iPhone calls pass. | Physical-device launch checklist; no automated substitute |
+The August 14 plan described a free **accountless** application. That is no
+longer the shipping design. Current behavior is:
 
-## Implementation order
+- a host authenticates through configured OAuth before room creation;
+- a guest joins the private invitation without an account;
+- browser/native sessions have explicit revocation and account-existence checks;
+- account deletion is available both in-app and through a dedicated public web
+  deletion resource;
+- the room contract is exactly two joined participants;
+- no purchase/credit/subscription surface ships in Version 1.0.
 
-1. Add the Worker mobile compatibility and association seam.
-2. Add one shared runtime module so browser and native callers differ only at
-   the origin/storage/share/deep-link adapters.
-3. Generate the Capacitor module and native projects from the shared web source.
-4. Add platform permissions, secure storage, associated links, privacy files,
-   and lifecycle behavior.
-5. Add credential-free CI checks and credential-gated store build workflows.
-6. Produce policy pages, store metadata, screenshots, review instructions, and
-   the operator handoff.
-7. Run plan-warden, regression, security, build, and physical-device gates.
+The original plan also treated a four-stream beta compute number as a client
+compatibility promise. Current installed-client bootstrap deliberately does not
+advertise that historical compute ceiling. Compute admission/scale is an
+operator deployment property; room capacity remains exactly two regardless of
+GPU scaling.
 
-## Operator-only actions after implementation
+## Current implementation order
 
-The operator must still pay and verify the Apple Developer and Google Play
-accounts, accept their legal agreements, reserve the final store records,
-provide the Apple Team ID and Play signing-certificate fingerprint, supply
-signing credentials to repository secrets, complete any required Play closed
-test, and submit for review. Store approval cannot be automated or guaranteed.
+The active development sequence is now:
+
+1. Finish source-side correctness/security/privacy/store behavior against the
+   Version 1.0 contract.
+2. Keep browser/native generation paths and public/native API contracts aligned.
+3. Maintain one authoritative launch checklist and store-declaration source.
+4. Stop source expansion when remaining items require credentials, store-console
+   ownership, final exact-head verification, or physical devices.
+5. Run the complete credential-free matrix on the exact final development
+   commit.
+6. Run signed Play Internal/TestFlight workflows on that same commit.
+7. Complete representative physical Android/iPhone acceptance and final store
+   forms before public submission.
+
+## Operator-only actions after development
+
+The operator must still verify Apple Developer and Google Play accounts, accept
+current legal agreements, own signing identities, configure the final public
+origin and OAuth callbacks, install protected repository/store credentials,
+configure the real Play signing fingerprint and Apple Team ID, provide public
+support/moderation ownership, complete store review/data/privacy/rating/export
+forms, run signed beta uploads, and perform physical-device acceptance.
+
+Store approval cannot be automated or guaranteed.
