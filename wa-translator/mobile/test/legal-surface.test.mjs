@@ -26,4 +26,8 @@ test("public legal pages share current Lingua chrome and deletion remains discov
   assert.match(support, /<h2 id="delete">Delete your account<\/h2>/,
                "the external account-deletion destination remains directly addressable");
   assert.match(support, /choose Delete account/);
+  assert.match(support, /do not put your email address or other account identifiers/i,
+               "access-loss requests never direct private account data into the public tracker");
+  assert.match(support, /dedicated private product-support contact must be published/i,
+               "the unresolved private support dependency stays explicit until launch");
 });
