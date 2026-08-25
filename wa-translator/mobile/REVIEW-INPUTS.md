@@ -5,6 +5,21 @@ Do not put passwords, OAuth credentials, API keys, private phone numbers, or oth
 review secrets in Git. Enter sensitive values directly in App Store Connect / Play
 Console or the team's approved secret manager.
 
+## Public console URLs
+
+Use these production destinations when the store consoles ask for public pages:
+
+- Marketing / web app: `https://spoken-translation-room.spoken-translation-cloudflare.workers.dev/`
+- Privacy policy: `https://spoken-translation-room.spoken-translation-cloudflare.workers.dev/privacy`
+- Terms: `https://spoken-translation-room.spoken-translation-cloudflare.workers.dev/terms`
+- Support: `https://spoken-translation-room.spoken-translation-cloudflare.workers.dev/support`
+- External account deletion: `https://spoken-translation-room.spoken-translation-cloudflare.workers.dev/support#delete`
+
+The deletion destination explains the authenticated browser deletion flow. A user who
+can sign in with the account's provider can delete immediately from the same web app.
+Do not route access-loss requests through the public GitHub issue tracker; a dedicated
+private support contact remains a pre-submission requirement below.
+
 ## Apple App Review
 
 Before submitting version 1.0, the account owner must provide:
@@ -35,6 +50,8 @@ Before submitting to review, the account owner must provide:
       using the private room link created by the reviewer.
 - [ ] Current Data safety, target audience/content rating, ads, and other App
       content declarations in Play Console based on `STORE-DECLARATIONS.md`.
+- [ ] Enter the external account-deletion URL above in the account deletion / Data
+      safety area when requested by Play Console.
 
 ## Public support contact
 
@@ -49,6 +66,8 @@ Required owner-supplied values:
       app will be distributed.
 - [ ] Confirm the support contact is monitored and can receive reviewer/user
       messages.
+- [ ] Confirm access-loss account requests can be handled privately without asking
+      the user to publish account-identifying information in a public tracker.
 
 ## Never commit
 
