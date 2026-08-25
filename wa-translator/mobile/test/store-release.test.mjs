@@ -12,7 +12,7 @@ const read = path => readFile(new URL(path, import.meta.url), "utf8");
 
 async function pngInfo(path) {
   const data = await readFile(new URL(path, import.meta.url));
-  assert.equal(data.subarray(0, 8).toString("hex"), "89504e470d0a1a0a0a", `${path} is not PNG`);
+  assert.equal(data.subarray(0, 8).toString("hex"), "89504e470d0a1a0a", `${path} is not PNG`);
   assert.equal(data.subarray(12, 16).toString("ascii"), "IHDR", `${path} has no IHDR`);
   return {
     size: data.length,
