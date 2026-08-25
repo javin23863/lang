@@ -24,38 +24,42 @@ behavior change.
   display name, and stores no provider credential.
 - Room capacity: exactly two participants total — one local participant and one
   remote participant. Version 1.0 has no group-room or multiparty-call mode.
-- Data collected: email address, an account user ID, and usage counts (call
-  minutes, chat messages, translated-voice phrases). All three are linked to the
-  account and used for App Functionality only — never for tracking, advertising,
-  or third-party sharing. Usage rows carry an opaque room reference, never a
-  room link, and no message, caption, audio, or video content.
-- Account deletion: available in the app (Delete account, on the main menu) and
-  on the web at the same signed-in menu on the site. Deletion removes the
-  account record, balance, totals, and usage rows immediately.
-- Monetization: version 1.0 has no purchase surface, payment method, price,
-  StoreKit product, or Google Play Billing product. The app may display recent
-  usage as account activity, but it does not sell or unlock digital capacity.
+- Data collected: email address, an account user ID, display name/sign-in
+  provider, and usage counts (call minutes, chat messages, translated-voice
+  phrases). These are linked to the account and used for App Functionality only
+  — never for tracking, advertising, or third-party sharing. Usage rows carry an
+  opaque room reference, never a room link, and no message, caption, audio, or
+  video content.
+- Account deletion: available in the app (Delete account, on the main screen)
+  and on the web at the same signed-in screen. Deletion removes the account
+  profile, aggregate usage totals, and usage rows immediately.
+- Monetization: version 1.0 has no purchase surface, stored credit balance,
+  payment method, price, StoreKit product, or Google Play Billing product. The
+  app may display recent usage as account activity, but it does not sell or
+  unlock digital capacity.
 - No advertising, advertising identifier, or cross-app tracking.
 - No analytics SDK.
 - No transcript history or call recording.
-- Camera and microphone access: user initiated, Foreground only, during a room.
-- User-generated content: live speech and video are sent to the invited room;
-  translated captions and optional synthesized audio are returned in real time.
-- Cloud processing: Cloudflare carries room/signalling traffic; Modal performs
-  speech recognition, translation, and optional voice synthesis.
-- Retention: the account record (email, user ID, display name, balance, totals)
-  lasts until the account is deleted; usage rows keep 90 days or 200 rows,
-  whichever is smaller. The product does not intentionally persist media or
-  captions. A private abuse report contains only category, platform, time, and
+- Camera and microphone access: user initiated, foreground only, during a room.
+- User-generated content: live speech/video and typed chat are sent to the
+  invited room; translated captions and optional synthesized audio are returned
+  in real time. Conversation content is not intentionally stored as history.
+- Cloud processing: Cloudflare carries room/signalling/account traffic; Modal
+  performs speech recognition, translation, and optional voice synthesis.
+- Retention: the account profile (email, derived user ID, display name, provider)
+  and aggregate usage totals last until the account is deleted; usage rows keep
+  90 days or 200 rows, whichever is smaller. The product does not intentionally
+  persist media, captions, chat content, or translated voice as conversation
+  history. A private abuse report contains only category, platform, time, and
   an opaque public room reference. An internal non-invite room routing ID is
-  retained only so a moderator can close the active reported room. Both expire
-  after 30 days. Infrastructure security and error logs may be retained by the
-  providers.
+  retained only so a moderator can close the active reported room. Both report
+  records expire after 30 days. Infrastructure security and error logs may be
+  retained by the providers.
 - Room control: the host can close a room; otherwise its bearer link expires
   after 24 hours.
 - Safety/reporting: a live participant can submit one private category-only
   report and block the room on that device. No report accepts names, free text,
-  room links, transcripts, audio, video, captions, or screenshots.
+  room links, transcripts, audio, video, captions, chat text, or screenshots.
 - App category: Social Networking (iOS) / Communication (Android).
 - Intended audience: general adult communication; not directed to children.
 - Encryption declaration: HTTPS/WebSocket TLS and platform cryptography only;
