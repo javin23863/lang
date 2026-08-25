@@ -37,6 +37,7 @@ const LEGACY_AUTH_BINDING_PREFIX = "lingua-relay.native-auth-binding.v2.";
 const NATIVE_AUTH_START = /^\/auth\/(google|apple|facebook)\/start$/;
 const NATIVE_AUTH_PROVIDERS = ["google", "apple", "facebook"] as const;
 const MAX_HANDLED_AUTH_HANDOFFS = 16;
+const NATIVE_REQUEST_TIMEOUT_MS = 15_000;
 const SESSION_API_PATHS = new Set([
   "/api/v1/me", "/api/v1/rooms", "/api/v1/account/delete", "/api/v1/auth/logout"
 ]);
@@ -149,6 +150,18 @@ function rememberAuthHandoff(handoff: string): boolean {
   return true;
 }
 
+async function nativeFetchWithTimeout(
+  input: RequestInfo | URL, init?: RequestInit
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), NATIVE_REQUEST_TIMEOUT_MS);
+  try {
+    return await nativeFetch(input, {...init, signal: controller.signal});
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function nativeApiPath(path: string): string {
   const resolved = apiPath(path, true);
   const provider = path.match(NATIVE_AUTH_START)?.[1];
@@ -220,7 +233,7 @@ if (isNative) {
 const compatibilityReady = isNative ? (async () => {
   const info = await App.getInfo();
   const build = Number.parseInt(info.build, 10);
-  const response = await fetch(`${PUBLIC_ORIGIN}/api/v1/mobile/bootstrap`, {
+  const response = await nativeFetchWithTimeout(`${PUBLIC_ORIGIN}/api/v1/mobile/bootstrap`, {
     cache: "no-store", headers: {Accept: "application/json"},
   });
   if (!response.ok || !Number.isSafeInteger(build) || build < MOBILE_BUILD) {
@@ -246,7 +259,7 @@ async function acceptNativeHandoff(provider: string, handoff: string): Promise<v
     return;
   }
   try {
-    const response = await nativeFetch(`${PUBLIC_ORIGIN}/api/v1/auth/handoff`, {
+    const response = await nativeFetchWithTimeout(`${PUBLIC_ORIGIN}/api/v1/auth/handoff`, {
       method: "POST",
       headers: {Accept: "application/json", "Content-Type": "application/json"},
       body: JSON.stringify({handoff, binding}),
