@@ -12,6 +12,9 @@ type UserTotals = {call_minutes: number; chat_messages: number; tts_phrases: num
 type UsageRecord = {at: string; kind: string; units: number; room_ref: string};
 type DeliveryMarker = {createdAt: number};
 type SessionRevocation = {expiresAt: number};
+type UserProfile = {
+  user_id: string; provider: string; name: string; email: string; created_at: string;
+};
 
 const EMPTY_TOTALS: UserTotals = {call_minutes: 0, chat_messages: 0, tts_phrases: 0};
 const TOTAL_FIELD = new Map([
@@ -108,6 +111,69 @@ export class UserDirectory extends WorkerUserDirectory {
     return new Response(null, {status: 204});
   }
 
+  // Apple provides the person's name only on the first authorization. Later
+  // ID tokens normally contain only the relay email, which the base callback
+  // uses as a fallback name. Preserve an already-captured Apple name rather
+  // than letting a routine later login silently downgrade the profile to email.
+  private async preserveAppleProfileName(request: Request): Promise<Request> {
+    const url = new URL(request.url);
+    if (request.method !== "POST" || url.pathname !== "/") return request;
+    let data: Record<string, unknown>;
+    try {
+      const parsed = await request.clone().json<unknown>();
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return request;
+      data = parsed as Record<string, unknown>;
+    } catch {
+      return request;
+    }
+    if (data.provider !== "apple" || typeof data.name !== "string"
+        || typeof data.email !== "string" || data.name !== data.email) return request;
+    const existing = await this.ctx.storage.get<UserProfile>("profile");
+    if (!existing || existing.provider !== "apple" || !existing.name
+        || existing.name === existing.email) return request;
+
+    data.name = existing.name;
+    const headers = new Headers(request.headers);
+    headers.delete("Content-Length");
+    headers.set("Content-Type", "application/json");
+    return new Request(request, {headers, body: JSON.stringify(data)});
+  }
+
+  // Internal-only metadata patch used after the normal Apple OAuth callback has
+  // already authenticated the account. It can change the display name only;
+  // subject, derived user id, provider and email remain owned by the validated
+  // provider identity path.
+  private async appleProfileName(request: Request): Promise<Response | null> {
+    const url = new URL(request.url);
+    if (request.method !== "POST" || url.pathname !== "/profile-name") return null;
+    let data: Record<string, unknown>;
+    try {
+      const parsed = await request.json<unknown>();
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+      data = parsed as Record<string, unknown>;
+    } catch {
+      return new Response("Invalid profile name", {status: 400});
+    }
+    const name = typeof data.name === "string" ? data.name : "";
+    if (Object.keys(data).join(",") !== "name" || name !== name.trim()
+        || name.length < 1 || name.length > 80 || /[\u0000-\u001f\u007f]/.test(name)) {
+      return new Response("Invalid profile name", {status: 400});
+    }
+
+    const outcome = await this.ctx.storage.transaction(async transaction => {
+      const profile = await transaction.get<UserProfile>("profile");
+      if (!profile) return "missing" as const;
+      if (profile.provider !== "apple") return "provider" as const;
+      profile.name = name;
+      await transaction.put("profile", profile);
+      return "stored" as const;
+    });
+    if (outcome === "missing") return new Response("Not found", {status: 404});
+    if (outcome === "provider") return new Response("Provider mismatch", {status: 409});
+    await this.ctx.storage.delete("credits");
+    return new Response(null, {status: 204});
+  }
+
   private async idempotentUsage(request: Request): Promise<Response | null> {
     const url = new URL(request.url);
     if (request.method !== "POST" || url.pathname !== "/usage") return null;
@@ -171,12 +237,16 @@ export class UserDirectory extends WorkerUserDirectory {
     const revocation = await this.sessionRevocation(request);
     if (revocation) return revocation;
 
+    const profileName = await this.appleProfileName(request);
+    if (profileName) return profileName;
+
     const idempotent = await this.idempotentUsage(request);
     if (idempotent) return idempotent;
 
     const url = new URL(request.url);
     const accountRoot = url.pathname === "/";
-    const response = await super.fetch(request);
+    const forwarded = await this.preserveAppleProfileName(request);
+    const response = await super.fetch(forwarded);
 
     // Root profile reads/writes and legacy /usage writes are all account
     // activity. An old zero-only balance should disappear on whichever
