@@ -4,6 +4,7 @@ import { hostSession } from "./session";
 
 const PUBLIC_ORIGIN = "https://room.test";
 const NATIVE_ORIGIN = "https://localhost";
+const MOBILE_SCHEME = "com.javin23863.linguarelay";
 
 function setCookies(response: Response): string[] {
   return response.headers.getSetCookie();
@@ -19,6 +20,14 @@ function cookieHeader(...responses: Response[]): string {
     }
   }
   return [...values].map(([name, value]) => `${name}=${value}`).join("; ");
+}
+
+function nativeBinding(fill: number): string {
+  const bytes = new Uint8Array(32);
+  bytes.fill(fill);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 describe("mobile store interface", () => {
@@ -103,14 +112,20 @@ describe("mobile store interface", () => {
     expect(denied.headers.get("Access-Control-Allow-Origin")).toBeNull();
   });
 
-  it("returns OAuth to the app with a one-time handoff, then issues the native session", async () => {
-    const nativeStart = await exports.default.fetch(`${PUBLIC_ORIGIN}/auth/native/google/start`, {
+  it("returns OAuth through the app scheme and requires the initiating app binding", async () => {
+    expect((await exports.default.fetch(`${PUBLIC_ORIGIN}/auth/native/google/start`, {
       redirect: "manual"
-    });
+    })).status).toBe(400);
+
+    const binding = nativeBinding(7);
+    const nativeStart = await exports.default.fetch(
+      `${PUBLIC_ORIGIN}/auth/native/google/start?binding=${encodeURIComponent(binding)}`,
+      { redirect: "manual" }
+    );
     expect(nativeStart.status).toBe(302);
     expect(nativeStart.headers.get("Location")).toBe(`${PUBLIC_ORIGIN}/auth/google/start`);
     const marker = setCookies(nativeStart).find(value => value.startsWith("lr_native_oauth="))!;
-    expect(marker).toContain("lr_native_oauth=google");
+    expect(marker).toMatch(/^lr_native_oauth=google\.[A-Za-z0-9_-]{43};/);
     expect(marker).toContain("SameSite=None");
     expect(marker).toContain("HttpOnly");
 
@@ -129,24 +144,30 @@ describe("mobile store interface", () => {
     expect(callback.status).toBe(302);
     const completion = callback.headers.get("Location")!;
     expect(completion).toMatch(new RegExp(
-      `^${PUBLIC_ORIGIN.replaceAll(".", "\\.")}\/mobile-auth-complete#handoff=nh1\\.`
+      `^${MOBILE_SCHEME.replaceAll(".", "\\.")}://auth/google#handoff=nh2\\.google\\.`
     ));
     expect(completion).not.toContain("s1.");
     expect(setCookies(callback).some(cookie => cookie.startsWith("lr_s="))).toBe(false);
     const handoff = new URL(completion).hash.slice("#handoff=".length);
 
-    const exchange = () => exports.default.fetch(`${PUBLIC_ORIGIN}/api/v1/auth/handoff`, {
-      method: "POST",
-      headers: {Origin: NATIVE_ORIGIN, "Content-Type": "application/json"},
-      body: JSON.stringify({handoff})
-    });
-    const exchanged = await exchange();
+    const exchange = (candidate: string) => exports.default.fetch(
+      `${PUBLIC_ORIGIN}/api/v1/auth/handoff`, {
+        method: "POST",
+        headers: {Origin: NATIVE_ORIGIN, "Content-Type": "application/json"},
+        body: JSON.stringify({handoff, binding: candidate})
+      }
+    );
+    // A scheme-hijacking app can see the handoff but not the initiating app's
+    // binding. A wrong proof must not burn the one-time nonce for the real app.
+    expect((await exchange(nativeBinding(8))).status).toBe(401);
+
+    const exchanged = await exchange(binding);
     expect(exchanged.status).toBe(200);
     expect(exchanged.headers.get("Access-Control-Allow-Origin")).toBe(NATIVE_ORIGIN);
     expect(exchanged.headers.get("Cache-Control")).toBe("no-store");
     const {session} = await exchanged.json<{session: string}>();
     expect(session).toMatch(/^s1\.[A-Za-z0-9_-]{22}\.\d{10}\.[A-Za-z0-9_-]{43}$/);
-    expect((await exchange()).status).toBe(401);
+    expect((await exchange(binding)).status).toBe(401);
 
     const account = await exports.default.fetch(`${PUBLIC_ORIGIN}/api/v1/me`, {
       headers: {Origin: NATIVE_ORIGIN, Authorization: `Bearer ${session}`}
@@ -169,13 +190,13 @@ describe("mobile store interface", () => {
     const response = await exports.default.fetch(`${PUBLIC_ORIGIN}/api/v1/auth/handoff`, {
       method: "POST",
       headers: {Origin: "https://attacker.test", "Content-Type": "application/json"},
-      body: JSON.stringify({handoff: "nh1.invalid"})
+      body: JSON.stringify({handoff: "nh2.invalid", binding: nativeBinding(9)})
     });
     expect(response.status).toBe(403);
     expect(response.headers.get("Access-Control-Allow-Origin")).toBeNull();
   });
 
-  it("serves exact Android and Apple association documents", async () => {
+  it("serves exact Android and Apple association documents for public rooms", async () => {
     const assetLinks = await exports.default.fetch(`${PUBLIC_ORIGIN}/.well-known/assetlinks.json`);
     expect(assetLinks.status).toBe(200);
     expect(assetLinks.headers.get("Content-Type")).toContain("application/json");
@@ -199,8 +220,7 @@ describe("mobile store interface", () => {
       apps: [], details: [{
         appID: "TESTTEAM01.com.javin23863.linguarelay",
         components: [
-          { "/": "/room/*", comment: "Private Lingua Relay rooms" },
-          { "/": "/mobile-auth-complete", comment: "Lingua Relay native authentication return" }
+          { "/": "/room/*", comment: "Private Lingua Relay rooms" }
         ]
       }]
     }});
