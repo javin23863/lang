@@ -37,6 +37,7 @@ const NATIVE_AUTH_START = /^\/auth\/(google|apple|facebook)\/start$/;
 const SESSION_API_PATHS = new Set([
   "/api/v1/me", "/api/v1/rooms", "/api/v1/account/delete", "/api/v1/auth/logout"
 ]);
+const LOCAL_DARK_CONTENT = new Set(["privacy.html", "terms.html", "support.html"]);
 let nativeSession: string | null = null;
 const memoryAuthBindings = new Map<string, string>();
 
@@ -199,6 +200,19 @@ async function applyNativeChrome(): Promise<void> {
   } catch { /* a status-bar cosmetic failure must never block the call */ }
 }
 
+function prepareLocalContentChrome(event: MouseEvent): void {
+  if (!isNative || !(event.target instanceof Element)) return;
+  const anchor = event.target.closest("a[href]");
+  if (!(anchor instanceof HTMLAnchorElement)) return;
+  try {
+    const url = new URL(anchor.href, location.href);
+    const page = url.pathname.split("/").pop() || "";
+    if (url.origin === location.origin && LOCAL_DARK_CONTENT.has(page)) {
+      void StatusBar.setStyle({style: Style.Dark}).catch(() => {});
+    }
+  } catch { /* malformed links navigate/fail normally */ }
+}
+
 window.LinguaNative = {
   isNative,
   publicOrigin: PUBLIC_ORIGIN,
@@ -222,6 +236,7 @@ window.LinguaNative = {
 
 if (isNative) {
   void applyNativeChrome();
+  document.addEventListener("click", prepareLocalContentChrome, {capture: true});
   App.addListener("appUrlOpen", event => { void routeAppLink(event.url); });
   App.addListener("appStateChange", state => {
     if (state.isActive) void applyNativeChrome();
