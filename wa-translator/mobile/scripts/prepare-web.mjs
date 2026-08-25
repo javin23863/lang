@@ -11,19 +11,25 @@ const ROOM_STYLE_PATTERN = /<style>\n([\s\S]*?)\n<\/style>/;
 const ROOM_SCRIPT_PATTERN = /<script>\n(const \$ = \(id\) => document\.getElementById\(id\);[\s\S]*?)\n<\/script>\n<\/body>/;
 const STATUS_STYLE_SEAM = "el.style.display = text ? 'block' : 'none';";
 const STATUS_TIMEOUT_SEAM = "setTimeout(() => { if (el.textContent === text) el.style.display = 'none'; }, 3000);";
+const PARTICIPANT_COUNT_SEAM = "const derived = myId === null ? 0 : peers.size + 1;\n  participantCount = Number.isInteger(serverCount) && serverCount >= 0 && serverCount <= 4\n    ? serverCount : derived;";
+const PARTICIPANT_COUNT_TWO_PERSON = "const derived = myId === null ? 0 : Math.min(2, peers.size + 1);\n  participantCount = Number.isInteger(serverCount) && serverCount >= 0 && serverCount <= 2\n    ? serverCount : derived;";
+const WELCOME_SEAM = "if (m.type === 'welcome') {";
+const WELCOME_TWO_PERSON = "if (m.type === 'welcome') {\n    if (m.participant_limit !== 2 || !Array.isArray(m.peers) || m.peers.length > 1) {\n      terminalRoom = true;\n      setStatus('gate.updateRequired', null, true);\n      ws.close(1008, 'participant contract mismatch');\n      return;\n    }";
 
 if (path.dirname(WWW) !== MOBILE || path.basename(WWW) !== "www") {
   throw new Error(`Refusing unsafe mobile web target: ${WWW}`);
 }
 
 function normalizeRoomScript(source) {
-  if (!source.includes(STATUS_STYLE_SEAM) || !source.includes(STATUS_TIMEOUT_SEAM)) {
-    throw new Error("room status visibility seam is missing");
+  for (const seam of [STATUS_STYLE_SEAM, STATUS_TIMEOUT_SEAM, PARTICIPANT_COUNT_SEAM, WELCOME_SEAM]) {
+    if (!source.includes(seam)) throw new Error(`room normalization seam is missing: ${seam.slice(0, 32)}`);
   }
   return source
     .replace(STATUS_STYLE_SEAM, "el.hidden = !text;")
     .replace(STATUS_TIMEOUT_SEAM,
-      "setTimeout(() => { if (el.textContent === text) el.hidden = true; }, 3000);");
+      "setTimeout(() => { if (el.textContent === text) el.hidden = true; }, 3000);")
+    .replace(PARTICIPANT_COUNT_SEAM, PARTICIPANT_COUNT_TWO_PERSON)
+    .replace(WELCOME_SEAM, WELCOME_TWO_PERSON);
 }
 
 function enhanceRoomShell(source) {
