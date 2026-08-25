@@ -33,8 +33,10 @@ describe("dashboard design foundation", () => {
     expect(voice).toBeLessThan(chat);
 
     const css = await (await exports.default.fetch(`${ORIGIN}/dashboard.css`)).text();
-    expect(css).toContain(".modeGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}");
-    expect(css).toContain(".tilePrimary{grid-column:1/-1;min-height:92px");
-    expect(css).toContain("@media(max-width:560px){.modeGrid{grid-template-columns:1fr}.tile,.tilePrimary{grid-column:auto;min-height:68px");
+    expect(css).toContain(".modeGrid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(210px,.8fr);grid-template-rows:repeat(2,minmax(86px,1fr));gap:10px}");
+    expect(css).toContain(".tilePrimary{grid-column:1;grid-row:1/3;min-height:182px");
+    expect(css).toContain("@media(max-width:560px){");
+    expect(css).toContain(".modeGrid{grid-template-columns:1fr 1fr;grid-template-rows:auto auto}");
+    expect(css).toContain(".tilePrimary{grid-column:1/-1;grid-row:auto;min-height:132px");
   });
 });
