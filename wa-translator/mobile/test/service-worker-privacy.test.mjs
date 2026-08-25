@@ -4,10 +4,10 @@ import test from "node:test";
 
 const root = new URL("../www/", import.meta.url);
 
-test("service worker caches only same-origin query-free dashboard shell requests", async () => {
+test("service worker caches only coherent credential-free dashboard shell generations", async () => {
   const source = await readFile(new URL("sw.js", root), "utf8");
 
-  assert.match(source, /const CACHE_NAME = 'lingua-relay-shell-v3'/);
+  assert.match(source, /const CACHE_NAME = 'lingua-relay-shell-v4'/);
   for (const safe of [
     "'/index.html'", "'/design-tokens.css'", "'/dashboard.css'",
     "'/dashboard-api.js'", "'/dashboard-room-controller.js'", "'/product-events.js'",
@@ -25,10 +25,23 @@ test("service worker caches only same-origin query-free dashboard shell requests
     "query-bearing requests can never enter the shell cache");
   assert.match(source, /request\.method === 'GET'/);
   assert.match(source, /SHELL_PATHS\.has\(url\.pathname\)/);
-  assert.match(source, /if \(!url \|\| !cacheableShellRequest\(request, url\)\)/);
-  assert.match(source, /fetch\(request, \{cache: 'no-store'\}\)/);
-  assert.match(source, /await cache\.put\(request, response\.clone\(\)\)/);
+  assert.match(source, /credentials: 'omit'/,
+    "shell refreshes never send account cookies or browser credentials");
+  assert.match(source, /new Request\(new URL\(path, self\.location\.origin\)\.toString\(\)/,
+    "cache keys are canonical fixed shell URLs, not browser requests");
+  assert.match(source, /await cache\.addAll\(shellRequests\(\)\)/,
+    "a dashboard refresh fetches the complete allowlisted shell generation");
+  assert.match(source, /const cache = await refreshShell\(\)/);
+  assert.match(source, /DASHBOARD_PATHS\.has\(url\.pathname\)/);
+  assert.match(source, /dashboardNavigation\(request, url\)/);
+  assert.match(source, /if \(url\.search === ''\)/);
+  assert.match(source, /fetch\(request, \{cache: 'no-store'\}\)/,
+    "query-bearing or dynamic browser requests remain network-only");
   assert.match(source, /name\.startsWith\(CACHE_PREFIX\) && name !== CACHE_NAME/);
+  assert.doesNotMatch(source, /cache\.put\(request/,
+    "browser requests carrying credentials or headers are never persisted");
+  assert.doesNotMatch(source, /event\.waitUntil\(fresh\)/,
+    "unversioned assets are not mutated independently in the background");
 
   // Capability-bearing and user-content shapes must never be promoted into the
   // fixed allowlist, even by a future refactor. "design-tokens.css" is a safe
