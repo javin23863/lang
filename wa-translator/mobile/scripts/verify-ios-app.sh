@@ -30,7 +30,7 @@ exe="$app/App"
 for required in "$plist" "$exe" "$app/PrivacyInfo.xcprivacy" \
   "$app/Frameworks/Capacitor.framework/PrivacyInfo.xcprivacy" \
   "$app/Frameworks/Cordova.framework/PrivacyInfo.xcprivacy" \
-  "$app/public/room.html" "$app/public/room.css" "$app/public/room.js"; do
+  "$app/public/room.html" "$app/public/room.css" "$app/public/room-ui.css" "$app/public/room.js"; do
   if [[ ! -e "$required" ]]; then
     echo "iOS artifact is missing required file: $required" >&2
     exit 1
@@ -83,6 +83,10 @@ grep -q '<link rel="stylesheet" href="/room.css">' "$room" || {
   echo "Packaged iOS room is missing external room.css." >&2
   exit 1
 }
+grep -q '<link rel="stylesheet" href="/room-ui.css">' "$room" || {
+  echo "Packaged iOS room is missing the Lingua room presentation layer." >&2
+  exit 1
+}
 grep -q '<script src="/room.js"></script>' "$room" || {
   echo "Packaged iOS room is missing external room.js." >&2
   exit 1
@@ -94,6 +98,14 @@ fi
 
 grep -q '#stage{' "$app/public/room.css" || {
   echo "Packaged iOS room.css is incomplete." >&2
+  exit 1
+}
+grep -q -- '--accent:#64D4C3' "$app/public/room-ui.css" || {
+  echo "Packaged iOS room-ui.css is missing the Lingua presentation tokens." >&2
+  exit 1
+}
+grep -q 'prefers-reduced-motion:reduce' "$app/public/room-ui.css" || {
+  echo "Packaged iOS room-ui.css is missing reduced-motion handling." >&2
   exit 1
 }
 grep -q 'async function connect()' "$app/public/room.js" || {
@@ -113,4 +125,4 @@ if find "$app" -type f \( -name '*.p12' -o -name '*.p8' -o -name '*.keystore' -o
   exit 1
 fi
 
-echo "iOS artifact check: identity, privacy, architecture, decomposed room contract and secret hygiene verified."
+echo "iOS artifact check: identity, privacy, architecture, room UI contract and secret hygiene verified."
