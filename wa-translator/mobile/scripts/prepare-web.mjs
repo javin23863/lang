@@ -49,7 +49,7 @@ const ROOM_FETCH_HELPER_SEAM = "const blockedRoomKey = 'lingua-relay.blocked-roo
 const ROOM_FETCH_HELPER_CURRENT = "const blockedRoomKey = 'lingua-relay.blocked-room.' + roomId;\nconst ROOM_CONTROL_FETCH_TIMEOUT_MS = 12000;\nasync function roomFetch(input, init = {}) {\n  const controller = new AbortController();\n  const timer = setTimeout(() => controller.abort(), ROOM_CONTROL_FETCH_TIMEOUT_MS);\n  try {\n    return await fetch(input, {...init, signal: controller.signal});\n  } finally {\n    clearTimeout(timer);\n  }\n}";
 const CONTROL_FETCH_SEAMS = ["/api/capabilities", "/api/turn", "/api/room", "/api/reports"];
 const ROOM_RUNTIME_MARKER = '<script src="/app-runtime.js"></script>';
-const ROOM_PRODUCT_EVENTS = `${ROOM_RUNTIME_MARKER}\n<script src="/product-events.js"></script>\n<script src="/room-product-events.js"></script>`;
+const ROOM_CLIENT_SCRIPTS = `${ROOM_RUNTIME_MARKER}\n<script src="/product-events.js"></script>\n<script src="/room-product-events.js"></script>\n<script src="/room-blocking.js"></script>`;
 
 if (path.dirname(WWW) !== MOBILE || path.basename(WWW) !== "www") {
   throw new Error(`Refusing unsafe mobile web target: ${WWW}`);
@@ -101,10 +101,10 @@ function enhanceRoomShell(source) {
     throw new Error("room shell is missing the explicit Terms-consent seam");
   }
   if (!source.includes(ROOM_RUNTIME_MARKER)) {
-    throw new Error("room shell is missing the product-event runtime seam");
+    throw new Error("room shell is missing the room client-script seam");
   }
   return source
-    .replace(ROOM_RUNTIME_MARKER, ROOM_PRODUCT_EVENTS)
+    .replace(ROOM_RUNTIME_MARKER, ROOM_CLIENT_SCRIPTS)
     .replace(TERMS_CHECKBOX_SEAM, TERMS_CHECKBOX_EXPLICIT)
     .replace('<div id="videoNote">', '<div id="videoNote" role="status" aria-live="polite">')
     .replace('<div id="status">', '<div id="status" role="status" aria-live="polite">')
