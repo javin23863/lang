@@ -32,14 +32,17 @@ const isNative = Capacitor.isNativePlatform();
 const hostStorage = createSecureHostStorage(SecureStorage);
 const nativeFetch = window.fetch.bind(window);
 const NATIVE_SESSION_KEY = "lingua-relay.native-session.v1";
-const NATIVE_AUTH_BINDING_PREFIX = "lingua-relay.native-auth-binding.v2.";
+const NATIVE_AUTH_BINDING_PREFIX = "lingua-relay.native-auth-binding.v3.";
+const LEGACY_AUTH_BINDING_PREFIX = "lingua-relay.native-auth-binding.v2.";
 const NATIVE_AUTH_START = /^\/auth\/(google|apple|facebook)\/start$/;
+const NATIVE_AUTH_PROVIDERS = ["google", "apple", "facebook"] as const;
 const SESSION_API_PATHS = new Set([
   "/api/v1/me", "/api/v1/rooms", "/api/v1/account/delete", "/api/v1/auth/logout"
 ]);
 const LOCAL_DARK_CONTENT = new Set(["privacy.html", "terms.html", "support.html"]);
 let nativeSession: string | null = null;
 const memoryAuthBindings = new Map<string, string>();
+const authChallenges = new Map<string, string>();
 const handledAuthHandoffs = new Set<string>();
 
 function base64url(bytes: Uint8Array): string {
@@ -48,39 +51,79 @@ function base64url(bytes: Uint8Array): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+function canonicalBinding(value: unknown): string | null {
+  const input = typeof value === "string" ? value : "";
+  try {
+    const padded = input.replace(/-/g, "+").replace(/_/g, "/")
+      + "=".repeat((4 - input.length % 4) % 4);
+    const binary = atob(padded);
+    const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+    return bytes.byteLength === 32 && base64url(bytes) === input ? input : null;
+  } catch {
+    return null;
+  }
+}
+
 function authBindingKey(provider: string): string {
   return `${NATIVE_AUTH_BINDING_PREFIX}${provider}`;
 }
 
-function saveAuthBinding(provider: string, binding: string): void {
+function legacyAuthBindingKey(provider: string): string {
+  return `${LEGACY_AUTH_BINDING_PREFIX}${provider}`;
+}
+
+async function bindingChallenge(binding: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(binding));
+  return base64url(new Uint8Array(digest));
+}
+
+async function prepareAuthBinding(provider: string): Promise<void> {
+  let binding: string | null = null;
+  try { binding = canonicalBinding(await hostStorage.getItem(authBindingKey(provider))); }
+  catch { /* memory fallback below */ }
+
+  // Preserve an in-flight OAuth attempt started by the previous build, then
+  // remove its raw localStorage copy as soon as it has been migrated.
+  if (!binding) {
+    try { binding = canonicalBinding(localStorage.getItem(legacyAuthBindingKey(provider))); }
+    catch { /* no legacy WebView storage */ }
+  }
+  if (!binding) binding = base64url(crypto.getRandomValues(new Uint8Array(32)));
+
   memoryAuthBindings.set(provider, binding);
-  try { localStorage.setItem(authBindingKey(provider), binding); } catch { /* memory fallback */ }
+  authChallenges.set(provider, await bindingChallenge(binding));
+  try { await hostStorage.setItem(authBindingKey(provider), binding); }
+  catch { /* same-process auth still retains the binding in memory */ }
+  try { localStorage.removeItem(legacyAuthBindingKey(provider)); }
+  catch { /* legacy storage may be unavailable */ }
 }
 
-function readAuthBinding(provider: string): string | null {
+const authBindingsReady: Promise<void> = isNative
+  ? Promise.all(NATIVE_AUTH_PROVIDERS.map(provider => prepareAuthBinding(provider))).then(() => {})
+  : Promise.resolve();
+
+async function readAuthBinding(provider: string): Promise<string | null> {
+  await authBindingsReady;
+  const memory = canonicalBinding(memoryAuthBindings.get(provider));
+  if (memory) return memory;
   try {
-    const stored = localStorage.getItem(authBindingKey(provider));
-    if (stored) return stored;
-  } catch { /* memory fallback */ }
-  return memoryAuthBindings.get(provider) || null;
-}
-
-function clearAuthBinding(provider: string): void {
-  memoryAuthBindings.delete(provider);
-  try { localStorage.removeItem(authBindingKey(provider)); } catch { /* already unusable */ }
+    const stored = canonicalBinding(await hostStorage.getItem(authBindingKey(provider)));
+    if (stored) memoryAuthBindings.set(provider, stored);
+    return stored;
+  } catch {
+    return null;
+  }
 }
 
 function nativeApiPath(path: string): string {
   const resolved = apiPath(path, true);
   const provider = path.match(NATIVE_AUTH_START)?.[1];
   if (!provider) return resolved;
-  // A custom URL scheme is the reliable browser-to-app return on iOS, but a
-  // scheme can be claimed by another installed app. Bind every handoff to 256
-  // random bits that remain only in this app; an intercepted URL is useless
-  // without the matching binding during the one-time exchange.
-  const binding = base64url(crypto.getRandomValues(new Uint8Array(32)));
-  saveAuthBinding(provider, binding);
-  return `${resolved}?binding=${encodeURIComponent(binding)}`;
+  const challenge = authChallenges.get(provider);
+  if (!challenge) throw new Error("Native authentication is unavailable");
+  // Only the SHA-256 challenge enters browser history or edge logs. The 256-bit
+  // binding that proves possession on handoff exchange stays in app storage.
+  return `${resolved}?challenge=${encodeURIComponent(challenge)}`;
 }
 
 async function clearNativeSession(): Promise<void> {
@@ -101,9 +144,11 @@ const sessionReady: Promise<void> = isNative ? hostStorage.getItem(NATIVE_SESSIO
 if (isNative) {
   // The bundled WebView is intentionally cookie-independent. Only account and
   // room-creation calls receive the native session bearer; room/TURN/TTS calls
-  // already carry their own room-scoped Authorization credentials.
+  // already carry their own room-scoped Authorization credentials. Waiting for
+  // authBindingsReady also means provider links can remain synchronous after
+  // /api/me renders them: their browser-safe challenges are already prepared.
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    await sessionReady;
+    await Promise.all([sessionReady, authBindingsReady]);
     const resolved = typeof input === "string" ? new URL(input, location.href).toString() : input;
     let request = new Request(resolved, init);
     const url = new URL(request.url);
@@ -160,7 +205,7 @@ function openRoom(token: string, mode?: string): boolean {
 }
 
 async function acceptNativeHandoff(provider: string, handoff: string): Promise<void> {
-  const binding = readAuthBinding(provider);
+  const binding = await readAuthBinding(provider);
   if (!binding) {
     window.location.replace("index.html?auth=failed");
     return;
@@ -177,12 +222,8 @@ async function acceptNativeHandoff(provider: string, handoff: string): Promise<v
     if (!isSessionToken(body.session)) throw new Error("invalid native session");
     nativeSession = String(body.session);
     await hostStorage.setItem(NATIVE_SESSION_KEY, nativeSession);
-    clearAuthBinding(provider);
     window.location.replace("index.html");
   } catch {
-    // The handoff is one-shot and a failed exchange cannot safely be resumed.
-    // Never leave its binding behind in WebView storage after the attempt ends.
-    clearAuthBinding(provider);
     window.location.replace("index.html?auth=failed");
   }
 }
@@ -199,7 +240,6 @@ async function routeAppLink(value: string | undefined): Promise<void> {
       handledAuthHandoffs.add(auth.handoff);
       await acceptNativeHandoff(auth.provider, auth.handoff);
     } else {
-      clearAuthBinding(auth.provider);
       window.location.replace("index.html?auth=failed");
     }
     return;
