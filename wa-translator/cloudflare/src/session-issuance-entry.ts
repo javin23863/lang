@@ -1,4 +1,11 @@
 import accountGuardEntry, { AbuseGate, ReportInbox, Room, UserDirectory } from "./account-guard-entry";
+import {
+  logOperationalException,
+  logOperationalFailure,
+  operationalExceptionRecord,
+  operationalFailureRecord,
+  withFailureRequestId,
+} from "./operational-telemetry";
 import { inspectSessionToken, mintSessionV2 } from "./session-v2";
 import type { Env } from "./worker";
 
@@ -119,13 +126,32 @@ async function nativeReportAndBlock(
   return acceptedReportWithPendingBlock(response);
 }
 
+async function routeRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const bootstrap = await v2MobileBootstrap(request, env, ctx);
+  if (bootstrap) return bootstrap;
+  const handoff = await upgradedNativeHandoff(request, env, ctx);
+  if (handoff) return handoff;
+  const report = await nativeReportAndBlock(request, env, ctx);
+  return report || accountGuardEntry.fetch(request, env, ctx);
+}
+
 export default {
   async fetch(request, env, ctx): Promise<Response> {
-    const bootstrap = await v2MobileBootstrap(request, env, ctx);
-    if (bootstrap) return bootstrap;
-    const handoff = await upgradedNativeHandoff(request, env, ctx);
-    if (handoff) return handoff;
-    const report = await nativeReportAndBlock(request, env, ctx);
-    return report || accountGuardEntry.fetch(request, env, ctx);
+    const requestId = crypto.randomUUID();
+    const started = performance.now();
+    try {
+      const response = await routeRequest(request, env, ctx);
+      if (response.status < 400) return response;
+      const record = operationalFailureRecord(request, response.status, requestId, performance.now() - started);
+      logOperationalFailure(record);
+      // Only ordinary HTTP failures are cloned. Successful responses—including
+      // WebSocket upgrades—remain byte-for-byte on the lower-layer response.
+      return withFailureRequestId(response, requestId);
+    } catch (error) {
+      logOperationalException(operationalExceptionRecord(
+        request, error, requestId, performance.now() - started
+      ));
+      throw error;
+    }
   },
 } satisfies ExportedHandler<Env>;
