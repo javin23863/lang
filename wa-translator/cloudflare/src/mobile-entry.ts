@@ -4,6 +4,7 @@ export { AbuseGate, ReportInbox, Room, UserDirectory } from "./worker";
 
 const NATIVE_ORIGINS = new Set(["https://localhost", "capacitor://localhost"]);
 const NATIVE_OAUTH_COOKIE = "lr_native_oauth";
+const OAUTH_STATE_COOKIE = "lr_oauth";
 const NATIVE_HANDOFF_PREFIX = "nh1";
 const NATIVE_HANDOFF_PURPOSE = "native-handoff.v1";
 const NATIVE_HANDOFF_TTL_SECONDS = 90;
@@ -47,6 +48,13 @@ function nativeCors(request: Request, response: Response): Response {
   headers.set("Access-Control-Allow-Origin", origin);
   headers.set("Vary", "Origin");
   return new Response(response.body, {status: response.status, headers});
+}
+
+// Cloudflare gives the top-level fetch handler an IncomingRequestCfProperties
+// marker. Rebuilding a Request to rewrite its path preserves the runtime data
+// but widens the TypeScript generic. Keep that type-only mismatch at one seam.
+function routeWorker(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  return worker.fetch(request as never, env, ctx);
 }
 
 function base64url(bytes: ArrayBuffer | Uint8Array): string {
@@ -108,7 +116,9 @@ async function signNativeHandoff(userId: string, secret: string): Promise<string
   return `${NATIVE_HANDOFF_PREFIX}.${userId}.${expiresAt}.${nonce}.${base64url(signature)}`;
 }
 
-async function verifyNativeHandoff(token: string, secret: string): Promise<string | null> {
+async function verifyNativeHandoff(
+  token: string, secret: string
+): Promise<{userId: string; nonce: string} | null> {
   if (!signingSecretIsValid(secret)) return null;
   const parts = token.split(".");
   if (parts.length !== 5) return null;
@@ -125,7 +135,7 @@ async function verifyNativeHandoff(token: string, secret: string): Promise<strin
     signatureBytes.buffer as ArrayBuffer,
     new TextEncoder().encode(`${NATIVE_HANDOFF_PURPOSE}.${userId}.${expiresRaw}.${nonce}`)
   );
-  return valid ? userId : null;
+  return valid ? {userId, nonce} : null;
 }
 
 function readCookie(request: Request, name: string): string | null {
@@ -146,10 +156,18 @@ function clearNativeMarkerCookie(): string {
   return `${NATIVE_OAUTH_COOKIE}=; HttpOnly; Secure; SameSite=None; Path=/auth; Max-Age=0`;
 }
 
+function clearOauthStateCookie(): string {
+  return `${OAUTH_STATE_COOKIE}=; HttpOnly; Secure; SameSite=None; Path=/auth; Max-Age=0`;
+}
+
 function extractSession(headers: Headers): string | null {
-  const value = headers.get("Set-Cookie") || "";
-  const match = value.match(/(?:^|,\s*)lr_s=([^;,\s]+)/);
-  return match && SESSION_PATTERN.test(match[1]) ? match[1] : null;
+  const values = typeof headers.getSetCookie === "function"
+    ? headers.getSetCookie() : [headers.get("Set-Cookie") || ""];
+  for (const value of values) {
+    const match = value.match(/(?:^|,\s*)lr_s=([^;,\s]+)/);
+    if (match && SESSION_PATTERN.test(match[1])) return match[1];
+  }
+  return null;
 }
 
 function sessionUserId(token: string): string | null {
@@ -211,13 +229,17 @@ async function nativeAuthCallback(
   request: Request, env: Env, ctx: ExecutionContext, provider: string
 ): Promise<Response> {
   if (readCookie(request, NATIVE_OAUTH_COOKIE) !== provider) {
-    return worker.fetch(request, env, ctx);
+    return routeWorker(request, env, ctx);
   }
-  const upstream = await worker.fetch(request, env, ctx);
-  const headers = privateHeaders(upstream.headers);
-  headers.append("Set-Cookie", clearNativeMarkerCookie());
+  const upstream = await routeWorker(request, env, ctx);
   const session = extractSession(upstream.headers);
   const userId = session ? sessionUserId(session) : null;
+  // Never persist the browser session minted by the shared callback into the
+  // system browser. Native receives only the short handoff below.
+  const headers = privateHeaders(upstream.headers);
+  headers.delete("Set-Cookie");
+  headers.append("Set-Cookie", clearOauthStateCookie());
+  headers.append("Set-Cookie", clearNativeMarkerCookie());
   if (!userId) {
     headers.set("Location", `${expectedOrigin(request, env)}/mobile-auth-complete#auth=failed`);
     return new Response(null, {status: 302, headers});
@@ -230,6 +252,19 @@ async function nativeAuthCallback(
     headers.set("Location", `${expectedOrigin(request, env)}/mobile-auth-complete#auth=failed`);
     return new Response(null, {status: 302, headers});
   }
+}
+
+async function consumeNativeHandoff(env: Env, nonce: string): Promise<boolean> {
+  const response = await env.ABUSE.get(env.ABUSE.idFromName(`native-handoff:${nonce}`)).fetch(
+    new Request("https://abuse.internal/consume", {
+      method: "POST",
+      headers: {
+        "X-Quota-Limit": "1",
+        "X-Quota-Window-Ms": String(NATIVE_HANDOFF_TTL_SECONDS * 1000),
+      }
+    })
+  );
+  return response.status === 204;
 }
 
 async function nativeHandoffExchange(request: Request, env: Env): Promise<Response> {
@@ -255,20 +290,20 @@ async function nativeHandoffExchange(request: Request, env: Env): Promise<Respon
       request, new Response("Invalid handoff", {status: 400, headers: privateHeaders()})
     );
   }
-  const userId = await verifyNativeHandoff(handoff, env.ROOM_SIGNING_KEY);
-  if (!userId) return nativeCors(
+  const verified = await verifyNativeHandoff(handoff, env.ROOM_SIGNING_KEY);
+  if (!verified || !await consumeNativeHandoff(env, verified.nonce)) return nativeCors(
     request, new Response("Invalid handoff", {status: 401, headers: privateHeaders()})
   );
   // A handoff issued before account deletion must not recreate a usable native
   // session after deletion. The UserDirectory is the account authority.
-  const user = await env.USERS.get(env.USERS.idFromName(userId)).fetch(
+  const user = await env.USERS.get(env.USERS.idFromName(verified.userId)).fetch(
     new Request("https://users.internal/")
   );
   if (!user.ok) return nativeCors(
     request, new Response("Account unavailable", {status: 401, headers: privateHeaders()})
   );
   try {
-    const session = await signSession(userId, env.ROOM_SIGNING_KEY);
+    const session = await signSession(verified.userId, env.ROOM_SIGNING_KEY);
     return nativeCors(request, Response.json({
       session: session.token, expires_at: session.expiresAt
     }, {headers: privateHeaders()}));
@@ -279,7 +314,7 @@ async function nativeHandoffExchange(request: Request, env: Env): Promise<Respon
   }
 }
 
-function appleAssociation(request: Request, env: Env): Response {
+function appleAssociation(env: Env): Response {
   const teamId = env.MOBILE_APPLE_TEAM_ID || "";
   if (!/^[A-Z0-9]{10}$/.test(teamId)) {
     return new Response("Apple association is not configured", {
@@ -301,9 +336,9 @@ function mobileAuthComplete(request: Request): Response {
   if (request.method !== "GET") return new Response("Method Not Allowed", {
     status: 405, headers: privateHeaders()
   });
-  return new Response("Authentication completed. Return to Lingua Relay.", {
-    headers: {...Object.fromEntries(privateHeaders()), "Content-Type": "text/plain; charset=utf-8"}
-  });
+  const headers = privateHeaders();
+  headers.set("Content-Type", "text/plain; charset=utf-8");
+  return new Response("Authentication completed. Return to Lingua Relay.", {headers});
 }
 
 async function nativeSessionApi(
@@ -312,11 +347,14 @@ async function nativeSessionApi(
   if (request.method === "OPTIONS") return null;
   const url = new URL(request.url);
   if (url.pathname === "/api/v1/rooms") {
-    return worker.fetch(withNativeSession(request), env, ctx);
+    return routeWorker(withNativeSession(request), env, ctx);
   }
   const target = NATIVE_SESSION_PATHS.get(url.pathname);
   if (!target) return null;
-  const response = await worker.fetch(withNativeSession(request, target), env, ctx);
+  if (!nativeOrigin(request)) {
+    return new Response("Forbidden", {status: 403, headers: privateHeaders()});
+  }
+  const response = await routeWorker(withNativeSession(request, target), env, ctx);
   return nativeCors(request, response);
 }
 
@@ -333,14 +371,14 @@ export default {
 
     if (url.pathname === "/mobile-auth-complete") return mobileAuthComplete(request);
     if (url.pathname === "/.well-known/apple-app-site-association") {
-      return appleAssociation(request, env);
+      return appleAssociation(env);
     }
     if (url.pathname === "/api/v1/auth/handoff") {
-      if (request.method === "OPTIONS") return worker.fetch(request, env, ctx);
+      if (request.method === "OPTIONS") return routeWorker(request, env, ctx);
       return nativeHandoffExchange(request, env);
     }
 
     const nativeApi = await nativeSessionApi(request, env, ctx);
-    return nativeApi || worker.fetch(request, env, ctx);
+    return nativeApi || routeWorker(request, env, ctx);
   }
 } satisfies ExportedHandler<Env>;
