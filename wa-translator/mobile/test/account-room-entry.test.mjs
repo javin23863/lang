@@ -23,3 +23,12 @@ test("every Wrangler entrypoint requires a live account before room creation", a
   assert.match(guard, /Access-Control-Allow-Origin/,
                "native 401 responses remain readable so secure storage can self-clear the bearer");
 });
+
+test("browser account refresh retires a stale signed cookie", async () => {
+  const guard = await read("../../cloudflare/src/account-guard-entry.ts");
+  assert.match(guard, /async function browserAccountSnapshot/);
+  assert.match(guard, /request\.method !== "GET" \|\| url\.pathname !== "\/api\/me"/);
+  assert.match(guard, /body\.signed_in !== false/,
+               "only an authoritative signed-out account snapshot clears the browser credential");
+  assert.match(guard, /headers\.append\("Set-Cookie", clearSessionCookie\(\)\)/);
+});
