@@ -22,6 +22,23 @@ function clearSessionCookie(): string {
   return `${SESSION_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`;
 }
 
+function retiredRoomCreate(request: Request): Response | null {
+  const url = new URL(request.url);
+  if (request.method !== "POST" || url.pathname !== "/rooms") return null;
+  // The original HTML-form redirect creator is no longer part of the shipping
+  // dashboard. Keep one canonical creation API so account authority, quotas,
+  // native adaptation and response contracts cannot drift across two host
+  // entrypoints.
+  return new Response("Not Found", {
+    status: 404,
+    headers: {
+      "Cache-Control": "no-store",
+      "Referrer-Policy": "no-referrer",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
+
 function accountProbe(request: Request): Request {
   const url = new URL(request.url);
   url.pathname = url.pathname === "/api/v1/rooms" ? "/api/v1/me" : "/api/me";
@@ -104,6 +121,8 @@ async function browserAccountSnapshot(
 
 export default {
   async fetch(request, env, ctx): Promise<Response> {
+    const retired = retiredRoomCreate(request);
+    if (retired) return retired;
     const account = await browserAccountSnapshot(request, env, ctx);
     if (account) return account;
     const guarded = await accountGuardedRoomCreate(request, env, ctx);
