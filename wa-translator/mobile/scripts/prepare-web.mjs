@@ -9,9 +9,29 @@ const FOUR_PERSON_FALLBACK = 'id="participantCount" aria-live="polite">0 / 4 peo
 const TWO_PERSON_FALLBACK = 'id="participantCount" aria-live="polite">0 / 2 people<';
 const ROOM_STYLE_PATTERN = /<style>\n([\s\S]*?)\n<\/style>/;
 const ROOM_SCRIPT_PATTERN = /<script>\n(const \$ = \(id\) => document\.getElementById\(id\);[\s\S]*?)\n<\/script>\n<\/body>/;
+const STATUS_STYLE_SEAM = "el.style.display = text ? 'block' : 'none';";
+const STATUS_TIMEOUT_SEAM = "setTimeout(() => { if (el.textContent === text) el.style.display = 'none'; }, 3000);";
 
 if (path.dirname(WWW) !== MOBILE || path.basename(WWW) !== "www") {
   throw new Error(`Refusing unsafe mobile web target: ${WWW}`);
+}
+
+function normalizeRoomScript(source) {
+  if (!source.includes(STATUS_STYLE_SEAM) || !source.includes(STATUS_TIMEOUT_SEAM)) {
+    throw new Error("room status visibility seam is missing");
+  }
+  return source
+    .replace(STATUS_STYLE_SEAM, "el.hidden = !text;")
+    .replace(STATUS_TIMEOUT_SEAM,
+      "setTimeout(() => { if (el.textContent === text) el.hidden = true; }, 3000);");
+}
+
+function enhanceRoomShell(source) {
+  return source
+    .replace('<div id="videoNote">', '<div id="videoNote" role="status" aria-live="polite">')
+    .replace('<div id="status">', '<div id="status" role="status" aria-live="polite">')
+    .replace('<div id="captions">',
+      '<div id="captions" role="log" aria-live="polite" aria-relevant="additions text">');
 }
 
 function decomposeRoom(source) {
@@ -19,11 +39,11 @@ function decomposeRoom(source) {
   const script = source.match(ROOM_SCRIPT_PATTERN);
   if (!style || !script) throw new Error("room source decomposition seam is missing");
   return {
-    html: source
+    html: enhanceRoomShell(source
       .replace(style[0], '<link rel="stylesheet" href="/room.css">')
-      .replace(script[0], '<script src="/room.js"></script>\n</body>'),
+      .replace(script[0], '<script src="/room.js"></script>\n</body>')),
     css: `${style[1]}\n`,
-    js: `${script[1]}\n`,
+    js: `${normalizeRoomScript(script[1])}\n`,
   };
 }
 
