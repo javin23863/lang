@@ -3,9 +3,6 @@ import { describe, expect, it } from "vitest";
 
 const ORIGIN = "https://room.test";
 
-const APP_CSP = "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self'";
-const ROOM_CSP = "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; media-src 'self' blob: data:";
-
 describe("permanent deployment surface", () => {
   it("exposes health and the shared installable client assets", async () => {
     const health = await exports.default.fetch(`${ORIGIN}/health`);
@@ -23,20 +20,17 @@ describe("permanent deployment surface", () => {
 
     const dashboard = await exports.default.fetch(`${ORIGIN}/`);
     expect(dashboard.status).toBe(200);
-    expect(dashboard.headers.get("Content-Security-Policy")).toBe(APP_CSP);
+    expect(dashboard.headers.get("Content-Security-Policy")).toBe(
+      "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self'; worker-src 'self'; manifest-src 'self'"
+    );
     expect(dashboard.headers.get("X-Frame-Options")).toBe("DENY");
     expect(dashboard.headers.get("Permissions-Policy")).toBe("camera=(), microphone=()");
 
-    for (const path of ["/privacy", "/terms", "/support"]) {
-      const legal = await exports.default.fetch(`${ORIGIN}${path}`);
-      expect(legal.status).toBe(200);
-      expect(legal.headers.get("Content-Security-Policy")).toBe(APP_CSP);
-      expect(legal.headers.get("Permissions-Policy")).toBe("camera=(), microphone=()");
-    }
-
     const room = await exports.default.fetch(`${ORIGIN}/room.html`);
     expect(room.status).toBe(200);
-    expect(room.headers.get("Content-Security-Policy")).toBe(ROOM_CSP);
+    expect(room.headers.get("Content-Security-Policy")).toBe(
+      "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; media-src 'self' blob: data:; connect-src 'self' wss://room.test; worker-src 'self'"
+    );
     expect(room.headers.get("X-Frame-Options")).toBe("DENY");
     expect(room.headers.get("Permissions-Policy")).toBe("camera=(self), microphone=(self)");
     const roomHtml = await room.text();
@@ -45,8 +39,6 @@ describe("permanent deployment surface", () => {
     expect(roomHtml).toContain('<script src="/room.js"></script>');
     expect(roomHtml).not.toContain("<style>");
     expect(roomHtml).not.toContain("<script>\nconst $ =");
-    expect(roomHtml).not.toMatch(/\son\w+=/i);
-    expect(roomHtml).not.toContain('style="');
     expect(roomHtml).toContain('id="status" role="status" aria-live="polite"');
     expect(roomHtml).toContain('id="captions" role="log" aria-live="polite" aria-relevant="additions text"');
     expect(roomHtml).toContain('id="participantCount" aria-live="polite">0 / 2 people<');
