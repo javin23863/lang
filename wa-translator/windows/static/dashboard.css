@@ -1,74 +1,136 @@
 *{box-sizing:border-box}
-body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% -15%,var(--accent-soft),transparent 42%),var(--bg);color:var(--label);font-family:var(--font);font-size:17px;-webkit-font-smoothing:antialiased;padding:calc(18px + env(safe-area-inset-top)) clamp(12px,4vw,42px) calc(28px + env(safe-area-inset-bottom));display:flex;justify-content:center}
-.page{width:min(620px,100%);display:grid;gap:14px;align-content:start}
-.brand{display:flex;align-items:center;gap:13px;padding:2px 4px 4px}
-.brandMark{width:52px;height:52px;border-radius:14px;box-shadow:0 7px 18px rgba(7,94,84,.18)}
-.title{font-size:34px;font-weight:750;letter-spacing:-.035em;line-height:1.05;margin:0;color:var(--label)}
-.card{background:var(--card);border:1px solid var(--separator);border-radius:var(--radius-card);overflow:hidden;box-shadow:var(--shadow)}
-.statusCard{box-shadow:none;background:color-mix(in srgb,var(--card) 82%,transparent)}
-.state{margin:0;padding:13px 16px;font-size:15px;font-weight:650;letter-spacing:-.008em;color:var(--label-2)}
-.state[data-state="open"]{color:var(--confirm)}.state[data-state="closed"],.state[data-state="expired"],.state[data-state="error"]{color:var(--destructive)}
-.room{display:grid;gap:14px;padding:18px}.room[hidden]{display:none}
-.field{display:grid;gap:7px;color:var(--label-2);font-size:13px;font-weight:550}
-input{width:100%;min-width:0;min-height:var(--touch-target);border:1px solid transparent;border-radius:12px;background:var(--fill);color:var(--label);font:15px ui-monospace,SFMono-Regular,Consolas,monospace;padding:12px 13px;direction:ltr;text-align:left;transition:border-color var(--motion-fast) ease,background var(--motion-fast) ease}
-input:focus{border-color:color-mix(in srgb,var(--accent) 48%,transparent);background:var(--card)}
-.actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}.actions button{overflow-wrap:anywhere;line-height:1.2;font-size:14px}
-button{border:1px solid transparent;border-radius:var(--radius-control);min-height:var(--touch-target);padding:10px 13px;font:650 16px var(--font);letter-spacing:-.012em;cursor:pointer;background:var(--fill);color:var(--accent);transition:transform .12s ease,background var(--motion-fast) ease,border-color var(--motion-fast) ease,opacity var(--motion-fast) ease}
+html{background:var(--bg)}
+body{margin:0;min-height:100vh;background:
+  radial-gradient(circle at 12% -8%,color-mix(in srgb,var(--accent-soft) 92%,transparent),transparent 34%),
+  radial-gradient(circle at 92% 12%,color-mix(in srgb,var(--accent-2) 14%,transparent),transparent 28%),
+  var(--bg);color:var(--label);font-family:var(--font);font-size:17px;-webkit-font-smoothing:antialiased;
+  padding:calc(18px + env(safe-area-inset-top)) clamp(12px,4vw,44px) calc(30px + env(safe-area-inset-bottom));
+  display:flex;justify-content:center}
+.page{width:min(720px,100%);display:grid;gap:14px;align-content:start}
+.brand{display:flex;align-items:center;min-height:64px;padding:2px 4px 6px}
+.brandIdentity{display:flex;align-items:center;gap:13px;min-width:0}
+.brandMark{width:54px;height:54px;border-radius:16px;box-shadow:0 10px 25px rgba(7,94,84,.18)}
+.title{font-size:32px;font-weight:780;letter-spacing:-.04em;line-height:1;margin:0;color:var(--label)}
+.card{background:color-mix(in srgb,var(--card) 96%,transparent);border:1px solid var(--separator);
+  border-radius:var(--radius-card);overflow:hidden;box-shadow:var(--shadow);backdrop-filter:blur(16px)}
+button{border:1px solid transparent;border-radius:var(--radius-control);min-height:var(--touch-target);padding:10px 13px;
+  font:650 16px var(--font);letter-spacing:-.012em;cursor:pointer;background:var(--fill);color:var(--accent);
+  transition:transform .12s ease,background var(--motion-fast) ease,border-color var(--motion-fast) ease,opacity var(--motion-fast) ease}
 button:active:not(:disabled){transform:scale(.985)}
 button.primary{background:var(--accent);color:#FFF;min-height:52px}
 button.danger{background:transparent;color:var(--destructive)}
 button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
 button:disabled{cursor:not-allowed;opacity:.42}
-.share{grid-template-columns:repeat(3,minmax(0,1fr))}
-/* A camera reads dark modules on a light field: the code carries its own paper
-   rather than inheriting a dark-appearance card. */
-#qrBox{display:grid;place-items:center;margin:0;padding:12px;border-radius:14px;background:#FFF;color:#000}
-#qrBox[hidden]{display:none}
-#qrBox svg{display:block;width:min(228px,58vw);height:auto}
-.notice{min-height:18px;margin:-3px 5px 0;color:var(--label-2);font-size:13px;line-height:1.35}
-.roomLabel{font-size:12px;font-weight:750;letter-spacing:.055em;text-transform:uppercase;margin:0;color:var(--label-2)}
-/* Until /api/me answers, neither the sign-in card nor the account surfaces are
-   shown: a signed-in host must never see a sign-in button flash by. */
+.roomLabel{font-size:12px;font-weight:780;letter-spacing:.075em;text-transform:uppercase;margin:0;color:var(--label-2)}
+.prompt{margin:0;color:var(--label-2);font-size:15px;line-height:1.5}
 body:not([data-auth="in"]) .authed{display:none}
 body:not([data-auth="out"]) #authPanel{display:none}
 body[data-auth="out"] #authPanel{display:grid}
-#authPanel{gap:14px;padding:20px}
-.authCard{border-color:color-mix(in srgb,var(--accent) 18%,var(--separator))}
-.prompt{margin:0;color:var(--label-2);font-size:15px;line-height:1.5}
+
+/* Signed-out first launch */
+.onboardingCard{display:grid;gap:18px;padding:22px;background:
+  linear-gradient(145deg,color-mix(in srgb,var(--accent-soft) 72%,var(--card)),var(--card) 58%)}
+.onboardingCard[hidden]{display:none}
+.onboardingCopy{display:grid;gap:7px}
+.onboardingFlow{padding-top:1px;font-size:13px;font-weight:600}
+.onboardingModes{pointer-events:none}
+#authPanel{gap:15px;padding:22px;border-color:color-mix(in srgb,var(--accent) 20%,var(--separator))}
 #authButtons{display:grid;gap:9px}
-.signIn{display:flex;align-items:center;justify-content:center;min-height:52px;border:1px solid transparent;border-radius:var(--radius-control);background:var(--accent);color:#FFF;font:650 16px var(--font);text-decoration:none;padding:11px 14px;text-align:center;transition:transform .12s ease,filter var(--motion-fast) ease}
+.signIn{display:flex;align-items:center;justify-content:center;min-height:54px;border:1px solid transparent;
+  border-radius:15px;background:var(--accent);color:#FFF;font:680 16px var(--font);text-decoration:none;padding:11px 14px;
+  text-align:center;transition:transform .12s ease,filter var(--motion-fast) ease}
 .signIn:active{transform:scale(.985)}
 .signIn~.signIn{background:var(--fill);border-color:var(--separator);color:var(--accent)}
 #signInApple{background:#000;color:#FFF;border-color:#000}
 @media (prefers-color-scheme:dark){#signInApple{background:#FFF;color:#000;border-color:#FFF}}
 #authStatus{margin:0;color:var(--destructive);font-size:13px;min-height:0}
-/* An id carrying `display` outranks the `.authed` rule above and the card can
-   never be hidden, so the account surfaces state their layout only for the
-   state that shows them — same shape as #authPanel's hide rule. */
+
+/* Home: one launch surface, not a stack of control cards */
+.homeSurface{display:grid;gap:0;border:1px solid var(--separator);border-radius:26px;overflow:hidden;
+  background:var(--card);box-shadow:0 18px 46px color-mix(in srgb,var(--accent) 11%,transparent)}
+.modes{padding:12px}
+.modeGrid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(210px,.8fr);grid-template-rows:repeat(2,minmax(86px,1fr));gap:10px}
+.tile{display:flex;align-items:center;justify-content:flex-start;gap:12px;width:100%;min-height:86px;border-radius:18px;
+  background:var(--fill);border-color:transparent;box-shadow:none;color:var(--accent);font-size:16px;text-align:start;padding:15px}
+.tileIcon{display:grid;place-items:center;flex:0 0 44px;width:44px;height:44px;border-radius:13px;background:var(--accent-soft);color:var(--accent)}
+.tileIcon svg{display:block;width:23px;height:23px;fill:currentColor}
+.tileText{min-width:0;font-weight:730;line-height:1.18}
+.tilePrimary{grid-column:1;grid-row:1/3;min-height:182px;align-items:flex-start;justify-content:flex-end;flex-direction:column;
+  gap:16px;background:linear-gradient(150deg,var(--accent),color-mix(in srgb,var(--accent) 82%,#000));border-color:var(--accent);
+  color:#FFF;font-size:23px;padding:22px;box-shadow:inset 0 1px rgba(255,255,255,.14)}
+.tilePrimary .tileIcon{width:58px;height:58px;flex-basis:58px;border-radius:17px;background:rgba(255,255,255,.16);color:#FFF}
+.tilePrimary .tileIcon svg{width:30px;height:30px}
+.statusCard{border-top:1px solid var(--separator);background:color-mix(in srgb,var(--fill) 58%,var(--card));box-shadow:none}
+.state{margin:0;padding:14px 17px;font-size:14px;font-weight:650;letter-spacing:-.006em;color:var(--label-2)}
+.state::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:currentColor;margin-inline-end:9px;opacity:.55}
+.state[data-state="open"]{color:var(--confirm)}
+.state[data-state="closed"],.state[data-state="expired"],.state[data-state="error"]{color:var(--destructive)}
+
+/* Room share/control appears only after creation */
+.room{display:grid;gap:14px;padding:19px;background:
+  linear-gradient(180deg,color-mix(in srgb,var(--accent-soft) 42%,var(--card)),var(--card) 34%)}
+.room[hidden]{display:none}
+.roomHeading{display:flex;align-items:center;justify-content:space-between}
+.field{display:grid;gap:7px;color:var(--label-2);font-size:13px;font-weight:600}
+input{width:100%;min-width:0;min-height:var(--touch-target);border:1px solid var(--separator);border-radius:13px;background:var(--card);
+  color:var(--label);font:14px ui-monospace,SFMono-Regular,Consolas,monospace;padding:12px 13px;direction:ltr;text-align:left;
+  transition:border-color var(--motion-fast) ease,background var(--motion-fast) ease}
+input:focus{border-color:color-mix(in srgb,var(--accent) 48%,transparent);background:var(--card)}
+.actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
+.actions button{overflow-wrap:anywhere;line-height:1.2;font-size:14px}
+#shareBtn{background:var(--accent);color:#FFF}
+.share{grid-template-columns:repeat(3,minmax(0,1fr))}
+#qrBox{display:grid;place-items:center;margin:0;padding:12px;border-radius:14px;background:#FFF;color:#000}
+#qrBox[hidden]{display:none}
+#qrBox svg{display:block;width:min(228px,58vw);height:auto}
+.notice{min-height:18px;margin:-3px 5px 0;color:var(--label-2);font-size:13px;line-height:1.35}
+
+/* Account and administration are deliberately secondary */
 body[data-auth="in"] #accountChip{display:flex}
-#accountChip{align-items:center;gap:12px;padding:8px 10px 8px 16px;box-shadow:none}
-#accountName{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
-#signOutBtn{background:transparent;min-height:44px;padding-inline:10px}
-.modes{display:grid;gap:11px}
-.modeGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.tile{display:flex;align-items:center;justify-content:flex-start;gap:10px;width:100%;min-height:78px;border-radius:18px;background:var(--card);border-color:var(--separator);box-shadow:var(--shadow);color:var(--accent);font-size:16px;text-align:start;padding:13px}
-.tileIcon{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;border-radius:12px;background:var(--accent-soft);color:var(--accent)}
-.tileIcon svg{display:block;width:22px;height:22px;fill:currentColor}
-.tileText{min-width:0;font-weight:700;line-height:1.2}
-.tilePrimary{grid-column:1/-1;min-height:92px;background:var(--accent);border-color:var(--accent);color:#FFF;font-size:18px}
-.tilePrimary .tileIcon{width:46px;height:46px;flex-basis:46px;background:rgba(255,255,255,.16);color:#FFF}
-.tilePrimary .tileIcon svg{width:25px;height:25px}
-.credits{display:grid;gap:12px;padding:18px}
+#accountChip{align-items:center;gap:12px;padding:9px 10px 9px 16px;box-shadow:none;background:color-mix(in srgb,var(--card) 86%,transparent)}
+#accountName{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:650;font-size:15px}
+#signOutBtn{background:transparent;min-height:42px;padding-inline:10px;font-size:14px}
+.credits{display:grid;gap:12px;padding:18px;box-shadow:none}
 #usageList{list-style:none;margin:0;padding:0;display:grid}
-#usageList li{display:flex;justify-content:space-between;gap:12px;align-items:baseline;min-height:36px;padding:8px 0;border-top:1px solid var(--separator);font-size:15px}
+#usageList li{display:flex;justify-content:space-between;gap:12px;align-items:baseline;min-height:36px;padding:8px 0;
+  border-top:1px solid var(--separator);font-size:15px}
 #usageList li:first-child{border-top:none}
 #usageList .when{color:var(--label-2);font-size:13px}
-#deleteAccountBtn{width:calc(100% + 36px);text-align:center;font-weight:500;border-top:1px solid var(--separator);border-radius:0;margin:3px -18px -18px}
-.appLocale{display:grid;gap:7px;padding:15px 17px;color:var(--label-2);font-size:13px;font-weight:550;box-shadow:none}
-.appLocale select{width:100%;min-width:0;min-height:var(--touch-target);border:1px solid transparent;border-radius:12px;background:var(--fill);color:var(--label);font:16px var(--font);padding:11px 10px}
-.legal{display:grid;box-shadow:none}
-.legal a{display:flex;align-items:center;min-height:var(--touch-target);padding:0 17px;color:var(--accent);font-size:16px;text-decoration:none;border-top:1px solid var(--separator)}
-.legal a:first-child{border-top:none}
-@media(max-width:560px){.modeGrid{grid-template-columns:1fr}.tile,.tilePrimary{grid-column:auto;min-height:68px;font-size:16px}.tilePrimary .tileIcon{width:40px;height:40px;flex-basis:40px}.tilePrimary .tileIcon svg{width:22px;height:22px}.actions{grid-template-columns:1fr 1fr}}
-@media(max-width:380px){body{padding:calc(12px + env(safe-area-inset-top)) 8px calc(22px + env(safe-area-inset-bottom))}.page{gap:11px}.brandMark{width:46px;height:46px}.title{font-size:30px}.actions{gap:7px}.actions button{font-size:13px;padding:9px 7px}input{font-size:13px}}
+#deleteAccountBtn{width:calc(100% + 36px);text-align:center;font-weight:500;border-top:1px solid var(--separator);
+  border-radius:0;margin:3px -18px -18px}
+.appLocale{display:grid;gap:7px;padding:15px 17px;color:var(--label-2);font-size:13px;font-weight:600;box-shadow:none}
+.appLocale select{width:100%;min-width:0;min-height:var(--touch-target);border:1px solid transparent;border-radius:12px;
+  background:var(--fill);color:var(--label);font:16px var(--font);padding:11px 10px}
+.legal{display:grid;grid-template-columns:repeat(3,1fr);box-shadow:none}
+.legal a{display:flex;align-items:center;justify-content:center;min-height:var(--touch-target);padding:0 12px;color:var(--accent);
+  font-size:14px;font-weight:600;text-decoration:none;border-inline-start:1px solid var(--separator)}
+.legal a:first-child{border-inline-start:none}
+
+@media(max-width:560px){
+  body{padding-inline:10px}
+  .page{gap:12px}
+  .brand{min-height:58px}
+  .brandMark{width:48px;height:48px;border-radius:14px}
+  .title{font-size:29px}
+  .modeGrid{grid-template-columns:1fr 1fr;grid-template-rows:auto auto}
+  .tilePrimary{grid-column:1/-1;grid-row:auto;min-height:132px;flex-direction:row;align-items:flex-end;justify-content:flex-start;
+    font-size:21px;padding:19px}
+  .tilePrimary .tileIcon{width:52px;height:52px;flex-basis:52px}
+  .tile{min-height:76px;padding:13px;gap:9px}
+  .tileIcon{width:40px;height:40px;flex-basis:40px}
+  .actions{grid-template-columns:1fr 1fr}
+  .onboardingModes .tilePrimary{min-height:92px}
+}
+@media(max-width:360px){
+  body{padding:calc(12px + env(safe-area-inset-top)) 8px calc(22px + env(safe-area-inset-bottom))}
+  .page{gap:10px}
+  .brandMark{width:44px;height:44px}
+  .title{font-size:27px}
+  .tile{font-size:14px;padding:11px}
+  .tilePrimary{min-height:116px;font-size:19px}
+  .actions{gap:7px}
+  .actions button{font-size:13px;padding:9px 7px}
+  input{font-size:12px}
+  .legal a{font-size:13px;padding-inline:7px}
+}
 @media(prefers-reduced-motion:reduce){button,.signIn,input{transition:none}}
