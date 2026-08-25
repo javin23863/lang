@@ -30,9 +30,15 @@ behavior change.
   — never for tracking, advertising, or third-party sharing. Usage rows carry an
   opaque room reference, never a room link, and no message, caption, audio, or
   video content.
+- Authentication/security metadata: when a user logs out, the service stores
+  only a one-way SHA-256 digest of that specific session token plus its original
+  expiry so replay of a copied credential is rejected. The raw token is not
+  stored in the revocation record. The digest is removed at token expiry (no
+  later than 30 days from sign-in) or immediately when the account is deleted.
 - Account deletion: available in the app (Delete account, on the main screen)
   and on the web at the same signed-in screen. Deletion removes the account
-  profile, aggregate usage totals, and usage rows immediately.
+  profile, aggregate usage totals, usage rows, and logout-revocation markers
+  immediately.
 - Google Play external deletion URL: use the production URL ending in
   `/delete-account.html`. That page is publicly reachable without the mobile
   app, identifies Lingua Relay, explains deletion/retention, and directs the
