@@ -16,6 +16,20 @@ __pycache__/
 node_modules/
 .wrangler/
 
+# Local environment / deployment secrets
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+*.p8
+*.p12
+*.mobileprovision
+*.jks
+*.keystore
+**/google-services.json
+**/google-play.json
+
 # Cached model weights (per-user, large)
 *.bin
 *.ort
