@@ -33,6 +33,11 @@ behavior change.
 - Account deletion: available in the app (Delete account, on the main screen)
   and on the web at the same signed-in screen. Deletion removes the account
   profile, aggregate usage totals, and usage rows immediately.
+- Google Play external deletion URL: use the production URL ending in
+  `/delete-account.html`. That page is publicly reachable without the mobile
+  app, identifies Lingua Relay, explains deletion/retention, and directs the
+  user to the browser account controls. Do not enter a generic support URL or
+  temporary development hostname in the Play Console field.
 - Monetization: version 1.0 has no purchase surface, stored credit balance,
   payment method, price, StoreKit product, or Google Play Billing product. The
   app may display recent usage as account activity, but it does not sell or
