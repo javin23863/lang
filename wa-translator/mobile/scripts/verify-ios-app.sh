@@ -30,7 +30,7 @@ exe="$app/App"
 for required in "$plist" "$exe" "$app/PrivacyInfo.xcprivacy" \
   "$app/Frameworks/Capacitor.framework/PrivacyInfo.xcprivacy" \
   "$app/Frameworks/Cordova.framework/PrivacyInfo.xcprivacy" \
-  "$app/public/room.html"; do
+  "$app/public/room.html" "$app/public/room.css" "$app/public/room.js"; do
   if [[ ! -e "$required" ]]; then
     echo "iOS artifact is missing required file: $required" >&2
     exit 1
@@ -70,12 +70,34 @@ tracking="$(/usr/libexec/PlistBuddy -c 'Print :NSPrivacyTracking' "$app/PrivacyI
   exit 1
 }
 
-if grep -q 'id="participantCount" aria-live="polite">0 / 4 people<' "$app/public/room.html"; then
+room="$app/public/room.html"
+if grep -q 'id="participantCount" aria-live="polite">0 / 4 people<' "$room"; then
   echo "Packaged iOS room still contains the retired four-person fallback." >&2
   exit 1
 fi
-grep -q 'id="participantCount" aria-live="polite">0 / 2 people<' "$app/public/room.html" || {
+grep -q 'id="participantCount" aria-live="polite">0 / 2 people<' "$room" || {
   echo "Packaged iOS room is missing the two-person fallback." >&2
+  exit 1
+}
+grep -q '<link rel="stylesheet" href="/room.css">' "$room" || {
+  echo "Packaged iOS room is missing external room.css." >&2
+  exit 1
+}
+grep -q '<script src="/room.js"></script>' "$room" || {
+  echo "Packaged iOS room is missing external room.js." >&2
+  exit 1
+}
+if grep -q '<style>' "$room" || grep -q '<script>[[:space:]]*const \$ =' "$room"; then
+  echo "Packaged iOS room still contains inline room implementation." >&2
+  exit 1
+fi
+
+grep -q '#stage{' "$app/public/room.css" || {
+  echo "Packaged iOS room.css is incomplete." >&2
+  exit 1
+}
+grep -q 'async function connect()' "$app/public/room.js" || {
+  echo "Packaged iOS room.js is incomplete." >&2
   exit 1
 }
 
@@ -91,4 +113,4 @@ if find "$app" -type f \( -name '*.p12' -o -name '*.p8' -o -name '*.keystore' -o
   exit 1
 fi
 
-echo "iOS artifact check: identity, privacy, architecture, room contract and secret hygiene verified."
+echo "iOS artifact check: identity, privacy, architecture, decomposed room contract and secret hygiene verified."
