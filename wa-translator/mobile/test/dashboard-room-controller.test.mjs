@@ -23,8 +23,16 @@ test("prepared native dashboard isolates room control and polling", async () => 
     "room control endpoints belong to the controller boundary");
 
   assert.match(controller, /const POLL_INTERVAL_MS = 15_000/);
-  assert.match(controller, /let statusRefreshing = false/);
-  assert.match(controller, /if \(!room \|\| busy \|\| statusRefreshing\) return/);
+  assert.match(controller, /let statusRefreshRoom = null/);
+  assert.match(controller, /const targetRoom = room/);
+  assert.match(controller,
+    /if \(!targetRoom \|\| busy \|\| statusRefreshRoom === targetRoom\) return/);
+  assert.match(controller, /"Bearer " \+ targetRoom\.host_control/);
+  assert.match(controller, /if \(room !== targetRoom\) return/);
+  assert.match(controller,
+    /catch \(_\) \{[\s\S]*?if \(room === targetRoom\)[\s\S]*?home\.statusUnavailable/);
+  assert.match(controller,
+    /if \(statusRefreshRoom === targetRoom\) statusRefreshRoom = null/);
   assert.match(controller, /dashboardFetch\(runtime\.apiUrl\("\/api\/rooms"\)/);
   assert.match(controller, /dashboardFetch\(runtime\.apiUrl\("\/api\/room-control"\)/);
   assert.match(controller, /dashboardFetch\(runtime\.apiUrl\("\/api\/room-control\/close"\)/);
