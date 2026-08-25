@@ -140,15 +140,23 @@ const lifecycle = window.LinguaDashboardLifecycle.create({
 
 async function deleteAccount() {
   if (!window.confirm(t("auth.deleteConfirm"))) return;
+  let serverDeleted = false;
   try {
     const response = await dashboardFetch(runtime.apiUrl("/api/account/delete"),
       {method: "POST", headers: {Accept: "application/json"}});
     if (!response.ok) throw new Error("delete failed");
+    serverDeleted = true;
     // Host-control is account/device-local administration state. A successful
     // account deletion must remove it before another account can use this device.
     await roomController.discard();
     location.reload();
   } catch (_) {
+    if (serverDeleted) {
+      // The server-side deletion is irreversible. Reload into the signed-out
+      // custody gate even if secure-storage cleanup needs to be retried there.
+      location.reload();
+      return;
+    }
     setNotice("auth.deleteFailed");
   }
 }
@@ -157,14 +165,22 @@ $("createVoiceBtn").onclick = () => roomController.create("voice");
 $("createChatBtn").onclick = () => roomController.create("chat");
 $("createBtn").onclick = () => roomController.create("video");
 $("signOutBtn").onclick = async () => {
+  let serverSignedOut = false;
   try {
     const response = await dashboardFetch(runtime.apiUrl("/auth/logout"), {
       method: "POST", headers: {Accept: "application/json"}
     });
     if (!response.ok) throw new Error("logout failed");
+    serverSignedOut = true;
     await roomController.discard();
     location.reload();
   } catch (_) {
+    if (serverSignedOut) {
+      // The session cookie is already revoked. Reload so boot can retry strict
+      // persistent-bearer cleanup instead of claiming that logout itself failed.
+      location.reload();
+      return;
+    }
     setAuthStatus("auth.signOutFailed");
   }
 };

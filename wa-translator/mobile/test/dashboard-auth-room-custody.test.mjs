@@ -17,3 +17,12 @@ test("account snapshots and persisted host control are reconciled at boot and ou
     /account = await reconcileAccountRoomCustody\(await accountPresenter\.load\(\)\);[\s\S]*?accountPresenter\.render\(account\);/,
     "startup uses the same account-room custody boundary as recovery");
 });
+
+test("completed server account transitions reload even when persistent room cleanup fails", () => {
+  assert.match(source,
+    /async function deleteAccount\(\) \{[\s\S]*?let serverDeleted = false;[\s\S]*?if \(!response\.ok\) throw new Error\("delete failed"\);[\s\S]*?serverDeleted = true;[\s\S]*?await roomController\.discard\(\);\s*location\.reload\(\);[\s\S]*?catch \(_\) \{\s*if \(serverDeleted\) \{[\s\S]*?location\.reload\(\);\s*return;[\s\S]*?setNotice\("auth\.deleteFailed"\);/,
+    "a successful server deletion cannot be relabeled as failed just because secure-storage cleanup needs a boot retry");
+  assert.match(source,
+    /signOutBtn[\s\S]*?let serverSignedOut = false;[\s\S]*?if \(!response\.ok\) throw new Error\("logout failed"\);[\s\S]*?serverSignedOut = true;[\s\S]*?await roomController\.discard\(\);\s*location\.reload\(\);[\s\S]*?catch \(_\) \{\s*if \(serverSignedOut\) \{[\s\S]*?location\.reload\(\);\s*return;[\s\S]*?setAuthStatus\("auth\.signOutFailed"\);/,
+    "a revoked server session always reloads into the signed-out custody gate even if secure-storage cleanup throws");
+});
