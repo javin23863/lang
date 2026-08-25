@@ -65,10 +65,15 @@ describe("public room URL interface", () => {
     expect(html).toContain('id="joinBtn"');
     expect(html).not.toContain('id="localeSearch"');
     expect(html).not.toContain('id="roleChoices"');
-    expect(html).toContain('function localeOptionLabel(profile)');
-    expect(html).toContain("profile.native_name + ' — ' + profile.display_name");
-    expect(html).toContain('overflow-y:auto');
-    expect(html).toContain('max-height:calc(100dvh - 36px)');
+    expect(html).toContain('<link rel="stylesheet" href="/room.css">');
+    expect(html).toContain('<script src="/room.js"></script>');
+
+    const js = await (await exports.default.fetch(`${ORIGIN}/room.js`)).text();
+    expect(js).toContain('function localeOptionLabel(profile)');
+    expect(js).toContain("profile.native_name + ' — ' + profile.display_name");
+    const css = await (await exports.default.fetch(`${ORIGIN}/room.css`)).text();
+    expect(css).toContain('overflow-y:auto');
+    expect(css).toContain('max-height:calc(100dvh - 36px)');
     expect(page.headers.get("Cache-Control")).toBe("no-store");
     expect(page.headers.get("Referrer-Policy")).toBe("no-referrer");
 
@@ -107,10 +112,11 @@ describe("public room URL interface", () => {
       const page = await exports.default.fetch(`${ORIGIN}${path}${query}`);
       expect(page.status, query).toBe(200);
       expect(page.headers.get("Cache-Control")).toBe("no-store");
+      expect(await page.text()).toContain('<script src="/room.js"></script>');
     }
-    const html = await (await exports.default.fetch(`${ORIGIN}${path}?m=voice`)).text();
-    // The page decides the mode itself; the server sends one document.
-    expect(html).toContain("document.body.dataset.mode = roomMode");
+    // The same external room implementation decides each participant's mode.
+    const js = await (await exports.default.fetch(`${ORIGIN}/room.js`)).text();
+    expect(js).toContain("document.body.dataset.mode = roomMode");
   });
 
   it("rejects expired bearers and cross-origin room creation", async () => {
