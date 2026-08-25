@@ -22,6 +22,13 @@ describe("permanent deployment surface", () => {
     expect(worklet.status).toBe(200);
     expect(await worklet.text()).toContain("AudioWorkletProcessor");
 
+    const dashboardCss = await exports.default.fetch(`${ORIGIN}/dashboard.css`);
+    expect(dashboardCss.status).toBe(200);
+    expect(await dashboardCss.text()).toContain(".page{");
+    const dashboardJs = await exports.default.fetch(`${ORIGIN}/dashboard.js`);
+    expect(dashboardJs.status).toBe(200);
+    expect(await dashboardJs.text()).toContain("async function createRoom(mode)");
+
     // Both pages load the QR encoder as a plain asset, so a 404 here is a share
     // row whose code silently never draws.
     const qr = await exports.default.fetch(`${ORIGIN}/qr.js`);
