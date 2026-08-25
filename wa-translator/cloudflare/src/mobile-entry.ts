@@ -483,7 +483,7 @@ async function nativeSessionApi(
 }
 
 export default {
-  async fetch(request, env, ctx): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (request.method === "OPTIONS" && url.pathname.startsWith("/api/v1/")
         && !NATIVE_PREFLIGHT_PATHS.has(url.pathname)) {
