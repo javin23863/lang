@@ -2,6 +2,9 @@ const $ = id => document.getElementById(id);
 const runtime = window.LinguaRuntime;
 const dashboardFetch = window.LinguaDashboardApi.fetch;
 const t = runtime.t;
+const accountPresenter = window.LinguaDashboardAccount.create({
+  runtime, fetch: dashboardFetch, t, byId: $
+});
 let currentRoom = null;
 let account = null;
 let statusTimer = null;
@@ -15,12 +18,6 @@ let authStatusKey = "";
 // The three surfaces a room can open as. Video is the mode that needs no
 // parameter, so every link made before modes existed still opens a video call.
 const MODES = new Set(["voice", "chat", "video"]);
-// Google is provisioned day one and leads the list; the others appear only
-// when the worker reports credentials for them.
-const PROVIDERS = [["google", "signInGoogle"], ["apple", "signInApple"],
-                   ["facebook", "signInFacebook"]];
-const USAGE_KIND = {call: "credits.callMinutes", chat: "credits.chatMessages",
-                    tts: "credits.ttsPhrases"};
 
 function roomMode(room) {
   return MODES.has(room?.mode) ? room.mode : "video";
@@ -97,75 +94,9 @@ function setBusy(value) {
   }
 }
 
-// ── Account and sign-in ───────────────────────────────────
-async function loadAccount() {
-  try {
-    // Browser sessions ride same-origin cookies. The native bridge attaches its
-    // securely stored bearer only to the versioned account/room-creation API.
-    const response = await dashboardFetch(runtime.apiUrl("/api/me"), {
-      headers: {Accept: "application/json"}
-    });
-    if (!response.ok) throw new Error("account unavailable");
-    return await response.json();
-  } catch (_) {
-    // An unreachable worker is a signed-out screen with no provider to offer,
-    // never a blank page.
-    return {signed_in: false, providers: []};
-  }
-}
-
 function setAuthStatus(key) {
   authStatusKey = key || "";
   $("authStatus").textContent = authStatusKey ? t(authStatusKey) : "";
-}
-
-function renderProviders() {
-  const offered = Array.isArray(account?.providers) ? account.providers : [];
-  const box = $("authButtons");
-  box.replaceChildren();
-  for (const [provider, id] of PROVIDERS) {
-    if (!offered.includes(provider)) continue;
-    const link = document.createElement("a");
-    link.id = id;
-    link.className = "signIn";
-    link.href = runtime.apiUrl("/auth/" + provider + "/start");
-    // The runtime repaints anything carrying a key, so these labels follow a
-    // language change for free.
-    link.dataset.i18n = "auth." + id;
-    link.textContent = t(link.dataset.i18n);
-    box.appendChild(link);
-  }
-}
-
-function renderAccount() {
-  if (!account) return;   // /api/me has not answered yet: show neither side
-  document.body.dataset.auth = account.signed_in ? "in" : "out";
-  renderProviders();
-  if (!account?.signed_in) return;
-  $("accountName").textContent = t("auth.signedInAs", {name: account.user?.name || ""});
-  const rows = Array.isArray(account.recent) ? account.recent.slice(0, 20) : [];
-  const list = $("usageList");
-  list.replaceChildren();
-  if (!rows.length) {
-    const empty = document.createElement("li");
-    empty.textContent = t("credits.usageEmpty");
-    list.appendChild(empty);
-    return;
-  }
-  for (const row of rows) {
-    const item = document.createElement("li");
-    const when = document.createElement("span");
-    when.className = "when";
-    const at = new Date(row.at);
-    when.textContent = Number.isNaN(at.getTime()) ? "" : at.toLocaleDateString(runtime.i18n.locale);
-    const what = document.createElement("span");
-    // The unit count sits inside the sentence, so a language that puts the
-    // number last still reads correctly.
-    what.textContent = USAGE_KIND[row.kind]
-      ? t(USAGE_KIND[row.kind], {count: Number(row.units) || 0}) : String(row.units);
-    item.append(when, what);
-    list.appendChild(item);
-  }
 }
 
 async function deleteAccount() {
@@ -435,7 +366,7 @@ runtime.i18n.onChange(() => {
   $("roomState").textContent = t(stateKey, stateParams);
   $("roomNotice").textContent = noticeKey ? t(noticeKey, noticeParams) : "";
   setAuthStatus(authStatusKey);
-  renderAccount();
+  accountPresenter.render(account);
 });
 
 async function boot() {
@@ -447,8 +378,8 @@ async function boot() {
     return;
   }
   if (new URLSearchParams(location.search).get("auth") === "failed") setAuthStatus("auth.failed");
-  account = await loadAccount();
-  renderAccount();
+  account = await accountPresenter.load();
+  accountPresenter.render(account);
   currentRoom = await loadRoom();
   if (currentRoom && currentRoom.expires_at * 1000 > Date.now()) {
     renderRoom("ready", 0);
