@@ -66,7 +66,7 @@ describe("mobile store interface", () => {
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(response.headers.get("Vary")).toContain("Origin");
     expect(await response.json()).toEqual({
-      protocol: 1,
+      protocol: 2,
       minimum_client_build: 1,
       public_origin: PUBLIC_ORIGIN,
       account_mode: "session",
