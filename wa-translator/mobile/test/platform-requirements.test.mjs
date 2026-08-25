@@ -31,6 +31,10 @@ test("Android AAB is inspected before CI artifact publication and Play upload", 
   assert.match(verifier, /android\.permission\.RECORD_AUDIO/);
   assert.match(verifier, /android:allowBackup=\"false\"/);
   assert.match(verifier, /android:usesCleartextTraffic=\"false\"/);
+  assert.match(verifier, /LINGUA_ANDROID_VERSION_CODE/,
+               "signed release verification compares the intended version code");
+  assert.match(verifier, /android:versionCode=\\\"\$expected_version_code\\\"/,
+               "the final AAB manifest must contain that exact version code");
   assert.match(verifier, /base\/assets\/public\/room\.css/);
   assert.match(verifier, /base\/assets\/public\/room\.js/);
   assert.match(verifier, /verify-android-16k\.sh/);
@@ -61,6 +65,10 @@ test("iOS CI and TestFlight verify the packaged app before upload", async () => 
   assert.match(verifier, /Payload/,
                "the verifier can inspect the exact signed IPA payload");
   assert.match(verifier, /PlistBuddy/);
+  assert.match(verifier, /LINGUA_IOS_BUILD_NUMBER/,
+               "signed release verification compares the intended build number");
+  assert.match(verifier, /plist_value CFBundleVersion/,
+               "the final app bundle must contain that exact build number");
   assert.match(verifier, /lipo -archs/);
   assert.match(verifier, /PrivacyInfo\.xcprivacy/);
   assert.match(verifier, /room\.css/);
