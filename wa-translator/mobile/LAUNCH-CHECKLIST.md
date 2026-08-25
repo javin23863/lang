@@ -57,11 +57,18 @@ matrix after development is declared complete.
   on the signed-out `/api/v1/me` snapshot instead of persisting across launches.
 - [x] A stale browser session cookie is expired when `/api/me` confirms that its
   account is gone, rather than remaining plausible until the 30-day token expiry.
+- [x] Logout durably revokes the exact browser/native session before local
+  credential clearing. A copied bearer cannot be replayed after logout, while a
+  distinct still-live session for the same account remains valid.
+- [x] Logout revocation stores only a one-way SHA-256 token digest plus original
+  expiry; it disappears with that credential (no later than 30 days from sign-in)
+  and account deletion removes it immediately.
 - [x] Every native session endpoint, including room creation, requires the exact
   installed-app origin in addition to the bearer.
 - [x] Versioned native CORS preflights reject unknown/wrong methods and advertise
   only each endpoint's actual method plus `OPTIONS`.
-- [x] Native logout and account deletion clear the stored native session.
+- [x] Native logout and account deletion clear the stored native session only
+  after a successful server response; revocation failure stays retryable locally.
 - [x] Apple `form_post`, ES256 client-secret generation, token exchange, claims,
   native return and handoff exchange have regression contracts in source.
 - [ ] **Production iOS gate:** the live `/api/v1/me` provider list includes
