@@ -25,6 +25,7 @@
     let busy = false;
     let statusTimer = null;
     let statusRefreshRoom = null;
+    let invalidationGeneration = 0;
 
     function current() {
       return room;
@@ -53,10 +54,20 @@
     }
 
     async function clear(state, key) {
-      await model.forget();
-      room = null;
-      stopPolling();
-      onClear(state, key);
+      const targetRoom = room;
+      const targetGeneration = invalidationGeneration;
+      const acquiredBusy = !busy;
+      if (acquiredBusy) setBusy(true);
+      try {
+        await model.forget();
+        if (invalidationGeneration !== targetGeneration || room !== targetRoom) return false;
+        room = null;
+        stopPolling();
+        onClear(state, key);
+        return true;
+      } finally {
+        if (acquiredBusy) setBusy(false);
+      }
     }
 
     async function refresh() {
@@ -97,20 +108,24 @@
     }
 
     async function close(withConfirmation = true) {
-      if (!room || busy) return false;
+      const targetRoom = room;
+      const targetGeneration = invalidationGeneration;
+      if (!targetRoom || busy) return false;
       if (withConfirmation && !confirmAction("home.confirmClose")) return false;
       setBusy(true);
       try {
         const response = await dashboardFetch(runtime.apiUrl("/api/room-control/close"), {
           method: "POST",
-          headers: {Authorization: "Bearer " + room.host_control, Accept: "application/json"},
+          headers: {Authorization: "Bearer " + targetRoom.host_control, Accept: "application/json"},
         });
+        if (invalidationGeneration !== targetGeneration || room !== targetRoom) return false;
         if (!response.ok) throw new Error("close failed");
+        if (!await clear("closed", "home.roomClosedLink")) return false;
         events()?.emit("room.close.result", {result: "success"});
-        await clear("closed", "home.roomClosedLink");
         onNotice("");
         return true;
       } catch (_) {
+        if (invalidationGeneration !== targetGeneration || room !== targetRoom) return false;
         events()?.emit("room.close.result", {result: "failure"});
         onClear("error", "home.closeFailed", {preserveRoom: true});
         return false;
@@ -121,11 +136,12 @@
 
     async function createRoom(mode) {
       if (busy) return false;
+      const targetGeneration = invalidationGeneration;
       const requestedMode = model.normalizeMode(mode);
       if (room) {
         if (!confirmAction("home.confirmReplace")) return false;
         await close(false);
-        if (room) return false;
+        if (invalidationGeneration !== targetGeneration || room) return false;
       }
       setBusy(true);
       onNotice("");
@@ -133,11 +149,17 @@
         const response = await dashboardFetch(runtime.apiUrl("/api/rooms"), {
           method: "POST", headers: {Accept: "application/json"},
         });
+        if (invalidationGeneration !== targetGeneration) return false;
         if (!response.ok) throw new Error("creation failed");
         const created = await response.json();
+        if (invalidationGeneration !== targetGeneration) return false;
         if (!model.valid(created)) throw new Error("storage unavailable");
         created.mode = requestedMode;
         if (!await model.save(created)) throw new Error("storage unavailable");
+        if (invalidationGeneration !== targetGeneration) {
+          await model.forget();
+          return false;
+        }
         room = created;
         onRender(room, "ready", 0);
         startPolling();
@@ -145,6 +167,7 @@
         onNotice("home.linkReady");
         return true;
       } catch (_) {
+        if (invalidationGeneration !== targetGeneration) return false;
         events()?.emit("room.create.result", {mode: requestedMode, result: "failure"});
         onClear("error", "home.createFailed", {preserveRoom: true});
         return false;
@@ -163,7 +186,10 @@
     }
 
     async function restore() {
-      room = await model.load();
+      const targetGeneration = invalidationGeneration;
+      const restored = await model.load();
+      if (invalidationGeneration !== targetGeneration) return null;
+      room = restored;
       if (room && room.expires_at * 1000 > Date.now()) {
         onRender(room, "ready", 0);
         startPolling();
@@ -172,6 +198,7 @@
       }
       if (room) {
         await model.forget();
+        if (invalidationGeneration !== targetGeneration) return null;
         room = null;
         onClear("expired", "home.roomExpired");
       }
@@ -179,6 +206,7 @@
     }
 
     async function discard() {
+      invalidationGeneration++;
       stopPolling();
       room = null;
       await model.forget();
