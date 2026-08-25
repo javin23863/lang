@@ -53,11 +53,17 @@ export class Room extends RoomBase {
     if (!contentType.includes("application/json")) return response;
     const body = await response.json<Record<string, unknown>>();
     if ("participant_limit" in body) body.participant_limit = PARTICIPANT_LIMIT;
-    return Response.json(body, {status: response.status, headers: response.headers});
+    const headers = new Headers(response.headers);
+    // The JSON body changed. Reusing an upstream Content-Length would turn the
+    // replacement response into a FixedLengthStream with the wrong byte count.
+    headers.delete("Content-Length");
+    return Response.json(body, {status: response.status, headers});
   }
 
   async webSocketMessage(socket: WebSocket, message: string | ArrayBuffer): Promise<void> {
-    if (typeof message === "string") {
+    // A legitimate join is tiny. Large control frames go directly to the base
+    // implementation so its existing byte caps reject them before JSON parse.
+    if (typeof message === "string" && message.length <= 4096) {
       try {
         const value = JSON.parse(message) as unknown;
         const attachment = socket.deserializeAttachment() as SocketAttachment;
