@@ -41,9 +41,14 @@ jobs:
         shell: bash
         env:
           EXPECTED_RELEASE_SHA: ${{ inputs.release_sha }}
+          DISPATCH_RELEASE_SHA: ${{ github.sha }}
         run: |
           if [[ ! "$EXPECTED_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "release_sha must be an exact lowercase 40-character commit SHA" >&2
+            exit 1
+          fi
+          if [[ "$DISPATCH_RELEASE_SHA" != "$EXPECTED_RELEASE_SHA" ]]; then
+            echo "Workflow dispatch ref resolves to ${DISPATCH_RELEASE_SHA}, expected frozen release ${EXPECTED_RELEASE_SHA}" >&2
             exit 1
           fi
           actual="$(git rev-parse HEAD)"
@@ -157,9 +162,14 @@ jobs:
         shell: bash
         env:
           EXPECTED_RELEASE_SHA: ${{ inputs.release_sha }}
+          DISPATCH_RELEASE_SHA: ${{ github.sha }}
         run: |
           if [[ ! "$EXPECTED_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "release_sha must be an exact lowercase 40-character commit SHA" >&2
+            exit 1
+          fi
+          if [[ "$DISPATCH_RELEASE_SHA" != "$EXPECTED_RELEASE_SHA" ]]; then
+            echo "Workflow dispatch ref resolves to ${DISPATCH_RELEASE_SHA}, expected frozen release ${EXPECTED_RELEASE_SHA}" >&2
             exit 1
           fi
           actual="$(git rev-parse HEAD)"

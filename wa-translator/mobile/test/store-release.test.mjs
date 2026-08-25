@@ -58,6 +58,10 @@ test("credential-gated Fastlane lanes stop at beta tracks", async () => {
                "both platform jobs must check out the requested frozen commit");
   assert.equal((workflow.match(/name: Verify frozen release commit/g) || []).length, 2);
   assert.equal((workflow.match(/EXPECTED_RELEASE_SHA: \$\{\{ inputs\.release_sha \}\}/g) || []).length, 2);
+  assert.equal((workflow.match(/DISPATCH_RELEASE_SHA: \$\{\{ github\.sha \}\}/g) || []).length, 2,
+               "the workflow definition itself must come from the frozen commit");
+  assert.equal((workflow.match(/"\$DISPATCH_RELEASE_SHA" != "\$EXPECTED_RELEASE_SHA"/g) || []).length, 2,
+               "dispatch ref and requested release SHA must be identical");
   assert.equal((workflow.match(/actual="\$\(git rev-parse HEAD\)"/g) || []).length, 2);
   assert.equal((workflow.match(/"\$actual" != "\$EXPECTED_RELEASE_SHA"/g) || []).length, 2);
   assert.equal((workflow.match(/persist-credentials: false/g) || []).length, 2,
