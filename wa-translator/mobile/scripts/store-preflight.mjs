@@ -16,8 +16,20 @@ export function normalizeFingerprint(value) {
   return hex.match(/../g).join(":");
 }
 
-export function validateBootstrap(value) {
+export function releaseBuildNumber(platform, environment = process.env) {
+  const raw = platform === "android"
+    ? environment.LINGUA_ANDROID_VERSION_CODE
+    : platform === "ios" ? environment.LINGUA_IOS_BUILD_NUMBER : undefined;
+  const build = Number(raw);
+  requireCondition(Number.isSafeInteger(build) && build >= 1,
+    `${platform} release build number is missing or invalid`);
+  return build;
+}
+
+export function validateBootstrap(value, buildNumber) {
   requireCondition(value && typeof value === "object", "mobile bootstrap is not an object");
+  requireCondition(Number.isSafeInteger(buildNumber) && buildNumber >= 1,
+    "release build number is missing or invalid");
   requireCondition(value.protocol === MOBILE_PROTOCOL, "mobile protocol mismatch");
   requireCondition(value.public_origin === PUBLIC_ORIGIN, "mobile public origin mismatch");
   requireCondition(value.account_mode === "session", "mobile account mode mismatch");
@@ -26,6 +38,8 @@ export function validateBootstrap(value) {
     "live backend is not enforcing the two-person room contract");
   requireCondition(Number.isSafeInteger(value.minimum_client_build),
     "mobile minimum client build is missing");
+  requireCondition(value.minimum_client_build <= buildNumber,
+    `live backend requires mobile build ${value.minimum_client_build}, but upload build is ${buildNumber}`);
   return true;
 }
 
@@ -104,8 +118,9 @@ async function deletionSurface() {
 export async function runPreflight(platform, environment = process.env) {
   requireCondition(platform === "android" || platform === "ios",
     "usage: node scripts/store-preflight.mjs <android|ios>");
+  const buildNumber = releaseBuildNumber(platform, environment);
   const nativeOrigin = platform === "android" ? "https://localhost" : "capacitor://localhost";
-  validateBootstrap(await liveJson("/api/v1/mobile/bootstrap", nativeOrigin));
+  validateBootstrap(await liveJson("/api/v1/mobile/bootstrap", nativeOrigin), buildNumber);
   validateProviderSnapshot(await liveJson("/api/v1/me", nativeOrigin), platform);
   await Promise.all([
     legalSurface("/privacy"), legalSurface("/terms"), legalSurface("/support"), deletionSurface(),
