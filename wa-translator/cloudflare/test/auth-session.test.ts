@@ -230,13 +230,14 @@ describe("OAuth sign-in, session, and the room-creation gate", () => {
     expect(created.status).toBe(201);
   });
 
-  it("clears the session on logout and refuses a cross-origin logout", async () => {
+  it("revokes the server session on logout and refuses a cross-origin logout", async () => {
     const { session } = await signIn();
 
     const foreign = await exports.default.fetch(`${ORIGIN}/auth/logout`, {
       method: "POST", headers: { Origin: "https://attacker.test", Cookie: `lr_s=${session}` }
     });
     expect(foreign.status).toBe(403);
+    expect((await snapshot(session)).signed_in).toBe(true);
 
     const response = await exports.default.fetch(`${ORIGIN}/auth/logout`, {
       method: "POST", headers: { Origin: ORIGIN, Cookie: `lr_s=${session}` }
@@ -245,8 +246,13 @@ describe("OAuth sign-in, session, and the room-creation gate", () => {
     expect(setCookies(response)[0]).toContain("lr_s=;");
     expect(setCookies(response)[0]).toContain("Max-Age=0");
 
-    // Logout is a browser-side clear; the account itself survives it.
-    expect((await snapshot(session)).signed_in).toBe(true);
+    // A copied cookie is no longer a live credential after logout. /api/me
+    // presents it as signed out and retires the stale browser copy again.
+    const replay = await exports.default.fetch(`${ORIGIN}/api/me`, {
+      headers: {Cookie: `lr_s=${session}`}
+    });
+    expect((await replay.clone().json<Snapshot>()).signed_in).toBe(false);
+    expect(setCookies(replay)[0]).toContain("Max-Age=0");
     expect((await snapshot()).signed_in).toBe(false);
   });
 
