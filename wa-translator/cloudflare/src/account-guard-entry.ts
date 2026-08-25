@@ -346,7 +346,7 @@ async function revokingLogout(
 }
 
 export default {
-  async fetch(request, env, ctx): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const retired = retiredRoomCreate(request);
     if (retired) return retired;
     const oauth = await upgradeBrowserOAuthSession(request, env, ctx);
