@@ -41,6 +41,12 @@ const WELCOME_CALL_SEAM = "if (roomMode === 'voice' && !isHost && m.peers.length
 const WELCOME_CALL_NEUTRAL = "if (roomMode === 'voice' && m.peers.length) {\n      for (const peer of m.peers) send({type: 'signal', to: peer.id, data: {call: 'accept'}});\n      connectCall();\n    }";
 const PEER_JOIN_CALL_SEAM = "if (roomMode === 'voice' && isHost && !callTimerStart) {\n      setCallState('call.ringing');\n      startRingback();\n      updateCallButtons();\n    }";
 const PEER_JOIN_CALL_NEUTRAL = "if (roomMode === 'voice' && !callTimerStart) {\n      send({type: 'signal', to: m.id, data: {call: 'accept'}});\n      connectCall();\n    }";
+const TERMS_CHECKBOX_SEAM = '<input id="termsAgree" type="checkbox" checked>';
+const TERMS_CHECKBOX_EXPLICIT = '<input id="termsAgree" type="checkbox">';
+const TERMS_KEY_SEAM = "const termsKey = 'lingua-relay.terms.2026-08-14';";
+const TERMS_KEY_CURRENT = "const termsKey = 'lingua-relay.terms.2026-08-25';";
+const TERMS_BINDING_SEAM = "$('termsLink').href = runtime.contentUrl('terms');\n// The box arrives ticked; joining is the act of agreeing. Clearing it still\n// blocks Join, so the agreement is never assumed against an explicit refusal.\n$('termsAgree').onchange = updateRoleGate;";
+const TERMS_BINDING_CURRENT = "$('termsLink').href = runtime.contentUrl('terms');\n// Consent is affirmative for this exact Terms version. First-time users see an\n// empty box; only a prior acceptance of the current version restores it.\n$('termsAgree').checked = localStorage.getItem(termsKey) === '1';\n$('termsAgree').onchange = updateRoleGate;\nupdateRoleGate();";
 const NATIVE_AUTH_CHALLENGE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const NATIVE_AUTH_START_PATTERN = /^\/auth\/native\/(google|apple|facebook)\/start$/;
 const MODAL_UPSTREAM_TIMEOUT_MS = 30_000;
@@ -138,6 +144,7 @@ function normalizeRoomScript(source: string): string {
     AUDIO_ENDED_SEAM, VIDEO_ENDED_SEAM, SOCKET_TEARDOWN_SEAM, CONNECTION_STATE_SEAM,
     CONNECT_SEAM, DISCONNECT_SEAM, CALL_GATE_SEAM, CALL_GATE_BUTTON_SEAM,
     CALL_WAIT_SEAM, CALL_RINGBACK_SEAM, WELCOME_CALL_SEAM, PEER_JOIN_CALL_SEAM,
+    TERMS_KEY_SEAM, TERMS_BINDING_SEAM,
   ]) {
     if (!source.includes(seam)) throw new Error(`room normalization seam is missing: ${seam.slice(0, 32)}`);
   }
@@ -158,11 +165,17 @@ function normalizeRoomScript(source: string): string {
     .replace(CALL_WAIT_SEAM, CALL_WAIT_NEUTRAL)
     .replace(CALL_RINGBACK_SEAM, CALL_RINGBACK_NEUTRAL)
     .replace(WELCOME_CALL_SEAM, WELCOME_CALL_NEUTRAL)
-    .replace(PEER_JOIN_CALL_SEAM, PEER_JOIN_CALL_NEUTRAL);
+    .replace(PEER_JOIN_CALL_SEAM, PEER_JOIN_CALL_NEUTRAL)
+    .replace(TERMS_KEY_SEAM, TERMS_KEY_CURRENT)
+    .replace(TERMS_BINDING_SEAM, TERMS_BINDING_CURRENT);
 }
 
 function enhanceRoomShell(source: string): string {
+  if (!source.includes(TERMS_CHECKBOX_SEAM)) {
+    throw new Error("room shell is missing the explicit Terms-consent seam");
+  }
   return source
+    .replace(TERMS_CHECKBOX_SEAM, TERMS_CHECKBOX_EXPLICIT)
     .replace('<div id="videoNote">', '<div id="videoNote" role="status" aria-live="polite">')
     .replace('<div id="status">', '<div id="status" role="status" aria-live="polite">')
     .replace('<div id="captions">',
