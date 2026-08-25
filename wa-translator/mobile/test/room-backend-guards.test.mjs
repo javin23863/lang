@@ -16,9 +16,14 @@ test("production room wrapper bounds compute handshakes without lengthening shor
                "test and live compute use the same bounded request");
 });
 
-test("the same wrapper remains the two-person admission authority", async () => {
+test("the same wrapper remains the two-person admission authority without counting expired leases", async () => {
   const source = await read("../../cloudflare/src/two-party-room.ts");
   assert.match(source, /export const PARTICIPANT_LIMIT = 2/);
+  assert.match(source, /const PRESENCE_LEASE_MS = 90_000/,
+               "the early wrapper check uses the same lease duration as the base room");
+  assert.match(source, /private joinedCount\(now = Date\.now\(\)\): number/);
+  assert.match(source, /value\?\.joined === true[\s\S]*?Number\.isFinite\(value\.lastSeenAt\)[\s\S]*?now - value\.lastSeenAt < PRESENCE_LEASE_MS/,
+               "expired joined sockets pass through to WorkerRoom so its sweep can evict them before admission");
   assert.match(source, /this\.joinedCount\(\) >= PARTICIPANT_LIMIT/);
   assert.match(source, /socket\.close\(1013, "room full"\)/);
 });
