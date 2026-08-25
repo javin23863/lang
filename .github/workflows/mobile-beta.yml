@@ -52,8 +52,24 @@ jobs:
       - name: Set unique Android version
         shell: bash
         run: |
-          build_epoch="$(date -u +%s)"
-          echo "LINGUA_ANDROID_VERSION_CODE=${build_epoch}" >> "$GITHUB_ENV"
+          # Google Play caps versionCode at 2,100,000,000. Raw Unix seconds are
+          # already close to that ceiling in 2026, so use minutes since 2020 and
+          # reserve one decimal digit for workflow retries. This remains
+          # monotonic and leaves centuries of headroom instead of roughly a decade.
+          epoch_seconds="$(date -u +%s)"
+          epoch_2020=1577836800
+          attempt="${GITHUB_RUN_ATTEMPT}"
+          if [[ ! "$attempt" =~ ^[1-9]$ ]]; then
+            echo "Android release supports workflow attempts 1-9; found ${attempt}" >&2
+            exit 1
+          fi
+          build_minutes=$(( (epoch_seconds - epoch_2020) / 60 ))
+          version_code=$(( build_minutes * 10 + attempt ))
+          if (( version_code < 1 || version_code > 2100000000 )); then
+            echo "Android versionCode ${version_code} is outside Google Play's accepted range" >&2
+            exit 1
+          fi
+          echo "LINGUA_ANDROID_VERSION_CODE=${version_code}" >> "$GITHUB_ENV"
           echo "LINGUA_ANDROID_VERSION_NAME=1.0.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
       - run: npm ci && npm run check && npm run sync
       - run: bundle exec fastlane --version
