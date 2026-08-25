@@ -6,6 +6,7 @@ const DELIVERY_RETENTION_MS = 48 * 60 * 60 * 1000;
 const SESSION_REVOCATION_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const SESSION_REVOCATION_PREFIX = "session-revoked:";
 const SESSION_REVOCATION_MAX_MS = 31 * 24 * 60 * 60 * 1000;
+const UNSAFE_PROFILE_FORMAT = /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g;
 const ALARM_FLOOR_MS = 1_000;
 
 type UserTotals = {call_minutes: number; chat_messages: number; tts_phrases: number};
@@ -20,6 +21,11 @@ const EMPTY_TOTALS: UserTotals = {call_minutes: 0, chat_messages: 0, tts_phrases
 const TOTAL_FIELD = new Map([
   ["call", "call_minutes"], ["chat", "chat_messages"], ["tts", "tts_phrases"],
 ] as const);
+
+function cleanProfileText(value: string, maxCodePoints: number): string {
+  return Array.from(value.replace(UNSAFE_PROFILE_FORMAT, "").trim())
+    .slice(0, maxCodePoints).join("");
+}
 
 // Keep the existing Durable Object class name/migration while retiring the
 // zero-only credits preview, adding retry-safe usage delivery, and giving each
@@ -111,6 +117,35 @@ export class UserDirectory extends WorkerUserDirectory {
     return new Response(null, {status: 204});
   }
 
+  // Provider profile strings are presentation metadata, not account identity.
+  // Keep international letters/scripts intact while removing C0/C1 controls and
+  // bidi override/isolate characters that can make the rendered account label
+  // visually impersonate surrounding UI. The provider subject-derived object ID
+  // and provider name are never rewritten here.
+  private async sanitizeProviderProfile(request: Request): Promise<Request> {
+    const url = new URL(request.url);
+    if (request.method !== "POST" || url.pathname !== "/") return request;
+    let data: Record<string, unknown>;
+    try {
+      const parsed = await request.clone().json<unknown>();
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return request;
+      data = parsed as Record<string, unknown>;
+    } catch {
+      return request;
+    }
+    if (typeof data.name !== "string" || typeof data.email !== "string") return request;
+
+    const email = cleanProfileText(data.email, 160);
+    const name = cleanProfileText(data.name, 80) || cleanProfileText(email, 80);
+    if (name === data.name && email === data.email) return request;
+    data.name = name;
+    data.email = email;
+    const headers = new Headers(request.headers);
+    headers.delete("Content-Length");
+    headers.set("Content-Type", "application/json");
+    return new Request(request, {headers, body: JSON.stringify(data)});
+  }
+
   // Apple provides the person's name only on the first authorization. Later
   // ID tokens normally contain only the relay email, which the base callback
   // uses as a fallback name. Preserve an already-captured Apple name rather
@@ -154,9 +189,9 @@ export class UserDirectory extends WorkerUserDirectory {
     } catch {
       return new Response("Invalid profile name", {status: 400});
     }
-    const name = typeof data.name === "string" ? data.name : "";
-    if (Object.keys(data).join(",") !== "name" || name !== name.trim()
-        || name.length < 1 || name.length > 80 || /[\u0000-\u001f\u007f]/.test(name)) {
+    const rawName = typeof data.name === "string" ? data.name : "";
+    const name = cleanProfileText(rawName, 80);
+    if (Object.keys(data).join(",") !== "name" || !name || name !== rawName) {
       return new Response("Invalid profile name", {status: 400});
     }
 
@@ -245,7 +280,8 @@ export class UserDirectory extends WorkerUserDirectory {
 
     const url = new URL(request.url);
     const accountRoot = url.pathname === "/";
-    const forwarded = await this.preserveAppleProfileName(request);
+    const sanitized = await this.sanitizeProviderProfile(request);
+    const forwarded = await this.preserveAppleProfileName(sanitized);
     const response = await super.fetch(forwarded);
 
     // Root profile reads/writes and legacy /usage writes are all account
