@@ -45,6 +45,29 @@ test("iOS release metadata requires the 64-bit device architecture", async () =>
   assert.doesNotMatch(capabilities[1], /<string>armv7<\/string>/);
 });
 
+test("iOS CI and TestFlight verify the packaged app before upload", async () => {
+  const verifier = await read("../scripts/verify-ios-app.sh");
+  assert.match(verifier, /Payload/,
+               "the verifier can inspect the exact signed IPA payload");
+  assert.match(verifier, /PlistBuddy/);
+  assert.match(verifier, /lipo -archs/);
+  assert.match(verifier, /PrivacyInfo\.xcprivacy/);
+  assert.match(verifier, /0 \/ 2 people/);
+  assert.match(verifier, /0 \/ 4 people/);
+  assert.match(verifier, /BEGIN PRIVATE KEY/);
+
+  const workflow = await read("../../../.github/workflows/mobile-build.yml");
+  assert.match(workflow, /name: Verify iOS release artifact/);
+  assert.match(workflow, /bash scripts\/verify-ios-app\.sh/);
+
+  const fastfile = await read("../fastlane/Fastfile");
+  assert.match(fastfile, /output_name:\s*"LinguaRelay\.ipa"/);
+  const verifyAt = fastfile.indexOf("verify-ios-app.sh");
+  const uploadAt = fastfile.indexOf("upload_to_testflight");
+  assert.ok(verifyAt >= 0 && uploadAt > verifyAt,
+            "signed TestFlight uploads verify the IPA before upload");
+});
+
 test("build and signed-beta workflows enforce current store SDK floors", async () => {
   for (const path of ["../../../.github/workflows/mobile-build.yml",
                       "../../../.github/workflows/mobile-beta.yml"]) {
