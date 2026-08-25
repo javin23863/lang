@@ -12,7 +12,7 @@ test("public legal pages share current Lingua chrome and deletion remains discov
   assert.match(css, /--accent:#64D4C3/);
   assert.doesNotMatch(css, /#09141e/i, "retired launch palette is not used by legal surfaces");
 
-  for (const page of ["privacy.html", "terms.html", "support.html"]) {
+  for (const page of ["privacy.html", "terms.html", "support.html", "delete-account.html"]) {
     const html = await read(page);
     assert.match(html, /<meta name="theme-color" content="#07110F">/,
                  `${page} matches the shared dark native/browser chrome`);
@@ -54,14 +54,27 @@ test("public legal pages share current Lingua chrome and deletion remains discov
 
   const support = await read("support.html");
   assert.match(support, /<h2 id="delete">Delete your account<\/h2>/,
-               "the external account-deletion destination remains directly addressable");
-  assert.match(support, /choose Delete account/);
-  assert.match(support, /href="index\.html">Lingua Relay<\/a>/,
-               "account deletion guidance is portable across web and bundled native origins");
+               "the deletion route remains directly discoverable from support");
+  assert.match(support, /href="delete-account\.html">Lingua Relay account-deletion page<\/a>/);
   assert.doesNotMatch(support, /spoken-translation-cloudflare\.workers\.dev/,
                       "support content is not pinned to the temporary development hostname");
   assert.match(support, /do not put your email address or other account identifiers/i,
                "access-loss requests never direct private account data into the public tracker");
   assert.match(support, /dedicated private product-support contact must be published/i,
                "the unresolved private support dependency stays explicit until launch");
+
+  const deletion = await read("delete-account.html");
+  assert.match(deletion, /Delete your Lingua Relay account/,
+               "the Play deletion resource clearly identifies the product");
+  assert.match(deletion, /do not need the mobile app/i,
+               "account deletion remains available after uninstall");
+  assert.match(deletion, /href="index\.html">Open Lingua Relay account controls<\/a>/,
+               "the external resource leads to the browser account-deletion pathway");
+  assert.match(deletion, /Deletion is immediate/);
+  assert.match(deletion, /aggregate usage totals, and retained usage rows/);
+  assert.match(deletion, /expire no later than 24 hours/,
+               "the page accurately distinguishes account deletion from room-link expiry");
+  assert.match(deletion, /dedicated private product-support contact is required before store submission/i);
+  assert.doesNotMatch(deletion, /spoken-translation-cloudflare\.workers\.dev/,
+                      "the Play deletion resource survives the eventual production-domain cutover");
 });
