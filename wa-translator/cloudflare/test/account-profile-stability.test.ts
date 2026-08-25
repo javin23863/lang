@@ -1,0 +1,72 @@
+import { env } from "cloudflare:workers";
+import { describe, expect, it } from "vitest";
+
+const USER_ID = "AppleProfileUser123456";
+const OTHER_ID = "OtherProfileUser123456";
+
+function directory(userId = USER_ID) {
+  return env.USERS.get(env.USERS.idFromName(userId));
+}
+
+async function writeProfile(body: Record<string, unknown>): Promise<Response> {
+  return directory().fetch(new Request("https://users.internal/", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(body),
+  }));
+}
+
+describe("stable OAuth account metadata", () => {
+  it("preserves established Apple email/name when a later provider refresh omits them", async () => {
+    const first = await writeProfile({
+      user_id: USER_ID,
+      provider: "apple",
+      name: "Relay User",
+      email: "relay-user@privaterelay.appleid.com",
+    });
+    expect(first.status).toBe(204);
+
+    const later = await writeProfile({
+      user_id: USER_ID,
+      provider: "apple",
+      name: "",
+      email: "",
+    });
+    expect(later.status).toBe(204);
+
+    const snapshot = await directory().fetch("https://users.internal/");
+    expect(snapshot.status).toBe(200);
+    const body = await snapshot.json<any>();
+    expect(body.profile).toMatchObject({
+      user_id: USER_ID,
+      provider: "apple",
+      name: "Relay User",
+      email: "relay-user@privaterelay.appleid.com",
+    });
+  });
+
+  it("rejects attempts to mutate provider or derived account id after creation", async () => {
+    expect((await writeProfile({
+      user_id: USER_ID,
+      provider: "apple",
+      name: "Relay User",
+      email: "relay-user@privaterelay.appleid.com",
+    })).status).toBe(204);
+
+    const changedProvider = await writeProfile({
+      user_id: USER_ID,
+      provider: "google",
+      name: "Relay User",
+      email: "relay-user@privaterelay.appleid.com",
+    });
+    expect(changedProvider.status).toBe(409);
+
+    const changedId = await writeProfile({
+      user_id: OTHER_ID,
+      provider: "apple",
+      name: "Relay User",
+      email: "relay-user@privaterelay.appleid.com",
+    });
+    expect(changedId.status).toBe(409);
+  });
+});
