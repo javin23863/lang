@@ -71,16 +71,20 @@ test("placeholders survive translation in every dictionary", async () => {
 
 test("the room and the dashboard read every string through a key", async () => {
   const expected = baseKeys();
-  for (const page of ["room.html", "index.html"]) {
-    const html = await readFile(new URL(page, staticRoot), "utf8");
-    // `t('voice.' + voice.style)` builds its key at runtime; both halves it can
-    // produce are in the base dictionary and are checked by the key sweep above.
-    const used = [...html.matchAll(/\bt\(\s*'([\w.]+)'/g)]
+  const sources = [
+    ["room.html", await readFile(new URL("room.html", staticRoot), "utf8")],
+    ["index.html", await readFile(new URL("index.html", staticRoot), "utf8")],
+    ["dashboard.js", await readFile(new URL("dashboard.js", staticRoot), "utf8")],
+  ];
+  for (const [name, source] of sources) {
+    // Dynamic t("voice." + ...) calls deliberately stop at the trailing dot;
+    // both possible complete keys are covered by the dictionary equality test.
+    const used = [...source.matchAll(/\bt\(\s*["']([\w.]+)["']/g)]
       .map(match => match[1]).filter(key => !key.endsWith("."));
-    const marked = [...html.matchAll(/data-i18n(?:-title|-label)?="([\w.]+)"/g)].map(m => m[1]);
-    assert.ok(used.length + marked.length > 0, `${page} uses translated strings`);
+    const marked = [...source.matchAll(/data-i18n(?:-title|-label)?="([\w.]+)"/g)].map(m => m[1]);
+    assert.ok(used.length + marked.length > 0, `${name} uses translated strings`);
     for (const key of [...used, ...marked]) {
-      assert.ok(expected.has(key), `${page} asks for a key the base dictionary defines: ${key}`);
+      assert.ok(expected.has(key), `${name} asks for a key the base dictionary defines: ${key}`);
     }
   }
 });
@@ -90,16 +94,30 @@ test("no screen text is written as an English literal", async () => {
   // Every one of these takes a dictionary key. A literal sentence slipped into
   // one is the exact defect this catches: it renders, so nothing looks broken,
   // and it stays English in all 100 languages.
-  const calls = /\b(?:setStatus|showVideoNote|failVoice|finishSpeech\(item,)\s*\(?\s*'([^']*)'/g;
-  for (const page of ["room.html", "index.html"]) {
-    const html = await readFile(new URL(page, staticRoot), "utf8");
-    for (const call of html.matchAll(calls)) {
+  const calls = /\b(?:setStatus|showVideoNote|failVoice|finishSpeech\(item,)\s*\(?\s*["']([^"']*)["']/g;
+  for (const name of ["room.html", "dashboard.js"]) {
+    const source = await readFile(new URL(name, staticRoot), "utf8");
+    for (const call of source.matchAll(calls)) {
       const key = call[1];
       if (!key) continue;
       assert.ok(expected.has(key),
-                `${page} passes a dictionary key, not text: ${JSON.stringify(key)}`);
+                `${name} passes a dictionary key, not text: ${JSON.stringify(key)}`);
     }
   }
+});
+
+test("dashboard HTML is a thin shell over dedicated style and behavior assets", async () => {
+  const html = await readFile(new URL("index.html", staticRoot), "utf8");
+  const script = await readFile(new URL("dashboard.js", staticRoot), "utf8");
+  const css = await readFile(new URL("dashboard.css", staticRoot), "utf8");
+  assert.match(html, /<link rel="stylesheet" href="\/dashboard\.css">/);
+  assert.match(html, /<script src="\/dashboard\.js"><\/script>/);
+  assert.doesNotMatch(html, /<style[\s>]/i, "dashboard carries no inline style block");
+  assert.doesNotMatch(html, /<script>(?:.|\n)*?<\/script>/i, "dashboard carries no inline behavior block");
+  assert.match(script, /async function createRoom\(mode\)/);
+  assert.match(script, /function renderAccount\(\)/);
+  assert.match(css, /\.page\{/);
+  assert.match(css, /\.card\{/);
 });
 
 test("the call controls are glyphs, so no translation can overflow the bar", async () => {
