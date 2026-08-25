@@ -181,7 +181,7 @@ describe("installed host dashboard client", () => {
     expect(runtime).toContain('window.open("about:blank", "_blank")');
     expect(runtime).toContain("opened.opener = null");
     expect(css).toContain(".room[hidden]{display:none}");
-    expect(css).toContain("@media(max-width:380px)");
+    expect(css).toContain("@media(max-width:360px)");
     expect(html).not.toContain('action="/rooms"');
   });
 });
