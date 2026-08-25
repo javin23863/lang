@@ -15,6 +15,17 @@ let busy = false;
 // language switch can re-render the screen the person is already looking at.
 let stateKey = "home.noRoom", stateParams = null, noticeKey = "", noticeParams = null;
 let authStatusKey = "";
+const sharePresenter = window.LinguaDashboardShare.create({
+  runtime,
+  t,
+  byId: $,
+  getRoom: () => currentRoom,
+  isBusy: () => busy,
+  roomMode,
+  roomUrl,
+  setNotice,
+  hideQr,
+});
 
 function roomMode(room) {
   return roomModel.mode(room);
@@ -186,50 +197,6 @@ async function createRoom(mode) {
   }
 }
 
-async function copyLink() {
-  if (!currentRoom || busy) return;
-  const link = roomUrl(currentRoom);
-  try {
-    if (navigator.clipboard) await navigator.clipboard.writeText(link);
-    else {
-      $("shareLink").focus();
-      $("shareLink").select();
-      if (!document.execCommand("copy")) throw new Error("copy failed");
-    }
-    setNotice("home.linkCopied");
-  } catch (_) {
-    $("shareLink").focus();
-    $("shareLink").select();
-    setNotice("home.selectToCopy");
-  }
-}
-
-const SHARE_TEXT = {voice: "share.textVoice", chat: "share.textChat", video: "share.textVideo"};
-
-function shareMessage() {
-  return t(SHARE_TEXT[roomMode(currentRoom)]) + " " + roomUrl(currentRoom);
-}
-
-function openShareApp(url) {
-  const opened = window.open(url, "_blank", "noopener");
-  if (opened) opened.opener = null;
-  else setNotice("home.openBlocked");
-}
-
-async function shareLink() {
-  if (!currentRoom || busy) return;
-  const link = roomUrl(currentRoom);
-  if (await runtime.share({
-    title: t("share.title"),
-    text: t(SHARE_TEXT[roomMode(currentRoom)]),
-    url: link
-  })) {
-    setNotice("home.linkShared");
-    return;
-  }
-  await copyLink();
-}
-
 function openRoom() {
   if (!currentRoom || busy) return;
   // Pass the bearer path, not the whole saved record, so legacy local metadata
@@ -278,36 +245,14 @@ $("signOutBtn").onclick = async () => {
   }
 };
 $("deleteAccountBtn").onclick = deleteAccount;
-$("copyBtn").onclick = copyLink;
-$("shareBtn").onclick = shareLink;
+$("copyBtn").onclick = sharePresenter.copy;
+$("shareBtn").onclick = sharePresenter.systemShare;
 $("openBtn").onclick = openRoom;
 $("closeBtn").onclick = () => closeRoom(true);
-$("waBtn").onclick = () => {
-  if (currentRoom && !busy) openShareApp("https://wa.me/?text=" + encodeURIComponent(shareMessage()));
-};
-// The /R/share form carries the sentence with the link; the
-// social-plugins form takes a url alone and drops it.
-$("lineBtn").onclick = () => {
-  if (currentRoom && !busy) openShareApp("https://line.me/R/share?text=" + encodeURIComponent(shareMessage()));
-};
-// Drawn on the tap that asks for it, never on load: the link inside is the
-// bearer token that opens the room.
-$("qrBtn").onclick = () => {
-  if (!currentRoom || busy) return;
-  if (!$("qrBox").hidden) {
-    hideQr();
-    return;
-  }
-  $("qrBox").replaceChildren(window.LinguaQR.svg(roomUrl(currentRoom)));
-  $("qrBox").hidden = false;
-  $("qrBtn").setAttribute("aria-expanded", "true");
-};
-// In a native shell window.open navigates the dashboard away, and the system
-// share sheet already lists both apps. The QR stays: it is the WeChat path.
-if (runtime.isNative) {
-  $("waBtn").hidden = true;
-  $("lineBtn").hidden = true;
-}
+$("waBtn").onclick = sharePresenter.whatsapp;
+$("lineBtn").onclick = sharePresenter.line;
+$("qrBtn").onclick = sharePresenter.toggleQr;
+sharePresenter.applyPlatformVisibility();
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") refreshStatus();
 });
