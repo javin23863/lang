@@ -135,7 +135,7 @@ describe("permanent deployment surface", () => {
     expect(serviceWorker.headers.get("Service-Worker-Allowed")).toBe("/");
     const serviceWorkerJs = await serviceWorker.text();
     expect(serviceWorkerJs).toContain("cache: 'no-store'");
-    expect(serviceWorkerJs).toContain("const CACHE_NAME = 'lingua-relay-shell-v3'");
+    expect(serviceWorkerJs).toContain("const CACHE_NAME = 'lingua-relay-shell-v4'");
     expect(serviceWorkerJs).toContain("const SHELL_PATHS = new Set([");
     const shellBlock = serviceWorkerJs.match(/const SHELL_PATHS = new Set\(\[([\s\S]*?)\]\);/)?.[1] ?? "";
     for (const path of ["'/'", "'/index.html'", "'/dashboard.css'", "'/product-events.js'", "'/manifest.webmanifest'"]) {
@@ -155,11 +155,16 @@ describe("permanent deployment surface", () => {
       "url.search === ''",
       "!networkOnly(url.pathname)",
       "SHELL_PATHS.has(url.pathname)",
+      "credentials: 'omit'",
+      "await cache.addAll(shellRequests())",
+      "DASHBOARD_PATHS.has(url.pathname)",
+      "dashboardNavigation(request, url)",
       "if (!url || !cacheableShellRequest(request, url))",
     ]) expect(serviceWorkerJs).toContain(networkOnlyMarker);
-    expect(serviceWorkerJs).toContain("const cache = await caches.open(CACHE_NAME)");
-    expect(serviceWorkerJs).toContain("await cache.put(request, response.clone())");
-    expect(serviceWorkerJs).toContain("const cached = await caches.match(request)");
+    expect(serviceWorkerJs).toContain("canonicalShellRequest(url.pathname)");
+    expect(serviceWorkerJs).toContain("const cached = await caches.match(canonical)");
+    expect(serviceWorkerJs).not.toContain("cache.put(request");
+    expect(serviceWorkerJs).not.toContain("event.waitUntil(fresh)");
     expect(serviceWorkerJs).toContain("name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME");
   });
 
