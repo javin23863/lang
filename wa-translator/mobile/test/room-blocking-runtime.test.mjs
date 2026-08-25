@@ -81,8 +81,8 @@ class FakeWebSocket {
   }
 }
 
-function harness(seed = {}) {
-  const localStorage = new Storage(seed);
+function harness(seed = {}, sharedStorage = null) {
+  const localStorage = sharedStorage || new Storage(seed);
   const document = new FakeDocument();
   const state = {leaves: 0, statuses: []};
   const context = {
@@ -114,14 +114,7 @@ test("native room package loads the participant-blocking layer", () => {
 
 test("join frames carry one stable random safety id and a bounded local block list", () => {
   const storage = new Storage();
-  const first = harness();
-  first.context.localStorage = storage;
-
-  // Reload with one shared installation store so the identity contract is
-  // tested across page instances rather than only across sockets.
-  const page1 = harness();
-  page1.context.localStorage = storage;
-  vm.runInContext(source, page1.context, {filename: "room-blocking-reload.js"});
+  const page1 = harness({}, storage);
   const ws1 = new page1.context.WebSocket("wss://room.test/ws/v1/token");
   ws1.send(JSON.stringify({type: "join", locale: "en-US"}));
   const join1 = JSON.parse(ws1.sent[0]);
@@ -129,16 +122,17 @@ test("join frames carry one stable random safety id and a bounded local block li
   assert.deepEqual(join1.blocked_ids, []);
 
   page1.context.LinguaRoomBlocking.block(BLOCK_B);
-  const ws2 = new page1.context.WebSocket("wss://room.test/ws/v1/token2");
+  const page2 = harness({}, storage);
+  const ws2 = new page2.context.WebSocket("wss://room.test/ws/v1/token2");
   ws2.send(JSON.stringify({type: "join", locale: "en-US"}));
   const join2 = JSON.parse(ws2.sent[0]);
   assert.equal(join2.block_id, join1.block_id);
   assert.deepEqual(join2.blocked_ids, [BLOCK_B]);
 
   for (let index = 0; index < 140; index++) {
-    page1.context.LinguaRoomBlocking.block(`${String(index).padStart(22, "A")}`);
+    page2.context.LinguaRoomBlocking.block(`${String(index).padStart(22, "A")}`);
   }
-  assert.equal(page1.context.LinguaRoomBlocking.blockedIds().length, 128);
+  assert.equal(page2.context.LinguaRoomBlocking.blockedIds().length, 128);
 });
 
 test("a previously blocked peer is stopped before the room handler receives presence", () => {
