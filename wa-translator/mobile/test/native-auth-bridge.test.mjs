@@ -27,3 +27,12 @@ test("native one-time auth handoffs are idempotent across cold-launch delivery",
   assert.match(bridge, /App\.getLaunchUrl\(\)/,
                "both Capacitor delivery paths remain supported while duplicate handoffs are ignored");
 });
+
+test("native room routing never propagates legacy personal labels", async () => {
+  const bridge = await read("../src/mobile-bridge.ts");
+  assert.match(bridge, /openRoom\(token: string, mode\?: string\): boolean/);
+  assert.match(bridge, /window\.location\.replace\(roomPageUrl\(token, mode\)\)/);
+  assert.match(bridge, /openRoom\(link\.token, link\.mode\)/);
+  assert.doesNotMatch(bridge, /openRoom\(token: string, mode\?: string, name/);
+  assert.doesNotMatch(bridge, /openRoom\(link\.token, link\.mode, name\)/);
+});
