@@ -66,21 +66,34 @@ body[data-auth="out"] #authPanel{display:grid}
 .state[data-state="open"]{color:var(--confirm)}
 .state[data-state="closed"],.state[data-state="expired"],.state[data-state="error"]{color:var(--destructive)}
 
-/* Room share/control appears only after creation */
-.room{display:grid;gap:14px;padding:19px;background:
-  linear-gradient(180deg,color-mix(in srgb,var(--accent-soft) 42%,var(--card)),var(--card) 34%)}
+/* Room share/control appears only after creation. Treat it as a success/share
+   surface: the invite and handoff actions lead; destructive control recedes. */
+.room{display:grid;gap:16px;padding:20px;border-radius:24px;
+  border-color:color-mix(in srgb,var(--accent) 28%,var(--separator));background:
+  radial-gradient(circle at 100% 0,color-mix(in srgb,var(--accent-soft) 82%,transparent),transparent 38%),
+  linear-gradient(180deg,color-mix(in srgb,var(--accent-soft) 54%,var(--card)),var(--card) 38%);
+  box-shadow:0 18px 46px color-mix(in srgb,var(--accent) 10%,transparent)}
 .room[hidden]{display:none}
-.roomHeading{display:flex;align-items:center;justify-content:space-between}
+.roomHeading{display:flex;align-items:center;justify-content:space-between;padding-bottom:1px}
+.roomHeading .roomLabel{color:var(--accent)}
+.room .field{gap:9px;color:var(--label-2);font-size:13px;font-weight:650}
 .field{display:grid;gap:7px;color:var(--label-2);font-size:13px;font-weight:600}
 input{width:100%;min-width:0;min-height:var(--touch-target);border:1px solid var(--separator);border-radius:13px;background:var(--card);
   color:var(--label);font:14px ui-monospace,SFMono-Regular,Consolas,monospace;padding:12px 13px;direction:ltr;text-align:left;
   transition:border-color var(--motion-fast) ease,background var(--motion-fast) ease}
 input:focus{border-color:color-mix(in srgb,var(--accent) 48%,transparent);background:var(--card)}
+#shareLink{min-height:52px;border-color:color-mix(in srgb,var(--accent) 30%,var(--separator));
+  background:color-mix(in srgb,var(--card) 82%,var(--accent-soft));box-shadow:inset 0 1px rgba(255,255,255,.04)}
 .actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
-.actions button{overflow-wrap:anywhere;line-height:1.2;font-size:14px}
-#shareBtn{background:var(--accent);color:#FFF}
-.share{grid-template-columns:repeat(3,minmax(0,1fr))}
-#qrBox{display:grid;place-items:center;margin:0;padding:12px;border-radius:14px;background:#FFF;color:#000}
+.actions button{min-height:50px;overflow-wrap:anywhere;line-height:1.2;font-size:14px}
+#copyBtn{border-color:color-mix(in srgb,var(--accent) 18%,var(--separator));background:var(--fill)}
+#shareBtn{background:var(--accent);color:#FFF;box-shadow:0 8px 20px color-mix(in srgb,var(--accent) 20%,transparent)}
+#openBtn{background:var(--accent-soft);color:var(--accent);border-color:color-mix(in srgb,var(--accent) 15%,transparent)}
+#closeBtn{border-color:color-mix(in srgb,var(--destructive) 18%,var(--separator))}
+.share{grid-template-columns:repeat(3,minmax(0,1fr));padding-top:14px;border-top:1px solid var(--separator)}
+.share button{min-height:46px;background:transparent;border-color:var(--separator);font-weight:620}
+#qrBox{display:grid;place-items:center;margin:0;padding:16px;border-radius:18px;background:#FFF;color:#000;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.05)}
 #qrBox[hidden]{display:none}
 #qrBox svg{display:block;width:min(228px,58vw);height:auto}
 .notice{min-height:18px;margin:-3px 5px 0;color:var(--label-2);font-size:13px;line-height:1.35}
@@ -119,6 +132,8 @@ body[data-auth="in"] #accountChip{display:flex}
   .tile{min-height:76px;padding:13px;gap:9px}
   .tileIcon{width:40px;height:40px;flex-basis:40px}
   .actions{grid-template-columns:1fr 1fr}
+  .room{padding:17px;border-radius:22px}
+  .share{grid-template-columns:repeat(3,minmax(0,1fr))}
   .onboardingModes .tilePrimary{min-height:92px}
 }
 @media(max-width:360px){
@@ -130,6 +145,7 @@ body[data-auth="in"] #accountChip{display:flex}
   .tilePrimary{min-height:116px;font-size:19px}
   .actions{gap:7px}
   .actions button{font-size:13px;padding:9px 7px}
+  .share{grid-template-columns:1fr 1fr 1fr}
   input{font-size:12px}
   .legal a{font-size:13px;padding-inline:7px}
 }
