@@ -93,12 +93,12 @@ describe("OAuth sign-in, session, and the room-creation gate", () => {
     expect(stateCookie).toContain("Max-Age=600");
   });
 
-  it("mints a session from a valid callback and reports it on /api/me", async () => {
+  it("mints a unique v2 session from a valid callback and reports it on /api/me", async () => {
     const { response, session } = await signIn();
 
     expect(response.status).toBe(302);
     expect(response.headers.get("Location")).toBe("/");
-    expect(session).toMatch(/^s1\.[A-Za-z0-9_-]{22}\.\d{10}\.[A-Za-z0-9_-]{43}$/);
+    expect(session).toMatch(/^s2\.[A-Za-z0-9_-]{22}\.\d{10}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/);
     const sessionCookie = setCookies(response).find(value => value.startsWith("lr_s="))!;
     expect(sessionCookie).toContain("HttpOnly");
     expect(sessionCookie).toContain("Secure");
