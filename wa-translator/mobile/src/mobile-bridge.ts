@@ -116,12 +116,16 @@ async function routeAppLink(value: string | undefined): Promise<void> {
   if (!value) return;
   const auth = parseNativeAuthLink(value);
   if (auth) {
-    if ("handoff" in auth) await acceptNativeHandoff(auth.handoff);
+    const handoff = "handoff" in auth && typeof auth.handoff === "string" ? auth.handoff : null;
+    if (handoff) await acceptNativeHandoff(handoff);
     else window.location.replace("index.html?auth=failed");
     return;
   }
   const link = parseRoomLink(value);
-  if (link) openRoom(link.token, link.mode, "name" in link ? link.name : undefined);
+  if (link) {
+    const name = "name" in link && typeof link.name === "string" ? link.name : undefined;
+    openRoom(link.token, link.mode, name);
+  }
 }
 
 window.LinguaNative = {
