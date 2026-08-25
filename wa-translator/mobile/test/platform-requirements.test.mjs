@@ -10,7 +10,7 @@ test("Android release config targets the current Play API floor", async () => {
   assert.match(gradle, /targetSdkVersion\s*=\s*36\b/);
 });
 
-test("Android packaging is ready for 16 KB page-size enforcement", async () => {
+test("Android AAB is inspected before CI artifact publication and Play upload", async () => {
   const gradle = await read("../android/build.gradle");
   const version = gradle.match(/com\.android\.tools\.build:gradle:(\d+)\.(\d+)\.(\d+)/);
   assert.ok(version, "Android Gradle Plugin version is explicit");
@@ -19,20 +19,31 @@ test("Android packaging is ready for 16 KB page-size enforcement", async () => {
   assert.ok(major > 8 || (major === 8 && (minor > 5 || (minor === 5 && patch >= 1))),
             "AGP must remain at least 8.5.1 for 16 KB zip alignment");
 
-  const verifier = await read("../scripts/verify-android-16k.sh");
-  assert.match(verifier, /PAGE_ALIGNMENT_16K/);
-  assert.match(verifier, /readelf -lW/);
-  assert.match(verifier, /alignment < 0x4000/);
+  const alignment = await read("../scripts/verify-android-16k.sh");
+  assert.match(alignment, /PAGE_ALIGNMENT_16K/);
+  assert.match(alignment, /readelf -lW/);
+  assert.match(alignment, /alignment < 0x4000/);
+
+  const verifier = await read("../scripts/verify-android-aab.sh");
+  assert.match(verifier, /dump manifest/);
+  assert.match(verifier, /com\.javin23863\.linguarelay/);
+  assert.match(verifier, /android\.permission\.CAMERA/);
+  assert.match(verifier, /android\.permission\.RECORD_AUDIO/);
+  assert.match(verifier, /android:allowBackup=\"false\"/);
+  assert.match(verifier, /android:usesCleartextTraffic=\"false\"/);
+  assert.match(verifier, /base\/assets\/public\/room\.css/);
+  assert.match(verifier, /base\/assets\/public\/room\.js/);
+  assert.match(verifier, /verify-android-16k\.sh/);
 
   const workflow = await read("../../../.github/workflows/mobile-build.yml");
-  assert.match(workflow, /name: Verify Android 16 KB compatibility/);
-  assert.match(workflow, /bash scripts\/verify-android-16k\.sh/);
+  assert.match(workflow, /name: Verify Android release artifact/);
+  assert.match(workflow, /bash scripts\/verify-android-aab\.sh/);
 
   const fastfile = await read("../fastlane/Fastfile");
-  const verifyAt = fastfile.indexOf("verify-android-16k.sh");
+  const verifyAt = fastfile.indexOf("verify-android-aab.sh");
   const uploadAt = fastfile.indexOf("upload_to_play_store");
   assert.ok(verifyAt >= 0 && uploadAt > verifyAt,
-            "signed Play uploads verify 16 KB compatibility before upload");
+            "signed Play uploads verify the exact AAB before upload");
 });
 
 test("iOS release metadata requires the 64-bit device architecture", async () => {
@@ -52,6 +63,8 @@ test("iOS CI and TestFlight verify the packaged app before upload", async () => 
   assert.match(verifier, /PlistBuddy/);
   assert.match(verifier, /lipo -archs/);
   assert.match(verifier, /PrivacyInfo\.xcprivacy/);
+  assert.match(verifier, /room\.css/);
+  assert.match(verifier, /room\.js/);
   assert.match(verifier, /0 \/ 2 people/);
   assert.match(verifier, /0 \/ 4 people/);
   assert.match(verifier, /BEGIN PRIVATE KEY/);
