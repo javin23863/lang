@@ -46,13 +46,22 @@ test("native auth keeps the raw binding on-device and exposes only its challenge
                "an older in-flight localStorage binding can be migrated once rather than stranded");
 });
 
-test("native one-time handoffs remain idempotent across cold-launch delivery", async () => {
+test("native one-time handoffs remain idempotent and retire their proof after every terminal attempt", async () => {
   const bridge = await read("../src/mobile-bridge.ts");
   assert.match(bridge, /const handledAuthHandoffs = new Set<string>\(\)/);
   assert.match(bridge, /if \(handledAuthHandoffs\.has\(auth\.handoff\)\) return/);
   assert.match(bridge, /handledAuthHandoffs\.add\(auth\.handoff\)/);
   assert.match(bridge, /const binding = await readAuthBinding\(provider\)/,
                "cold return reloads the same app-held proof before exchanging the handoff");
+  assert.match(bridge, /async function retireAuthBinding\(provider: string\): Promise<void>/);
+  assert.match(bridge, /memoryAuthBindings\.delete\(provider\);\s*authChallenges\.delete\(provider\);\s*await hostStorage\.removeItem\(authBindingKey\(provider\)\)/,
+               "terminal auth removes both in-memory and secure-storage proof state");
+  assert.match(bridge, /await hostStorage\.setItem\(NATIVE_SESSION_KEY, nativeSession\);\s*await retireAuthBinding\(provider\)/,
+               "success persists the session before retiring the one-attempt proof");
+  assert.match(bridge, /catch \{\s*await retireAuthBinding\(provider\);\s*window\.location\.replace\("index\.html\?auth=failed"\)/,
+               "failed exchange cannot leave reusable proof material behind");
+  assert.match(bridge, /else \{\s*await retireAuthBinding\(auth\.provider\);\s*window\.location\.replace\("index\.html\?auth=failed"\)/,
+               "provider-declared failure also retires the proof");
   assert.match(bridge, /App\.addListener\("appUrlOpen"/);
   assert.match(bridge, /App\.getLaunchUrl\(\)/,
                "both Capacitor delivery paths remain supported while duplicate handoffs are ignored");
