@@ -4,6 +4,7 @@ platform :android do
   desc "Build a signed AAB and upload it to Play internal testing"
   lane :beta do
     gradle(project_dir: "android", task: "bundle", build_type: "Release")
+    sh("bash scripts/verify-android-16k.sh android/app/build/outputs/bundle/release/app-release.aab")
     upload_to_play_store(
       json_key: ENV.fetch("GOOGLE_PLAY_JSON_KEY"),
       package_name: "com.javin23863.linguarelay",
