@@ -83,6 +83,14 @@ function isRoomShell(html: string): boolean {
   return html.includes('id="roleGate"') && html.includes('id="participantCount"');
 }
 
+function isPrivateDynamicPath(pathname: string): boolean {
+  return pathname === "/tts"
+    || pathname.startsWith("/api/")
+    || pathname.startsWith("/auth/")
+    || pathname.startsWith("/room/")
+    || pathname.startsWith("/ws/");
+}
+
 function roomAsset(pathname: string): Response | null {
   const content = pathname === "/room.css" ? canonicalRoom.css
     : pathname === "/room.js" ? canonicalRoom.js : null;
@@ -102,10 +110,23 @@ function roomContentPolicy(request: Request): string {
   return `${HTML_ISOLATION_POLICY}; style-src 'self'; script-src 'self'; img-src 'self' data:; media-src 'self' blob: data:; connect-src 'self' ${websocketOrigin}; worker-src 'self'`;
 }
 
-async function hardenHtml(request: Request, response: Response): Promise<Response> {
+async function hardenResponse(request: Request, response: Response): Promise<Response> {
   if (response.webSocket) return response;
-  const contentType = response.headers.get("Content-Type") || "";
-  if (!contentType.toLowerCase().includes("text/html")) return response;
+  const headers = new Headers(response.headers);
+  headers.set("Referrer-Policy", "no-referrer");
+  headers.set("X-Content-Type-Options", "nosniff");
+  if (isPrivateDynamicPath(new URL(request.url).pathname)) {
+    headers.set("Cache-Control", "no-store");
+  }
+
+  const contentType = headers.get("Content-Type") || "";
+  if (!contentType.toLowerCase().includes("text/html")) {
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  }
 
   // Materialize HTML instead of transplanting a fixed-length asset stream into
   // a new Response. Workerd can otherwise retain the original length contract
@@ -116,12 +137,9 @@ async function hardenHtml(request: Request, response: Response): Promise<Respons
     ? decomposeRoom(sourceHtml).shell.replace(FOUR_PERSON_FALLBACK, TWO_PERSON_FALLBACK)
     : sourceHtml;
 
-  const headers = new Headers(response.headers);
   headers.delete("Content-Length");
   headers.set("Content-Security-Policy", room ? roomContentPolicy(request) : APP_CONTENT_POLICY);
   headers.set("X-Frame-Options", "DENY");
-  headers.set("Referrer-Policy", "no-referrer");
-  headers.set("X-Content-Type-Options", "nosniff");
   headers.set("Permissions-Policy", room
     ? "camera=(self), microphone=(self)"
     : "camera=(), microphone=()");
@@ -137,6 +155,6 @@ export default {
   async fetch(request, env, ctx): Promise<Response> {
     const asset = roomAsset(new URL(request.url).pathname);
     if (asset && request.method === "GET") return asset;
-    return hardenHtml(request, await mobileEntry.fetch(request, env, ctx));
+    return hardenResponse(request, await mobileEntry.fetch(request, env, ctx));
   },
 } satisfies ExportedHandler<Env>;
