@@ -1,7 +1,9 @@
 // One command that drives the shipped app in a real browser and fails loudly.
 //
 //   1. start the worker:  cd cloudflare && npx wrangler dev -c wrangler.dev.jsonc --port 8788 --local
-//   2. run this:          node tools/browser/run.mjs
+//   2. sign a dedicated test host into that same Worker origin and export its
+//      current s2 browser cookie value as LINGUA_SESSION
+//   3. run this:          node tools/browser/run.mjs
 //
 // Pass language codes to widen the sweep: `node run.mjs de ar fi ja`.
 import { spawn } from "node:child_process";
@@ -30,6 +32,11 @@ function run(script, args, port) {
 const health = await fetch(ORIGIN).then(r => r.status).catch(() => 0);
 if (health !== 200) {
   console.error(`No app at ${ORIGIN} (got ${health}). Start the worker first — see the top of this file.`);
+  process.exit(2);
+}
+if (!process.env.LINGUA_SESSION) {
+  console.error("LINGUA_SESSION is required. Use a dedicated test host signed into the target Worker; "
+                + "a signing key alone cannot satisfy the live-account guard.");
   process.exit(2);
 }
 
