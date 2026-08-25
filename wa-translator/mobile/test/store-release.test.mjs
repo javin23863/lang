@@ -172,7 +172,7 @@ test("store listing and operator declarations are source controlled", async () =
   assert.match(declarations, /Account deletion: available in the app/);
   assert.match(declarations, /No advertising/);
   assert.match(declarations, /No transcript history/);
-  assert.match(declarations, /Foreground only/);
+  assert.match(declarations, /foreground only/i);
 });
 
 test("Play listing has its mandatory icon and feature graphic", async () => {

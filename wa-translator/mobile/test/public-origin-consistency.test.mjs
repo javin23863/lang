@@ -32,8 +32,8 @@ test("production public origin has one mobile source and Worker config cannot dr
                "Worker OAuth/session/link origin must match the native runtime exactly");
 
   assert.match(storePreflight,
-    /import \{ PUBLIC_ORIGIN \} from "\.\.\/src\/runtime-core\.mjs"/,
-    "signed-store preflight reads the canonical mobile origin instead of copying a hostname");
+    /import \{ MOBILE_PROTOCOL, PUBLIC_ORIGIN \} from "\.\.\/src\/runtime-core\.mjs"/,
+    "signed-store preflight reads protocol and origin from the canonical mobile runtime");
   assert.doesNotMatch(storePreflight,
     /https:\/\/spoken-translation-room\.spoken-translation-cloudflare\.workers\.dev/,
     "the release preflight must not carry its own stale production hostname literal");

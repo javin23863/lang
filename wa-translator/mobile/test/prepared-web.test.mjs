@@ -6,7 +6,8 @@ const root = new URL("../www/", import.meta.url);
 
 test("prepared mobile web bundle contains the app, runtime, legal pages, and local worklet", async () => {
   for (const path of [
-    "index.html", "room.html", "app-runtime.js", "mobile-bridge.js", "qr.js",
+    "index.html", "room.html", "room.css", "room-ui.css", "room.js",
+    "app-runtime.js", "mobile-bridge.js", "qr.js",
     "dashboard.css", "dashboard.js", "privacy.html", "terms.html", "support.html",
     "delete-account.html", "legal-runtime.js", "static/pcm-worklet.js"
   ]) await access(new URL(path, root));
@@ -31,7 +32,7 @@ test("prepared mobile web bundle contains the app, runtime, legal pages, and loc
 });
 
 test("phone video status reserves the local preview area", async () => {
-  const room = await readFile(new URL("room.html", root), "utf8");
-  assert.match(room, /#videoNote\{[^}]*padding-inline-end:calc\(min\(27vw,130px\) \+ 30px\)/);
-  assert.match(room, /html\[dir=rtl\] #selfWrap\{left:10px;right:auto\}/);
+  const css = await readFile(new URL("room.css", root), "utf8");
+  assert.match(css, /#videoNote\{[^}]*padding-inline-end:calc\(min\(27vw,130px\) \+ 30px\)/);
+  assert.match(css, /html\[dir=rtl\] #selfWrap\{left:10px;right:auto\}/);
 });

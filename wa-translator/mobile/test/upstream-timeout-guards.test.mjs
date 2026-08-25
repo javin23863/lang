@@ -17,6 +17,10 @@ test("shipping Worker entrypoint bounds external dependency waits", async () => 
   assert.match(source, /MODAL_TEST: boundedFetcher\(env\.MODAL_TEST, MODAL_UPSTREAM_TIMEOUT_MS\)/);
   assert.match(source, /TURN_TEST: boundedFetcher\(env\.TURN_TEST, TURN_UPSTREAM_TIMEOUT_MS\)/);
   assert.match(source, /OAUTH_TEST: boundedFetcher\(env\.OAUTH_TEST, OAUTH_UPSTREAM_TIMEOUT_MS\)/);
-  assert.match(source, /mobileEntry\.fetch\(\s*request, boundedUpstreamEnv\(env\), ctx\s*\)/,
-               "all top-level Worker routes receive the bounded dependency view");
+  assert.match(source, /const boundedEnv = boundedUpstreamEnv\(env\)/);
+  assert.match(source, /const routedRequest = await pseudonymizeEdgeIp\(request, boundedEnv\)/);
+  assert.match(source, /nativePreflight\(routedRequest, boundedEnv, ctx\)/,
+               "native preflight receives the same bounded dependency view");
+  assert.match(source, /mobileEntry\.fetch\(routedRequest, boundedEnv, ctx\)/,
+               "all routed Worker traffic reaches the lower entrypoint with bounded dependencies");
 });

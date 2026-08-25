@@ -21,7 +21,7 @@ test("Version 1.0 has one explicit product contract and historical docs cannot o
   assert.match(release, /New external browser\/native sessions use the `s2` format/i,
                "the release contract requires independently issued external sessions");
   assert.match(release, /random 128-bit issuance nonce/i);
-  assert.match(release, /temporarily accepts valid legacy `s1` sessions/i,
+  assert.match(release, /temporarily accepts valid\s+legacy `s1` sessions/i,
                "legacy sessions are migration compatibility, not the issuance contract");
   assert.match(release, /protocol is `2`/,
                "the installed-client compatibility boundary changes with the new session format");

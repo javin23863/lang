@@ -37,9 +37,14 @@ test("Android AAB is inspected before CI artifact publication and Play upload", 
                "the final AAB manifest must contain that exact version code");
   assert.match(verifier, /jarsigner -verify/,
                "a signed beta AAB must pass JAR signature verification");
+  assert.match(verifier, /keytool -exportcert/,
+               "the configured upload-key alias is resolved to its certificate");
+  assert.match(verifier, /-alias "\$LINGUA_ANDROID_KEY_ALIAS"/);
   assert.match(verifier, /-keystore "\$LINGUA_ANDROID_KEYSTORE"/);
-  assert.match(verifier, /"\$bundle" "\$LINGUA_ANDROID_KEY_ALIAS"/,
-               "the AAB signer must match the configured release alias");
+  assert.match(verifier, /keytool -printcert -jarfile "\$bundle"/,
+               "the AAB's actual signer certificate is inspected directly");
+  assert.match(verifier, /"\$actual_signer" != "\$expected_signer"/,
+               "the packaged signer fingerprint must equal the configured release alias fingerprint");
   assert.match(verifier, /base\/assets\/public\/room\.css/);
   assert.match(verifier, /base\/assets\/public\/room\.js/);
   assert.match(verifier, /verify-android-16k\.sh/);

@@ -54,6 +54,6 @@ test("public and store disclosures distinguish report and routing lifetimes", as
     assert.match(source, /24 hours/i,
                  "internal room-routing metadata has the shorter room lifetime");
   }
-  assert.match(privacy, /routing ID and its room-expiry value are removed when the room expires/i);
-  assert.match(declarations, /routing ID and room-expiry value exist only while moderator closure can still work/i);
+  assert.match(privacy, /routing\s+ID and its room-expiry value are removed when the room expires/i);
+  assert.match(declarations, /routing\s+ID and room-expiry value exist only while moderator closure can still work/i);
 });
