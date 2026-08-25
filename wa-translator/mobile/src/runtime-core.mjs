@@ -48,8 +48,8 @@ export function parseRoomLink(value) {
     if (url.origin !== PUBLIC_ORIGIN || url.hash) return null;
     const match = url.pathname.match(/^\/room\/([^/]+)$/);
     if (!match || !ROOM_TOKEN_PATTERN.test(match[1])) return null;
-    // Only the room shell and an optional human-readable voice-call label are
-    // accepted. Duplicate or unrelated parameters fail closed.
+    // `n` is accepted only for backwards compatibility with already-issued
+    // voice invitations. Current clients never generate or propagate it.
     const entries = [...url.searchParams.entries()];
     if (entries.some(([key]) => key !== "m" && key !== "n")
         || entries.filter(([key]) => key === "m").length > 1
@@ -119,14 +119,12 @@ export function websocketPath(token, native) {
   return `${native ? "/ws/v1/" : "/ws/"}${token}`;
 }
 
-/** @param {string} token @param {string} [mode] @param {string} [name] */
-export function roomPageUrl(token, mode, name) {
+/** @param {string} token @param {string} [mode] */
+export function roomPageUrl(token, mode) {
   if (!isRoomToken(token)) throw new Error("Invalid room token");
   const params = new URLSearchParams({room: token});
   const resolved = roomMode(mode);
   if (resolved !== "video") params.set("m", resolved);
-  const resolvedName = resolved === "voice" ? roomName(name) : "";
-  if (resolvedName) params.set("n", resolvedName);
   return `room.html?${params.toString()}`;
 }
 
