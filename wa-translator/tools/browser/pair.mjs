@@ -2,6 +2,7 @@
 // backend for real: room signing, the WebSocket, presence, peer join, and the
 // host-control API the dashboard polls.
 import { open } from "./cdp.mjs";
+import { acceptRoomTerms } from "./room-consent.mjs";
 import { sessionToken } from "./session.mjs";
 
 const ORIGIN = process.env.LINGUA_ORIGIN || "http://127.0.0.1:8788";
@@ -17,21 +18,25 @@ async function joinAs(page, path, locale) {
   await page.viewport(390, 844);
   await page.goto(`${ORIGIN}${path}`);
   await page.select("#roleLocaleSel", locale);
+  const consent = await acceptRoomTerms(page);
+  check(`${locale} terms start unchecked`, consent.before.checked === false, String(consent.before.checked));
+  check(`${locale} join starts locked`, consent.before.disabled === true, String(consent.before.disabled));
+  check(`${locale} terms unlock join`, consent.after.checked && !consent.after.disabled,
+        JSON.stringify(consent.after));
   await page.tap("#joinBtn");
   await page.eval("new Promise(r => setTimeout(r, 2000))");
 }
 
 console.log("[backend] create a room");
-// Room creation is session-gated: mint (or take from LINGUA_SESSION) the same
-// cookie the dashboard check uses. Joining below stays cookie-free on purpose.
+// Room creation uses a real signed-in test host session from the target Worker.
+// Joining below stays cookie-free on purpose.
 const session = await sessionToken();
-if (!session) console.log("  set ROOM_SIGNING_KEY or LINGUA_SESSION — creation will 401 without it");
 const created = await fetch(`${ORIGIN}/api/rooms`, {
   method: "POST",
-  headers: { Origin: ORIGIN, Accept: "application/json",
-             ...(session ? { Cookie: `lr_s=${session}` } : {}) },
+  headers: {Origin: ORIGIN, Accept: "application/json", Cookie: `lr_s=${session}`},
 });
 check("room created", created.status === 201, `HTTP ${created.status}`);
+if (created.status !== 201) throw new Error(`pair journey could not create room (HTTP ${created.status})`);
 const room = await created.json();
 check("room path is signed", /^\/room\/[\w-]+\.\d+\.[\w-]+$/.test(room.path), room.path.slice(0, 30));
 
@@ -123,7 +128,7 @@ try {
   check("alice is alone again", a3.count.startsWith("1"), a3.count);
   // Whichever note is showing, it must be German and never a leftover key.
   check("alice's notice is German", /[a-zA-ZäöüßÄÖÜ]/.test(a3.note) && !/^[a-z]+\.[a-zA-Z.]+$/.test(a3.note)
-        && !/(the other person|waiting|still trying)/i.test(a3.note), a3.note);
+        && !/\b(the other person|waiting|still trying)\b/i.test(a3.note), a3.note);
 
   console.log("\n[backend] host closes the room");
   const closed = await fetch(`${ORIGIN}/api/room-control/close`, {
