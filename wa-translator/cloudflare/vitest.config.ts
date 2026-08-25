@@ -2,6 +2,10 @@ import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  // Several abuse-control cases deliberately exercise dozens of sequential
+  // Durable Object requests. Five seconds is too tight on a loaded CI runner;
+  // the assertions still bound behavior, while this avoids timing-only flakes.
+  test: { testTimeout: 10_000 },
   plugins: [
     cloudflareTest({
       wrangler: { configPath: "./wrangler.jsonc" },
