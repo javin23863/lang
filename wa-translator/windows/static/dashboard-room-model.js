@@ -2,6 +2,8 @@
   "use strict";
 
   const MODES = new Set(["voice", "chat", "video"]);
+  const ROOM_PATH_PATTERN = /^\/room\/([A-Za-z0-9_-]{24})\.(\d{10})\.[A-Za-z0-9_-]{43}$/;
+  const HOST_CONTROL_PATTERN = /^hc1\.([A-Za-z0-9_-]{24})\.(\d{10})\.[A-Za-z0-9_-]{43}$/;
 
   function create(runtime) {
     if (!runtime || typeof runtime.inviteUrl !== "function"
@@ -20,6 +22,7 @@
     }
 
     function inviteUrl(room) {
+      if (!valid(room)) throw new TypeError("invalid room capability");
       const url = new URL(runtime.inviteUrl(room));
       const selected = mode(room);
       if (selected !== "video") url.searchParams.set("m", selected);
@@ -29,8 +32,13 @@
     }
 
     function valid(value) {
-      return value && typeof value.path === "string" && typeof value.host_control === "string"
-        && Number.isSafeInteger(value.expires_at);
+      if (!value || typeof value.path !== "string" || typeof value.host_control !== "string"
+          || !Number.isSafeInteger(value.expires_at)) return false;
+      const room = ROOM_PATH_PATTERN.exec(value.path);
+      const control = HOST_CONTROL_PATTERN.exec(value.host_control);
+      if (!room || !control) return false;
+      const expires = String(value.expires_at);
+      return room[1] === control[1] && room[2] === control[2] && room[2] === expires;
     }
 
     async function load() {
