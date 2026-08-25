@@ -33,14 +33,13 @@
                     android:pathPrefix="/room/" />
             </intent-filter>
 
-            <intent-filter android:autoVerify="true">
+            <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
-                    android:scheme="https"
-                    android:host="spoken-translation-room.spoken-translation-cloudflare.workers.dev"
-                    android:path="/mobile-auth-complete" />
+                    android:scheme="com.javin23863.linguarelay"
+                    android:host="auth" />
             </intent-filter>
 
         </activity>
