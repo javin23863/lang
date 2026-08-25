@@ -28,7 +28,8 @@ for required in \
   fi
 done
 
-for entry in base/assets/public/room.html base/assets/public/room.css base/assets/public/room.js; do
+for entry in base/assets/public/room.html base/assets/public/room.css \
+  base/assets/public/room-ui.css base/assets/public/room.js; do
   if ! unzip -Z1 "$bundle" | grep -Fxq "$entry"; then
     echo "Android artifact check: AAB is missing $entry" >&2
     exit 1
@@ -48,6 +49,10 @@ grep -q '<link rel="stylesheet" href="/room.css">' <<<"$room" || {
   echo "Android artifact check: room is missing external room.css." >&2
   exit 1
 }
+grep -q '<link rel="stylesheet" href="/room-ui.css">' <<<"$room" || {
+  echo "Android artifact check: room is missing the Lingua room presentation layer." >&2
+  exit 1
+}
 grep -q '<script src="/room.js"></script>' <<<"$room" || {
   echo "Android artifact check: room is missing external room.js." >&2
   exit 1
@@ -59,6 +64,14 @@ fi
 
 unzip -p "$bundle" base/assets/public/room.css | grep -q '#stage{' || {
   echo "Android artifact check: room.css is incomplete." >&2
+  exit 1
+}
+unzip -p "$bundle" base/assets/public/room-ui.css | grep -q -- '--accent:#64D4C3' || {
+  echo "Android artifact check: room-ui.css is missing the Lingua presentation tokens." >&2
+  exit 1
+}
+unzip -p "$bundle" base/assets/public/room-ui.css | grep -q 'prefers-reduced-motion:reduce' || {
+  echo "Android artifact check: room-ui.css is missing reduced-motion handling." >&2
   exit 1
 }
 unzip -p "$bundle" base/assets/public/room.js | grep -q 'async function connect()' || {
@@ -81,4 +94,4 @@ if unzip -Z1 "$bundle" | grep -Ei '(^|/)(google-services\.json|google-play\.json
 fi
 
 bash scripts/verify-android-16k.sh "$bundle"
-echo "Android artifact check: identity, permissions, transport security, decomposed room contract and secret hygiene verified."
+echo "Android artifact check: identity, permissions, transport security, room UI contract and secret hygiene verified."
