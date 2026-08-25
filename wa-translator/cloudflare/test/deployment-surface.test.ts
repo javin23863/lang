@@ -33,6 +33,7 @@ describe("permanent deployment surface", () => {
     expect(room.headers.get("Permissions-Policy")).toBe("camera=(self), microphone=(self)");
     const roomHtml = await room.text();
     expect(roomHtml).toContain('<link rel="stylesheet" href="/room.css">');
+    expect(roomHtml).toContain('<link rel="stylesheet" href="/room-ui.css">');
     expect(roomHtml).toContain('<script src="/room.js"></script>');
     expect(roomHtml).not.toContain("<style>");
     expect(roomHtml).not.toContain("<script>\nconst $ =");
@@ -46,6 +47,13 @@ describe("permanent deployment surface", () => {
     expect(roomCss.headers.get("Content-Type")).toContain("text/css");
     expect(roomCss.headers.get("Cache-Control")).toBe("no-store");
     expect(await roomCss.text()).toContain("#stage{");
+
+    const roomUiCss = await exports.default.fetch(`${ORIGIN}/room-ui.css`);
+    expect(roomUiCss.status).toBe(200);
+    expect(roomUiCss.headers.get("Content-Type")).toContain("text/css");
+    const roomUiSource = await roomUiCss.text();
+    expect(roomUiSource).toContain("--accent:#64D4C3");
+    expect(roomUiSource).toContain("prefers-reduced-motion:reduce");
 
     const roomJs = await exports.default.fetch(`${ORIGIN}/room.js`);
     expect(roomJs.status).toBe(200);
