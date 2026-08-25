@@ -115,6 +115,14 @@ async function readAuthBinding(provider: string): Promise<string | null> {
   }
 }
 
+async function retireAuthBinding(provider: string): Promise<void> {
+  memoryAuthBindings.delete(provider);
+  authChallenges.delete(provider);
+  await hostStorage.removeItem(authBindingKey(provider)).catch(() => {});
+  try { localStorage.removeItem(legacyAuthBindingKey(provider)); }
+  catch { /* legacy storage may be unavailable */ }
+}
+
 function nativeApiPath(path: string): string {
   const resolved = apiPath(path, true);
   const provider = path.match(NATIVE_AUTH_START)?.[1];
@@ -207,6 +215,7 @@ function openRoom(token: string, mode?: string): boolean {
 async function acceptNativeHandoff(provider: string, handoff: string): Promise<void> {
   const binding = await readAuthBinding(provider);
   if (!binding) {
+    await retireAuthBinding(provider);
     window.location.replace("index.html?auth=failed");
     return;
   }
@@ -222,8 +231,10 @@ async function acceptNativeHandoff(provider: string, handoff: string): Promise<v
     if (!isSessionToken(body.session)) throw new Error("invalid native session");
     nativeSession = String(body.session);
     await hostStorage.setItem(NATIVE_SESSION_KEY, nativeSession);
+    await retireAuthBinding(provider);
     window.location.replace("index.html");
   } catch {
+    await retireAuthBinding(provider);
     window.location.replace("index.html?auth=failed");
   }
 }
@@ -240,6 +251,7 @@ async function routeAppLink(value: string | undefined): Promise<void> {
       handledAuthHandoffs.add(auth.handoff);
       await acceptNativeHandoff(auth.provider, auth.handoff);
     } else {
+      await retireAuthBinding(auth.provider);
       window.location.replace("index.html?auth=failed");
     }
     return;
