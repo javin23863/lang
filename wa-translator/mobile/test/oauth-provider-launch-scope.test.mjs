@@ -5,9 +5,10 @@ import test from "node:test";
 const read = path => readFile(new URL(path, import.meta.url), "utf8");
 
 test("OAuth providers remain independently provisioned and Facebook is optional", async () => {
-  const [worker, deployment] = await Promise.all([
+  const [worker, deployment, declarations] = await Promise.all([
     read("../../cloudflare/src/worker.ts"),
     read("../../cloudflare/DEPLOYMENT.md"),
+    read("../STORE-DECLARATIONS.md"),
   ]);
 
   assert.match(worker,
@@ -28,4 +29,9 @@ test("OAuth providers remain independently provisioned and Facebook is optional"
   assert.match(deployment,
     /A provider with no secrets is absent: its `\/auth\/<p>\/start` 404s and[\s\S]*?`\/api\/me` never offers its button\. Nothing else degrades\./,
     "operator instructions must keep optional-provider behavior explicit");
+  assert.match(declarations,
+    /signs in with\s+one of the OAuth providers enabled for that release\.[\s\S]*?supports Google\s+and Apple plus optional Facebook; `\/api\/me` shows only fully configured\s+providers/,
+    "store declarations must describe the live configured provider set, not promise Facebook");
+  assert.doesNotMatch(declarations, /signs in with\s+Google, Apple, or Facebook/,
+    "review paperwork must not present optional Facebook as guaranteed launch functionality");
 });

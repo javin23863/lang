@@ -5,8 +5,11 @@ They describe version 1.0 and must be reviewed again whenever SDKs or product
 behavior change.
 
 - Account required to START a call: the person who creates a room signs in with
-  Google, Apple, or Facebook. No account is required to JOIN one — an invited
-  participant opens the link and talks, with no sign-in and no account.
+  one of the OAuth providers enabled for that release. The source supports Google
+  and Apple plus optional Facebook; `/api/me` shows only fully configured
+  providers, so store/reviewer instructions must match the live production list.
+  No account is required to JOIN one — an invited participant opens the link and
+  talks, with no sign-in and no account.
 - Private-invite interaction model: version 1.0 has no public posting, public
   profile or user directory, people search, discovery feed, follower graph,
   random matching, stranger pairing, or open-room browsing. Communication exists
