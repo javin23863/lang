@@ -13,8 +13,9 @@ describe("permanent deployment surface", () => {
     const manifest = await exports.default.fetch(`${ORIGIN}/manifest.webmanifest`);
     expect(manifest.status).toBe(200);
     expect(await manifest.json<any>()).toMatchObject({
-      name: "Live Translator", short_name: "Translator", display: "standalone",
-      start_url: "/", icons: [expect.objectContaining({ src: "/icon.svg" })]
+      name: "Lingua Relay", short_name: "Lingua Relay", display: "standalone",
+      start_url: "/", scope: "/", background_color: "#F4FBF9", theme_color: "#075E54",
+      icons: [expect.objectContaining({ src: "/icon.svg" })]
     });
 
     const worklet = await exports.default.fetch(`${ORIGIN}/static/pcm-worklet.js`);
