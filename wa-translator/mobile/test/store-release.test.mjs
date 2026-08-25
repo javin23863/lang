@@ -74,6 +74,9 @@ test("store listing and operator declarations are source controlled", async () =
   }
   assert.match(declarations, /Account required to START a call/);
   assert.match(declarations, /No account is required to JOIN one/);
+  assert.match(declarations, /iOS login release gate/);
+  assert.match(declarations, /production Apple provider is not fully configured and visible/);
+  assert.match(declarations, /Room capacity: exactly two participants total/);
   assert.match(declarations, /No password is ever created, collected, or stored/);
   // A live-looking dead purchase button is a store review finding. The
   // declaration has to say the control is disabled and collects nothing.
