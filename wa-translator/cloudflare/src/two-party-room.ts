@@ -6,6 +6,7 @@ const PRESENCE_LEASE_MS = 90_000;
 const USAGE_PENDING_KEY = "usagePendingV1";
 const USAGE_RETRY_MS = 5 * 60 * 1000;
 const ALARM_FLOOR_MS = 1_000;
+const DELIVERY_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
 
 type RoomBaseShape = {
   ctx: DurableObjectState;
@@ -26,8 +27,9 @@ const RoomBase = WorkerRoom as unknown as new (...args: any[]) => RoomBaseShape;
 
 type SocketAttachment = { joined?: unknown; lastSeenAt?: unknown } | null;
 type RoomUsage = { callMs: number; chat: number; tts: number };
+type PendingUsage = RoomUsage & { deliveryId: string };
 type UsageKind = "call" | "chat" | "tts";
-type UsageSnapshot = { usage: RoomUsage; wasPending: boolean };
+type UsageSnapshot = { usage: PendingUsage; wasPending: boolean };
 
 const EMPTY_USAGE: RoomUsage = {callMs: 0, chat: 0, tts: 0};
 
@@ -42,10 +44,15 @@ function usageEmpty(usage: RoomUsage): boolean {
   return usage.callMs <= 0 && usage.chat <= 0 && usage.tts <= 0;
 }
 
-function base64url(bytes: ArrayBuffer): string {
+function base64url(bytes: ArrayBuffer | Uint8Array): string {
+  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   let binary = "";
-  for (const byte of new Uint8Array(bytes)) binary += String.fromCharCode(byte);
+  for (const byte of view) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function usageDeliveryId(): string {
+  return base64url(crypto.getRandomValues(new Uint8Array(8)));
 }
 
 async function roomUsageRef(roomId: string): Promise<string> {
@@ -106,13 +113,23 @@ export class Room extends RoomBase {
 
   private async claimUsageSnapshot(): Promise<UsageSnapshot | null> {
     return this.ctx.storage.transaction(async transaction => {
-      const existing = await transaction.get<RoomUsage>(USAGE_PENDING_KEY);
-      if (existing) return {usage: {...existing}, wasPending: true};
+      const existing = await transaction.get<PendingUsage>(USAGE_PENDING_KEY);
+      if (existing) {
+        // A pending snapshot written by the previous wrapper revision has no
+        // delivery id. Upgrade it in place before any retry so every account
+        // write from this revision has a stable idempotency key.
+        if (!DELIVERY_ID_PATTERN.test(existing.deliveryId || "")) {
+          existing.deliveryId = usageDeliveryId();
+          await transaction.put(USAGE_PENDING_KEY, existing);
+        }
+        return {usage: {...existing}, wasPending: true};
+      }
       const active = await transaction.get<RoomUsage>("usage");
       if (!active || usageEmpty(active)) return null;
-      await transaction.put(USAGE_PENDING_KEY, {...active});
+      const pending: PendingUsage = {...active, deliveryId: usageDeliveryId()};
+      await transaction.put(USAGE_PENDING_KEY, pending);
       await transaction.put("usage", {...EMPTY_USAGE});
-      return {usage: {...active}, wasPending: false};
+      return {usage: {...pending}, wasPending: false};
     });
   }
 
@@ -174,12 +191,13 @@ export class Room extends RoomBase {
 
       for (const [kind, units] of deliveries) {
         if (units <= 0) continue;
+        const deliveryId = `u1.${roomRef}.${pending.deliveryId}.${kind}`;
         let response: Response;
         try {
           response = await stub.fetch(new Request("https://users.internal/usage", {
             method: "POST",
             headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({kind, units, room_ref: roomRef}),
+            body: JSON.stringify({kind, units, room_ref: roomRef, delivery_id: deliveryId}),
           }));
         } catch {
           return true; // pending storage remains intact for the retry alarm
