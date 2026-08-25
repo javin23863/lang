@@ -14,7 +14,7 @@ test("Version 1.0 has one explicit product contract and historical docs cannot o
   assert.match(release, /authoritative product boundary/i);
   assert.match(release, /exactly one local participant and one remote participant/i);
   assert.match(release, /host must sign in before creating a room/i);
-  assert.match(release, /invited participant.*does not need an account/is);
+  assert.match(release, /invited participant.*does \*\*not\*\* need an account/is);
   assert.match(release, /Version 1\.0 is non-monetized/i);
   assert.match(release, /max_room_participants:[\s`]*2/,
                "installed clients fail closed on any non-two-person backend contract");
