@@ -58,4 +58,15 @@ describe("room creation requires a live account", () => {
     expect(response.headers.get("Access-Control-Allow-Origin")).toBe(NATIVE_ORIGIN);
     expect(response.headers.get("Vary")).toContain("Origin");
   });
+
+  it("does not expose the retired HTML-form room creator", async () => {
+    const response = await exports.default.fetch(`${ORIGIN}/rooms`, {
+      method: "POST",
+      headers: {Origin: ORIGIN, Cookie: await hostSessionCookie()},
+    });
+    expect(response.status).toBe(404);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
+    expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+  });
 });
