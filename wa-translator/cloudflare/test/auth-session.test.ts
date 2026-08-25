@@ -8,7 +8,6 @@ type Snapshot = {
   signed_in: boolean;
   providers: string[];
   user?: { name: string; email: string; provider: string };
-  credits?: { balance: number };
   totals?: Record<string, number>;
   recent?: unknown[];
 };
@@ -109,7 +108,7 @@ describe("OAuth sign-in, session, and the room-creation gate", () => {
     expect(account.user).toEqual({
       name: "Test Host", email: "host@example.test", provider: "google"
     });
-    expect(account.credits).toEqual({ balance: 0 });
+    expect(account).not.toHaveProperty("credits");
     expect(account.totals).toEqual({ call_minutes: 0, chat_messages: 0, tts_phrases: 0 });
     expect(account.recent).toEqual([]);
     // The provider's own subject never appears in anything we hand back.
