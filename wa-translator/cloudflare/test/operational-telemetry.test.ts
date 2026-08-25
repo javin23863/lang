@@ -5,6 +5,7 @@ import {
   operationalExceptionRecord,
   operationalFailureRecord,
   operationalSuccessRecord,
+  operationForRequest,
   routeClassForRequest,
   withFailureRequestId,
 } from "../src/operational-telemetry";
@@ -19,11 +20,13 @@ describe("privacy-safe operational telemetry", () => {
     });
 
     expect(routeClassForRequest(request)).toBe("room");
+    expect(operationForRequest(request)).toBe("room.page");
     const record = operationalFailureRecord(request, 503, "request-test-1", 12.6);
     expect(record).toEqual({
       event: "edge.request.failure",
       request_id: "request-test-1",
       route_class: "room",
+      operation: "room.page",
       method: "POST",
       status: 503,
       result: "server_error",
@@ -46,6 +49,7 @@ describe("privacy-safe operational telemetry", () => {
       event: "edge.request.success",
       request_id: "request-success-1",
       route_class: "room",
+      operation: "room.page",
       method: "GET",
       status: 200,
       result: "success",
@@ -55,6 +59,34 @@ describe("privacy-safe operational telemetry", () => {
     expect(serialized).not.toContain(roomBearer);
     expect(serialized).not.toContain("room.example");
     expect(serialized).not.toContain("secret");
+  });
+
+  it("classifies every shipping versioned control route into a stable operation", () => {
+    const cases = [
+      ["/api/v1/mobile/bootstrap", "bootstrap", "mobile.bootstrap"],
+      ["/api/v1/auth/handoff", "auth", "auth.handoff"],
+      ["/api/v1/auth/logout", "auth", "auth.logout"],
+      ["/api/v1/me", "account", "account.snapshot"],
+      ["/api/v1/account/delete", "account", "account.delete"],
+      ["/api/v1/rooms", "room", "room.create"],
+      ["/api/v1/room", "room", "room.preflight"],
+      ["/api/v1/room-control", "room", "room.status"],
+      ["/api/v1/room-control/close", "room", "room.close"],
+      ["/api/v1/capabilities", "room", "room.capabilities"],
+      ["/api/v1/turn", "room", "room.turn"],
+      ["/api/v1/reports", "report", "report.submit"],
+      ["/api/v1/tts", "translation", "translation.tts"],
+    ] as const;
+
+    for (const [path, routeClass, operation] of cases) {
+      const request = new Request(`https://room.example${path}?secret=never-a-dimension`);
+      expect(routeClassForRequest(request)).toBe(routeClass);
+      expect(operationForRequest(request)).toBe(operation);
+      const record = operationalSuccessRecord(request, 200, "request-route-matrix", 1);
+      expect(record.route_class).toBe(routeClass);
+      expect(record.operation).toBe(operation);
+      expect(JSON.stringify(record)).not.toContain("never-a-dimension");
+    }
   });
 
   it("logs control-plane success records but leaves assets and health to native Workers telemetry", () => {
@@ -103,6 +135,7 @@ describe("privacy-safe operational telemetry", () => {
       event: "edge.request.exception",
       request_id: "request-test-2",
       route_class: "bootstrap",
+      operation: "mobile.bootstrap",
       method: "GET",
       error_type: "TypeError",
       duration_ms: 7,
@@ -128,6 +161,7 @@ describe("privacy-safe operational telemetry", () => {
     const request = new Request("https://room.example/api/v1/reports", {method: "PROPFIND"});
     expect(operationalFailureRecord(request, 429, "request-test-3", -1)).toMatchObject({
       route_class: "report",
+      operation: "report.submit",
       method: "OTHER",
       result: "rate_limited",
       result_code: "http.rate_limited",
