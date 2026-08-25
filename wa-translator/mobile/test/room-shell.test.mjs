@@ -37,6 +37,14 @@ test("native room shell is decomposed, accessible, bridge-enabled and two-person
   assert.match(js, /el\.hidden = !text/);
   assert.doesNotMatch(js, /el\.style\.display/,
                       "strict style-src remains compatible with room status updates");
+  assert.match(js, /serverCount <= 2/,
+               "participant rendering accepts only the two-person server range");
+  assert.doesNotMatch(js, /serverCount <= 4/,
+                      "the installed client cannot reintroduce the retired four-person range");
+  assert.match(js, /m\.participant_limit !== 2/,
+               "the installed client fails closed on a mismatched server room contract");
+  assert.match(js, /m\.peers\.length > 1/,
+               "a welcome payload cannot smuggle multiple remote peers into a two-person room");
 
   assert.match(html, /id="participantCount" aria-live="polite">0 \/ 2 people</,
                "the first rendered room shell matches the two-person contract");
