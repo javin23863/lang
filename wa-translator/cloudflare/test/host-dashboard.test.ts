@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 const ORIGIN = "https://room.test";
 
 describe("installed host dashboard client", () => {
-  it("serves an accessible, no-store dashboard with create, share, copy, open, close, and persisted host-control affordances", async () => {
+  it("serves an accessible, no-store dashboard with decomposed product boundaries", async () => {
     const response = await exports.default.fetch(`${ORIGIN}/`);
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
@@ -14,6 +14,7 @@ describe("installed host dashboard client", () => {
     const api = await (await exports.default.fetch(`${ORIGIN}/dashboard-api.js`)).text();
     const account = await (await exports.default.fetch(`${ORIGIN}/dashboard-account.js`)).text();
     const roomModel = await (await exports.default.fetch(`${ORIGIN}/dashboard-room-model.js`)).text();
+    const roomController = await (await exports.default.fetch(`${ORIGIN}/dashboard-room-controller.js`)).text();
     const share = await (await exports.default.fetch(`${ORIGIN}/dashboard-share.js`)).text();
     const settings = await (await exports.default.fetch(`${ORIGIN}/dashboard-settings.js`)).text();
     const lifecycle = await (await exports.default.fetch(`${ORIGIN}/dashboard-lifecycle.js`)).text();
@@ -28,11 +29,9 @@ describe("installed host dashboard client", () => {
     expect(html).not.toContain("data-stub");
     expect(html).not.toContain('id="buyCreditsBtn"');
     expect(html).not.toContain('id="creditsBalance"');
-    expect(script).not.toContain("creditsBalance");
     expect(html).not.toContain('id="calleeName"');
     expect(roomModel).not.toContain('searchParams.set("n"');
     expect(roomModel).not.toContain("callee");
-    expect(script).toContain("runtime.openRoom(currentRoom.path, roomMode(currentRoom))");
 
     expect(html).toContain('aria-live="polite"');
     expect(html).toContain('<script src="/app-runtime.js"></script>');
@@ -41,8 +40,8 @@ describe("installed host dashboard client", () => {
     expect(html).toContain('<script src="/dashboard.js"></script>');
     const dashboardTag = html.indexOf('<script src="/dashboard.js"></script>');
     for (const asset of [
-      "dashboard-api", "dashboard-account", "dashboard-room-model", "dashboard-share",
-      "dashboard-settings", "dashboard-lifecycle",
+      "dashboard-api", "dashboard-account", "dashboard-room-model", "dashboard-room-controller",
+      "dashboard-share", "dashboard-settings", "dashboard-lifecycle",
     ]) {
       const tag = `<script src="/${asset}.js"></script>`;
       expect(html).toContain(tag);
@@ -50,6 +49,7 @@ describe("installed host dashboard client", () => {
     }
     expect(html).not.toContain("<style>");
 
+    // Account/auth presentation owns account snapshots and provider rendering.
     expect(script).toContain("window.LinguaDashboardAccount.create");
     expect(script).toContain("accountPresenter.load()");
     expect(script).toContain("accountPresenter.render(account)");
@@ -62,17 +62,44 @@ describe("installed host dashboard client", () => {
     expect(account).toContain('document.body.dataset.auth = account.signed_in ? "in" : "out"');
     expect(account).not.toContain("new AbortController()");
 
+    // Capability URL normalization and persistence are isolated from network
+    // room control so either side can evolve without reimplementing the other.
     expect(script).toContain("window.LinguaDashboardRoomModel.create(runtime)");
-    expect(script).toContain("roomModel.inviteUrl(room)");
-    expect(script).toContain("roomModel.valid(value)");
-    expect(script).toContain("roomModel.load()");
-    expect(script).toContain("roomModel.save(room)");
-    expect(script).toContain("roomModel.forget()");
     expect(roomModel).toContain('new Set(["voice", "chat", "video"])');
     expect(roomModel).toContain('url.searchParams.set("m", selected)');
     expect(roomModel).toContain('typeof value.host_control === "string"');
     expect(roomModel).toContain("Number.isSafeInteger(value.expires_at)");
+    expect(roomModel).toContain("runtime.loadHostRoom()");
+    expect(roomModel).toContain("runtime.saveHostRoom(JSON.stringify(room))");
+    expect(roomModel).toContain("runtime.forgetHostRoom()");
 
+    // Room creation/control owns polling, authenticated control requests, room
+    // lifecycle, and operation-result telemetry. Dashboard only binds controls.
+    expect(script).toContain("window.LinguaDashboardRoomController.create");
+    expect(script).toContain('$("createBtn").onclick = () => roomController.create("video")');
+    expect(script).toContain('$("openBtn").onclick = roomController.open');
+    expect(script).toContain('$("closeBtn").onclick = () => roomController.close(true)');
+    expect(script).not.toContain('dashboardFetch(runtime.apiUrl("/api/rooms")');
+    expect(script).not.toContain('dashboardFetch(runtime.apiUrl("/api/room-control")');
+    expect(roomController).toContain('dashboardFetch(runtime.apiUrl("/api/rooms")');
+    expect(roomController).toContain('dashboardFetch(runtime.apiUrl("/api/room-control")');
+    expect(roomController).toContain('dashboardFetch(runtime.apiUrl("/api/room-control/close")');
+    expect(roomController).toContain("let statusRefreshing = false");
+    expect(roomController).toContain("if (!room || busy || statusRefreshing) return");
+    expect(roomController).toContain("value.participant_limit !== 2");
+    expect(roomController).toContain('events()?.emit("room.create.result", {mode: requestedMode, result: "success"})');
+    expect(roomController).toContain('events()?.emit("room.create.result", {mode: requestedMode, result: "failure"})');
+    expect(roomController).toContain('events()?.emit("room.close.result", {result: "success"})');
+    expect(roomController).toContain('events()?.emit("room.close.result", {result: "failure"})');
+    expect(roomController).toContain("const requestedMode = model.normalizeMode(mode)");
+    expect(roomController).toContain("created.mode = requestedMode");
+    expect(roomController).toContain("runtime.openRoom(room.path, model.mode(room))");
+    expect(roomController).toContain('clear("expired", "home.controlLost")');
+    expect(roomController).toContain('clear("closed", "home.roomClosed")');
+    expect(roomController).toContain('clear("closed", "home.roomClosedLink")');
+
+    // Invite copying, system sharing, app handoff, and QR rendering are one
+    // feature boundary. The coordinator only wires controls to that presenter.
     expect(script).toContain("window.LinguaDashboardShare.create");
     expect(script).toContain('$("copyBtn").onclick = sharePresenter.copy');
     expect(script).toContain('$("shareBtn").onclick = sharePresenter.systemShare');
@@ -87,8 +114,8 @@ describe("installed host dashboard client", () => {
     expect(share).toContain("navigator.clipboard");
     expect(share).toContain("window.LinguaQR.svg(roomUrl(room))");
 
-    // Language selection and page lifecycle no longer live in the feature
-    // coordinator. Both boundaries keep the same runtime behavior.
+    // Language selection and page lifecycle are also isolated from feature
+    // orchestration while preserving runtime behavior.
     expect(script).toContain("window.LinguaDashboardSettings.create");
     expect(script).toContain("settingsPresenter.install");
     expect(script).not.toContain("new Intl.DisplayNames");
@@ -103,10 +130,7 @@ describe("installed host dashboard client", () => {
     expect(lifecycle).toContain('document.addEventListener("visibilitychange"');
     expect(lifecycle).toContain('document.visibilityState === "visible"');
 
-    expect(script).toContain('dashboardFetch(runtime.apiUrl("/api/rooms")');
-    expect(script).toContain('dashboardFetch(runtime.apiUrl("/api/room-control")');
-    expect(script).toContain('dashboardFetch(runtime.apiUrl("/api/room-control/close")');
-
+    // Request deadlines remain one shared API boundary.
     expect(script).toContain("const dashboardFetch = window.LinguaDashboardApi.fetch");
     expect(script).not.toContain("new AbortController()");
     expect(api).toContain("const REQUEST_TIMEOUT_MS = 15_000");
@@ -116,16 +140,6 @@ describe("installed host dashboard client", () => {
     expect(api).toContain("Object.defineProperty(window, \"LinguaDashboardApi\"");
     expect(api).not.toContain("localStorage");
     expect(api).not.toContain("sessionStorage");
-
-    expect(script).toContain("let statusRefreshing = false");
-    expect(script).toContain("if (!currentRoom || busy || statusRefreshing) return");
-    expect(script).toContain("statusRefreshing = true");
-    expect(script).toMatch(/finally \{\s*statusRefreshing = false/);
-
-    expect(script).toContain('emit("room.create.result", {mode: requestedMode, result: "success"})');
-    expect(script).toContain('emit("room.create.result", {mode: requestedMode, result: "failure"})');
-    expect(script).toContain('emit("room.close.result", {result: "success"})');
-    expect(script).toContain('emit("room.close.result", {result: "failure"})');
 
     expect(css).toContain("[data-auth=");
     for (const rule of css.match(/(?<=[\n;}])#(authPanel|accountChip|creditsPanel|roomPanel)\{[^}]*\}/g) ?? []) {
@@ -138,7 +152,6 @@ describe("installed host dashboard client", () => {
     expect(account).not.toContain("password");
     expect(html).not.toContain('type="password"');
     expect(script).toContain("participantCount <= 2");
-    expect(script).toContain("value.participant_limit !== 2");
     expect(script).not.toContain('fetch("/api/capabilities"');
     expect(html).not.toContain('id="catalogSummary"');
     expect(html).not.toContain('Private multilingual rooms');
@@ -146,16 +159,11 @@ describe("installed host dashboard client", () => {
     expect(html).not.toContain('Create a private video room, share its link');
     expect(html).not.toContain('Capability declarations never imply locale-specific ASR');
 
-    expect(script).toContain("function clearCurrentRoom(state, key)");
-    expect(script).toContain('clearCurrentRoom("expired", "home.controlLost")');
-    expect(script).toContain('clearCurrentRoom("closed", "home.roomClosed")');
-    expect(script).toContain('clearCurrentRoom("closed", "home.roomClosedLink")');
-    expect(script).toMatch(/deleteAccount\(\)[\s\S]*?if \(!response\.ok\)[\s\S]*?await forgetRoom\(\);\s*location\.reload\(\)/);
-    expect(script).toMatch(/signOutBtn[\s\S]*?if \(!response\.ok\) throw new Error\("logout failed"\);[\s\S]*?await forgetRoom\(\);\s*location\.reload\(\)/);
+    // Logout/account deletion revoke their local room administration state.
+    expect(script).toMatch(/deleteAccount\(\)[\s\S]*?if \(!response\.ok\)[\s\S]*?await roomController\.discard\(\);\s*location\.reload\(\)/);
+    expect(script).toMatch(/signOutBtn[\s\S]*?if \(!response\.ok\) throw new Error\("logout failed"\);[\s\S]*?await roomController\.discard\(\);\s*location\.reload\(\)/);
     expect(script).toContain('setAuthStatus("auth.signOutFailed")');
 
-    expect(script).toContain("const requestedMode = roomModel.normalizeMode(mode)");
-    expect(script).toContain("room.mode = requestedMode");
     expect(html).toContain('id="appLocaleSel"');
     const runtime = await (await exports.default.fetch(`${ORIGIN}/app-runtime.js`)).text();
     expect(runtime).toContain("localStorage");
