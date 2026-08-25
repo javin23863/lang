@@ -26,6 +26,8 @@ const sharePresenter = window.LinguaDashboardShare.create({
   setNotice,
   hideQr,
 });
+const settingsPresenter = window.LinguaDashboardSettings.create({runtime, byId: $});
+const lifecycle = window.LinguaDashboardLifecycle.create({runtime, onVisible: refreshStatus});
 
 function roomMode(room) {
   return roomModel.mode(room);
@@ -253,49 +255,17 @@ $("waBtn").onclick = sharePresenter.whatsapp;
 $("lineBtn").onclick = sharePresenter.line;
 $("qrBtn").onclick = sharePresenter.toggleQr;
 sharePresenter.applyPlatformVisibility();
-document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") refreshStatus();
-});
-if (!runtime.isNative && "serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js").catch(() => {});
-}
-// The dashboard is the first screen a host sees, before any room and before
-// the room's own language gate — so the choice has to be offered here too.
-// Native language names come from the platform rather than a catalog fetch.
-function fillAppLocaleSelect() {
-  const select = $("appLocaleSel");
-  const named = runtime.i18n.languages.map(code => {
-    let label = code;
-    try {
-      label = new Intl.DisplayNames([code], {type: "language"}).of(code) || code;
-    } catch (_) { /* an unknown tag keeps its code */ }
-    return {code, label: label.charAt(0).toLocaleUpperCase(code) + label.slice(1)};
-  }).sort((left, right) => left.label.localeCompare(right.label));
-  select.replaceChildren();
-  for (const {code, label} of named) {
-    const option = document.createElement("option");
-    option.value = code;
-    option.textContent = label;
-    option.selected = code === runtime.i18n.language;
-    select.appendChild(option);
-  }
-}
-fillAppLocaleSelect();
-$("appLocaleSel").onchange = () => runtime.i18n.use($("appLocaleSel").value);
-
-// A language switch re-renders whatever is already on screen: the live status
-// line and the notice both carry a key, not finished text.
-runtime.i18n.onChange(() => {
-  $("appLocaleSel").value = runtime.i18n.language;
+settingsPresenter.install(() => {
   $("roomState").textContent = t(stateKey, stateParams);
   $("roomNotice").textContent = noticeKey ? t(noticeKey, noticeParams) : "";
   setAuthStatus(authStatusKey);
   accountPresenter.render(account);
 });
+lifecycle.install();
 
 async function boot() {
   try {
-    await runtime.ready();
+    await lifecycle.ready();
   } catch (_) {
     setState("error", "home.needsUpdate");
     setBusy(true);
