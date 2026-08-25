@@ -92,6 +92,12 @@ describe("installed host dashboard client", () => {
     expect(script).toContain('clearCurrentRoom("expired", "home.controlLost")');
     expect(script).toContain('clearCurrentRoom("closed", "home.roomClosed")');
     expect(script).toContain('clearCurrentRoom("closed", "home.roomClosedLink")');
+    // A host-control bearer is device/account-local administration state. It
+    // persists through restarts, but a successful logout or account deletion
+    // must remove it before another account can inherit control on that device.
+    expect(script).toMatch(/deleteAccount\(\)[\s\S]*?if \(!response\.ok\)[\s\S]*?await forgetRoom\(\);\s*location\.reload\(\)/);
+    expect(script).toMatch(/signOutBtn[\s\S]*?if \(!response\.ok\) throw new Error\("logout failed"\);[\s\S]*?await forgetRoom\(\);\s*location\.reload\(\)/);
+    expect(script).toContain('setAuthStatus("auth.signOutFailed")');
     // The mode rides the link, never the signed token: the worker is indifferent
     // to it and a video link stays exactly what it was.
     expect(script).toContain('url.searchParams.set("m", mode)');
@@ -101,6 +107,7 @@ describe("installed host dashboard client", () => {
     const runtime = await (await exports.default.fetch(`${ORIGIN}/app-runtime.js`)).text();
     expect(runtime).toContain("localStorage");
     expect(runtime).toContain("navigator.share");
+    expect(runtime).toContain('"auth.signOutFailed": "Could not sign out. Try again."');
     expect(script).toContain("navigator.clipboard");
     expect(runtime).toContain('window.open("about:blank", "_blank")');
     expect(runtime).toContain("opened.opener = null");
