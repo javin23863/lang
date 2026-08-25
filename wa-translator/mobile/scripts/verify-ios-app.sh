@@ -87,7 +87,7 @@ grep -q '<script src="/room.js"></script>' "$room" || {
   echo "Packaged iOS room is missing external room.js." >&2
   exit 1
 }
-if grep -q '<style>' "$room" || grep -q '<script>[[:space:]]*const \$ =' "$room"; then
+if grep -q '<style>' "$room" || grep -q '<script>' "$room"; then
   echo "Packaged iOS room still contains inline room implementation." >&2
   exit 1
 fi
