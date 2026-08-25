@@ -29,8 +29,8 @@ async function replaceExactlyOnce(file, pattern, replacement, description) {
 
 await replaceExactlyOnce(
   path.join(MOBILE, "android", "app", "src", "main", "AndroidManifest.xml"),
-  /android:scheme="https"\s*\/>\s*<data\s+android:host="[^"]+"/,
-  `android:scheme="https" />\n                <data android:host="${host}"`,
+  /(<data\s+android:scheme="https"\s+android:host=")[^"]+("\s+android:pathPrefix="\/room\/"\s*\/\>)/,
+  `$1${host}$2`,
   "Android verified-link host",
 );
 
