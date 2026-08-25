@@ -60,6 +60,24 @@ jobs:
         run: |
           printf '%s' "$LINGUA_ANDROID_KEYSTORE_B64" | base64 --decode > release.keystore
           printf '%s' "$GOOGLE_PLAY_JSON_KEY_B64" | base64 --decode > "$GOOGLE_PLAY_JSON_KEY"
+      - name: Verify live Android launch contract
+        shell: bash
+        env:
+          LINGUA_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.LINGUA_ANDROID_KEYSTORE_PASSWORD }}
+          LINGUA_ANDROID_KEY_ALIAS: ${{ secrets.LINGUA_ANDROID_KEY_ALIAS }}
+        run: |
+          fingerprint="$(
+            keytool -exportcert \
+              -alias "$LINGUA_ANDROID_KEY_ALIAS" \
+              -keystore "$LINGUA_ANDROID_KEYSTORE" \
+              -storepass:env LINGUA_ANDROID_KEYSTORE_PASSWORD |
+            openssl dgst -sha256 -binary |
+            od -An -vtx1 |
+            tr -d ' \n' |
+            sed 's/../&:/g; s/:$//' |
+            tr '[:lower:]' '[:upper:]'
+          )"
+          MOBILE_ANDROID_CERT_SHA256="$fingerprint" node scripts/store-preflight.mjs android
       - name: Upload Android internal beta
         env:
           LINGUA_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.LINGUA_ANDROID_KEYSTORE_PASSWORD }}
@@ -98,6 +116,10 @@ jobs:
         run: echo "LINGUA_IOS_BUILD_NUMBER=$(date -u +%s)" >> "$GITHUB_ENV"
       - run: npm ci && npm run check && npm run sync
       - run: bundle exec fastlane --version
+      - name: Verify live iOS launch contract
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: node scripts/store-preflight.mjs ios
       - name: Materialize signing credentials
         shell: bash
         env:
