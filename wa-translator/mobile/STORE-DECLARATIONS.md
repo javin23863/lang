@@ -53,17 +53,16 @@ behavior change. Current platform-policy rationale is pinned separately in
   collected for Account management/App functionality; usage counts are collected
   as App interactions for App functionality; the fixed-choice abuse-report
   category is collected as Other user-generated content for safety functionality.
-  `Voice or sound recordings` sent for speech recognition/translation and `Other
-  in-app messages` sent through room chat are included in the form response and
-  marked as processed ephemerally for App functionality. The SHA-256-derived
-  source-IP quota identity is conservatively `Device or other IDs`: collected,
-  not shared, required for abuse prevention, not ephemeral, and used for `Fraud
-  prevention, security, and compliance`. Natural WebRTC camera/video and natural
-  call audio remain end-to-end encrypted between participants, including through
-  TURN relay, and are not readable by the developer or relay intermediary.
-  Treat Cloudflare/Modal transfers as service-provider processing only if the
-  actual production contractual role still satisfies Google's service-provider
-  exception when the console form is completed.
+  `Voice or sound recordings` sent for speech recognition/translation and `Other in-app messages`
+  sent through room chat are included in the form response and marked as processed
+  ephemerally for App functionality. The SHA-256-derived source-IP quota identity
+  is conservatively `Device or other IDs`: collected, not shared, required for
+  abuse prevention, not ephemeral, and used for `Fraud prevention, security, and compliance`.
+  Natural WebRTC camera/video and natural call audio remain end-to-end encrypted
+  between participants, including through TURN relay, and are not readable by the
+  developer or relay intermediary. Treat Cloudflare/Modal transfers as service-provider
+  processing only if the actual production contractual role still satisfies Google's
+  service-provider exception when the console form is completed.
 - Authentication/security metadata: when a user logs out, the service stores
   only a one-way SHA-256 digest of that specific session token plus its original
   expiry so replay of a copied credential is rejected. The raw token is not
