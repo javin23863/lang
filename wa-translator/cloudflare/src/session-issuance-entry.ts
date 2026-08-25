@@ -19,6 +19,8 @@ const NATIVE_REPORT_PATH = "/api/v1/reports";
 const NATIVE_ORIGINS = new Set(["https://localhost", "capacitor://localhost"]);
 const ROOM_TOKEN_PATTERN = /^([A-Za-z0-9_-]{24})\.(\d{10})\.[A-Za-z0-9_-]{43}$/;
 const MOBILE_PROTOCOL = 2;
+const ROOM_RUNTIME_MARKER = '<script src="/app-runtime.js"></script>';
+const ROOM_PRODUCT_EVENTS = `${ROOM_RUNTIME_MARKER}\n<script src="/product-events.js"></script>\n<script src="/room-product-events.js"></script>`;
 
 async function v2MobileBootstrap(
   request: Request, env: Env, ctx: ExecutionContext
@@ -137,23 +139,43 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext): 
   return report || accountGuardEntry.fetch(request, env, ctx);
 }
 
+async function withRoomProductEvents(request: Request, response: Response): Promise<Response> {
+  if (response.webSocket || request.method !== "GET" || response.status >= 400) return response;
+  const path = new URL(request.url).pathname;
+  if (path !== "/room.html" && !path.startsWith("/room/")) return response;
+  const contentType = response.headers.get("Content-Type") || "";
+  if (!contentType.toLowerCase().includes("text/html")) return response;
+
+  const html = await response.clone().text();
+  if (html.includes('/room-product-events.js')) return response;
+  if (!html.includes(ROOM_RUNTIME_MARKER)) return response;
+  const headers = new Headers(response.headers);
+  headers.delete("Content-Length");
+  return new Response(html.replace(ROOM_RUNTIME_MARKER, ROOM_PRODUCT_EVENTS), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 export default {
   async fetch(request, env, ctx): Promise<Response> {
     const requestId = crypto.randomUUID();
     const started = performance.now();
     try {
-      const response = await routeRequest(request, env, ctx);
+      let response = await routeRequest(request, env, ctx);
+      response = await withRoomProductEvents(request, response);
       const duration = performance.now() - started;
       if (response.status < 400) {
         logOperationalSuccess(operationalSuccessRecord(request, response.status, requestId, duration));
-        // Successful responses—including WebSocket upgrades—are never cloned or
-        // decorated. Telemetry observes them without changing transport behavior.
+        // Successful responses—including WebSocket upgrades—are observed without
+        // transport decoration. The room HTML adapter above is the one explicit
+        // exception: it adds only same-origin, content-free product-event scripts.
         return response;
       }
       const record = operationalFailureRecord(request, response.status, requestId, duration);
       logOperationalFailure(record);
-      // Only ordinary HTTP failures are cloned. Successful responses—including
-      // WebSocket upgrades—remain byte-for-byte on the lower-layer response.
+      // Only ordinary HTTP failures are cloned for the diagnostic request id.
       return withFailureRequestId(response, requestId);
     } catch (error) {
       logOperationalException(operationalExceptionRecord(

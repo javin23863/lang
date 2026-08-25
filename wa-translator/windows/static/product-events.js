@@ -11,6 +11,10 @@
     "invite.share.intent": new Set(["method", "mode"]),
     "room.open.intent": new Set(["mode"]),
     "room.close.result": new Set(["result"]),
+    "room.join.intent": new Set(["mode"]),
+    "room.pair.ready": new Set(["mode"]),
+    "translation.first.result": new Set(["mode"]),
+    "network.state": new Set(["state"]),
     "locale.change": new Set(["locale"]),
   });
 
@@ -60,6 +64,7 @@
   });
 
   const path = location.pathname;
-  const surface = path === "/" || path.endsWith("/index.html") ? "dashboard" : "other";
+  const surface = path === "/" || path.endsWith("/index.html") ? "dashboard"
+    : path === "/room.html" || path.startsWith("/room/") ? "room" : "other";
   emit("app.open", {surface, native: Boolean(window.LinguaRuntime?.isNative)});
 })();
