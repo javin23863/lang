@@ -28,23 +28,28 @@ test("the same wrapper remains the two-person admission authority without counti
   assert.match(source, /socket\.close\(1013, "room full"\)/);
 });
 
-test("room usage survives transient account delivery failures without duplicating concurrent flushes", async () => {
+test("room usage survives transient account delivery failures without extending room retention", async () => {
   const source = await read("../../cloudflare/src/two-party-room.ts");
 
   assert.match(source, /const USAGE_PENDING_KEY = "usagePendingV1"/);
+  assert.match(source, /const USAGE_RETRY_MS = 5 \* 60 \* 1000/);
   assert.match(source, /private usageFlush: Promise<void> \| null = null/);
   assert.match(source, /if \(this\.usageFlush\) return this\.usageFlush/,
                "last-peer and host-close flushes share one live delivery operation");
   assert.match(source, /this\.ctx\.storage\.transaction\(async transaction => \{[\s\S]*?transaction\.put\(USAGE_PENDING_KEY, \{\.\.\.active\}\)[\s\S]*?transaction\.put\("usage", \{\.\.\.EMPTY_USAGE\}\)/,
                "active counters are durably moved to a pending snapshot before any network delivery");
-  assert.match(source, /catch \{\s*return; \/\/ pending storage remains intact for the next close\/expiry flush/,
-               "a thrown account delivery leaves the pending snapshot untouched");
-  assert.match(source, /if \(status < 200 \|\| status >= 300\) return/,
-               "ordinary non-success responses also retain the pending snapshot");
+  assert.match(source, /catch \{\s*return true; \/\/ pending storage remains intact for the retry alarm/,
+               "a thrown account delivery leaves the pending snapshot and requests a retry");
+  assert.match(source, /if \(status < 200 \|\| status >= 300\) return true/,
+               "ordinary non-success responses also retain the pending snapshot for retry");
   assert.match(source, /if \(status === 404\) \{[\s\S]*?transaction\.delete\(USAGE_PENDING_KEY\)[\s\S]*?transaction\.put\("usage", \{\.\.\.EMPTY_USAGE\}\)/,
                "authoritative account deletion drops both backlog and later counters instead of resurrecting usage");
+  assert.match(source, /const target = retry \? Math\.min\(expiryMs, now \+ USAGE_RETRY_MS\) : expiryMs/,
+               "retry alarms are clamped to the existing room expiry rather than extending retention");
+  assert.match(source, /if \(Number\.isSafeInteger\(expiresAt\) && Date\.now\(\) < expiresAt! \* 1000\) \{[\s\S]*?await this\.flushUsage\(\);[\s\S]*?return;/,
+               "a pre-expiry alarm retries usage without invoking the destructive room-expiry alarm");
   assert.match(source, /for \(let pass = 0; pass < 2; pass\+\+\)/,
-               "one flush can drain an older backlog and the active counters accumulated behind it without an unbounded loop");
-  assert.match(source, /if \(!snapshot\.wasPending\) return/,
-               "a fresh snapshot is delivered once and does not chase a newly active room");
+               "one idle-room flush can drain a backlog and the counters accumulated behind it without an unbounded loop");
+  assert.match(source, /if \(!snapshot\.wasPending \|\| this\.joinedCount\(\) > 0\) return false/,
+               "a retry during a rejoined room delivers only the old backlog and leaves active-call counters in place");
 });
