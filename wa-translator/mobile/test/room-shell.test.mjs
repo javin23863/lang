@@ -62,6 +62,19 @@ test("native room shell is decomposed, accessible, bridge-enabled and two-person
   assert.match(js, /leaving = true;\n  connectGeneration\+\+;/,
                "suspension invalidates preflight and TURN work already in flight");
 
+  // Voice mode is a foreground two-person room, not an incoming-call service.
+  // Joining either before or after the other participant must converge on the
+  // same Connected state without a synthetic ringing/answer dependency.
+  assert.match(js, /const title = 'gate\.title';\n  const join = 'gate\.join';/);
+  assert.match(js, /\$\('declineBtn'\)\.hidden = true/);
+  assert.match(js, /setCallState\('stage\.waiting'\)/);
+  assert.doesNotMatch(js, /setCallState\('call\.ringing'\)/);
+  assert.doesNotMatch(js, /if \(isHost\) startRingback\(\)/);
+  assert.match(js, /if \(roomMode === 'voice' && m\.peers\.length\) \{[\s\S]*?connectCall\(\)/,
+               "welcome connects voice mode when the other person was already present");
+  assert.match(js, /if \(roomMode === 'voice' && !callTimerStart\) \{[\s\S]*?to: m\.id[\s\S]*?connectCall\(\)/,
+               "peer_join connects voice mode when the other person arrives later");
+
   assert.match(html, /id="participantCount" aria-live="polite">0 \/ 2 people</,
                "the first rendered room shell matches the two-person contract");
   assert.doesNotMatch(html, /id="participantCount" aria-live="polite">0 \/ 4 people</,
