@@ -12,6 +12,10 @@ function response(status, body = null) {
   });
 }
 
+function plain(value) {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
+
 function loadController() {
   const context = {
     window: {},
@@ -67,10 +71,10 @@ test("room creation failure is terminal for the operation but leaves the control
   assert.equal(await h.controller.create("video"), false);
   assert.equal(h.controller.current(), null);
   assert.deepEqual(h.stats(), {forgotten: 0, saved: 0});
-  assert.deepEqual(h.clears.at(-1), {
+  assert.deepEqual(plain(h.clears.at(-1)), {
     state: "error", key: "home.createFailed", options: {preserveRoom: true},
   });
-  assert.deepEqual(h.events.at(-1), {
+  assert.deepEqual(plain(h.events.at(-1)), {
     name: "room.create.result", properties: {mode: "video", result: "failure"},
   });
   assert.deepEqual(h.busy.slice(-2), [true, false]);
@@ -84,7 +88,7 @@ test("temporary room-status failure preserves the host control for recovery", as
   await h.controller.refresh();
   assert.equal(h.controller.current(), retained);
   assert.equal(h.stats().forgotten, 0);
-  assert.deepEqual(h.clears.at(-1), {
+  assert.deepEqual(plain(h.clears.at(-1)), {
     state: "error", key: "home.statusUnavailable", options: {preserveRoom: true},
   });
 });
@@ -96,7 +100,7 @@ test("revoked host control is cleared instead of retrying a capability that no l
   await h.controller.refresh();
   assert.equal(h.controller.current(), null);
   assert.equal(h.stats().forgotten, 1);
-  assert.deepEqual(h.clears.at(-1), {state: "expired", key: "home.controlLost", options: undefined});
+  assert.deepEqual(plain(h.clears.at(-1)), {state: "expired", key: "home.controlLost"});
 });
 
 test("failed close keeps the room available and emits a coarse failure result", async () => {
@@ -107,10 +111,10 @@ test("failed close keeps the room available and emits a coarse failure result", 
   assert.equal(await h.controller.close(false), false);
   assert.equal(h.controller.current(), retained);
   assert.equal(h.stats().forgotten, 0);
-  assert.deepEqual(h.events.at(-1), {
+  assert.deepEqual(plain(h.events.at(-1)), {
     name: "room.close.result", properties: {result: "failure"},
   });
-  assert.deepEqual(h.clears.at(-1), {
+  assert.deepEqual(plain(h.clears.at(-1)), {
     state: "error", key: "home.closeFailed", options: {preserveRoom: true},
   });
 });

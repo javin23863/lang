@@ -26,9 +26,12 @@ test("service worker caches only the credential-free dashboard shell", async () 
   assert.match(source, /name\.startsWith\(CACHE_PREFIX\) && name !== CACHE_NAME/);
 
   // Capability-bearing and user-content shapes must never be promoted into the
-  // fixed allowlist, even by a future refactor.
+  // fixed allowlist, even by a future refactor. "design-tokens.css" is a safe
+  // shell asset, so reject capability-specific shapes rather than the generic
+  // substring "token".
   const shellBlock = source.match(/const SHELL_PATHS = new Set\(\[([\s\S]*?)\]\);/)?.[1] || "";
-  for (const forbidden of ["/room/", "/api/", "/auth/", "/ws/", "token", "caption", "transcript"]) {
-    assert.ok(!shellBlock.toLowerCase().includes(forbidden), `shell allowlist excludes ${forbidden}`);
-  }
+  for (const forbidden of [
+    "/room.html", "/room/", "/api/", "/auth/", "/ws/", "bearer", "host_control",
+    "room_id", "caption", "transcript", "?", "#",
+  ]) assert.ok(!shellBlock.toLowerCase().includes(forbidden), `shell allowlist excludes ${forbidden}`);
 });
