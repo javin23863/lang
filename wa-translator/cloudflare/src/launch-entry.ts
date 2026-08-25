@@ -20,13 +20,15 @@ const AUDIO_ENDED_SEAM = "if (micOn) setMicEnabled(false);";
 const AUDIO_ENDED_RECOVERY = "if (micOn) {\n            setMicEnabled(false);\n            setStatus('status.micUnavailable', null, true);\n          }";
 const VIDEO_ENDED_SEAM = "camOn = false;\n          $('camBtn').className = 'icon off';";
 const VIDEO_ENDED_RECOVERY = "camOn = false;\n          $('camBtn').className = 'icon off';\n          setStatus('status.cameraUnavailable', null, true);";
+const SOCKET_TEARDOWN_SEAM = "if (!preserveServerClose && ws && ws.readyState === WebSocket.OPEN) {\n    ws.close(1000, notifyServer ? 'left room' : 'page suspended');\n  }";
+const SOCKET_TEARDOWN_SAFE = "if (!preserveServerClose && ws && ws.readyState < WebSocket.CLOSING) {\n    try { ws.close(1000, notifyServer ? 'left room' : 'page suspended'); } catch (_) {}\n  }";
 
 type RoomAssets = { shell: string; css: string; js: string };
 
 function normalizeRoomScript(source: string): string {
   for (const seam of [
     STATUS_STYLE_SEAM, STATUS_TIMEOUT_SEAM, PARTICIPANT_COUNT_SEAM, WELCOME_SEAM,
-    AUDIO_ENDED_SEAM, VIDEO_ENDED_SEAM,
+    AUDIO_ENDED_SEAM, VIDEO_ENDED_SEAM, SOCKET_TEARDOWN_SEAM,
   ]) {
     if (!source.includes(seam)) throw new Error(`room normalization seam is missing: ${seam.slice(0, 32)}`);
   }
@@ -37,7 +39,8 @@ function normalizeRoomScript(source: string): string {
     .replace(PARTICIPANT_COUNT_SEAM, PARTICIPANT_COUNT_TWO_PERSON)
     .replace(WELCOME_SEAM, WELCOME_TWO_PERSON)
     .replace(AUDIO_ENDED_SEAM, AUDIO_ENDED_RECOVERY)
-    .replace(VIDEO_ENDED_SEAM, VIDEO_ENDED_RECOVERY);
+    .replace(VIDEO_ENDED_SEAM, VIDEO_ENDED_RECOVERY)
+    .replace(SOCKET_TEARDOWN_SEAM, SOCKET_TEARDOWN_SAFE);
 }
 
 function enhanceRoomShell(source: string): string {
