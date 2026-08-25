@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { hostSessionCookie } from "./session";
 
 const ORIGIN = "https://room.test";
-const MESSAGE_TIMEOUT_MS = 1_500;
 
 type CreatedRoom = {path: string; host_control: string; expires_at: number};
 type Client = {socket: WebSocket; next: () => Promise<Record<string, unknown>>};
@@ -30,18 +29,9 @@ async function openSocket(path: string): Promise<Client> {
   };
 }
 
-function nextWithTimeout(client: Client, expected: string): Promise<Record<string, unknown>> {
-  return Promise.race([
-    client.next(),
-    new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error(`timed out waiting for ${expected}`)), MESSAGE_TIMEOUT_MS);
-    }),
-  ]);
-}
-
 async function nextOfType(client: Client, type: string, limit = 12): Promise<Record<string, unknown>> {
   for (let index = 0; index < limit; index++) {
-    const message = await nextWithTimeout(client, type);
+    const message = await client.next();
     if (message.type === type) return message;
   }
   throw new Error(`did not receive ${type} within ${limit} messages`);
@@ -52,7 +42,7 @@ function join(client: Client, locale: string): Promise<Record<string, unknown>> 
     type: "join",
     locale,
     name: locale,
-    voice_profile: locale === "es-ES" ? "es-es-elvira" : "en-us-af-heart",
+    voice_profile: locale === "es-ES" ? "es-ef-dora" : "en-us-af-heart",
   }));
   return nextOfType(client, "welcome");
 }

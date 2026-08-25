@@ -44,8 +44,11 @@ describe("room activation event seam", () => {
       'emit("room.join.intent", {mode})',
       'emit("room.pair.ready", {mode})',
       'emit("translation.first.result", {mode})',
-      'emit("network.state", {state: "offline"})',
-      'emit("network.state", {state: "online"})',
+      'emit("network.state", {state})',
+      'document.body.dataset.network = state',
+      'state === "offline" ? "status.reconnecting" : "status.rejoining"',
+      'window.addEventListener("offline", () => presentNetworkState("offline"))',
+      'window.addEventListener("online", () => presentNetworkState("online"))',
       'new MutationObserver(check).observe(count',
       'captions.querySelectorAll(".msg .sub")',
     ]) expect(adapter).toContain(marker);
