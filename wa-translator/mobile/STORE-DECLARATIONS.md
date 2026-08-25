@@ -7,9 +7,16 @@ behavior change.
 - Account required to START a call: the person who creates a room signs in with
   Google, Apple, or Facebook. No account is required to JOIN one — an invited
   participant opens the link and talks, with no sign-in and no account.
+- iOS login release gate: do not submit an iOS build while Google or Facebook is
+  offered but the production Apple provider is not fully configured and visible
+  as an equivalent sign-in option. The Worker intentionally hides providers
+  whose credentials are incomplete, so this must be checked against the live
+  production account screen before TestFlight/App Store submission.
 - No password is ever created, collected, or stored. Sign-in is delegated to the
   provider; the app receives an account identifier, an email address, and a
   display name, and stores no provider credential.
+- Room capacity: exactly two participants total — one local participant and one
+  remote participant. Version 1.0 has no group-room or multiparty-call mode.
 - Data collected: email address, an account user ID, and usage counts (call
   minutes, chat messages, translated-voice phrases). All three are linked to the
   account and used for App Functionality only — never for tracking, advertising,
@@ -32,11 +39,11 @@ behavior change.
 - Retention: the account record (email, user ID, display name, balance, totals)
   lasts until the account is deleted; usage rows keep 90 days or 200 rows,
   whichever is smaller. The product does not intentionally persist media or
-  captions. A
-  private abuse report contains only category, platform, time, and an opaque
-  public room reference. An internal non-invite room routing ID is retained only
-  so a moderator can close the active reported room. Both expire after 30 days.
-  Infrastructure security and error logs may be retained by the providers.
+  captions. A private abuse report contains only category, platform, time, and
+  an opaque public room reference. An internal non-invite room routing ID is
+  retained only so a moderator can close the active reported room. Both expire
+  after 30 days. Infrastructure security and error logs may be retained by the
+  providers.
 - Room control: the host can close a room; otherwise its bearer link expires
   after 24 hours.
 - Safety/reporting: a live participant can submit one private category-only
