@@ -332,6 +332,20 @@ function prepareLocalContentChrome(event: MouseEvent): void {
   } catch { /* malformed links navigate/fail normally */ }
 }
 
+function returnHomeAfterNativeLeave(event: MouseEvent): void {
+  if (!isNative || !/(?:^|\/)room\.html$/.test(location.pathname)
+      || !(event.target instanceof Element) || !event.target.closest("#leaveBtn")) return;
+  // Run after the room's own click handler so it can send `leave`, close media,
+  // stop translation/audio, and tear down peers before replacing the page.
+  // `callEnd` delegates through leaveBtn.click(), while report/block invokes
+  // leaveRoom() directly and therefore keeps its report result visible.
+  setTimeout(() => {
+    if (/(?:^|\/)room\.html$/.test(location.pathname)) {
+      window.location.replace("index.html");
+    }
+  }, 0);
+}
+
 window.LinguaNative = {
   isNative,
   publicOrigin: PUBLIC_ORIGIN,
@@ -356,6 +370,7 @@ window.LinguaNative = {
 if (isNative) {
   void applyNativeChrome();
   document.addEventListener("click", prepareLocalContentChrome, {capture: true});
+  document.addEventListener("click", returnHomeAfterNativeLeave);
   App.addListener("appUrlOpen", event => { void routeAppLink(event.url); });
   App.addListener("appStateChange", state => {
     if (state.isActive) void applyNativeChrome();
