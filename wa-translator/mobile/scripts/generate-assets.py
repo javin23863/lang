@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "assets"
 ANDROID = ROOT / "android" / "app" / "src" / "main" / "res"
 IOS = ROOT / "ios" / "App" / "App" / "Assets.xcassets"
+PLAY_STORE = ROOT / "fastlane" / "metadata" / "android" / "en-US" / "images"
 GREEN = "#075E54"
 BLUE = "#53BDEB"
 CREAM = "#F4FBF9"
@@ -62,6 +63,27 @@ def splash(width: int, height: int) -> Image.Image:
     return image
 
 
+def feature_graphic() -> Image.Image:
+    """Google Play's mandatory 1024x500, no-alpha listing graphic."""
+    image = Image.new("RGB", (1024, 500), GREEN)
+    draw = ImageDraw.Draw(image)
+
+    # Two overlapping conversation cards echo the product icon without adding
+    # marketing copy that would need separate localized artwork.
+    draw.rounded_rectangle((90, 82, 610, 372), radius=54, fill=CREAM)
+    draw.polygon([(180, 364), (150, 430), (270, 364)], fill=CREAM)
+    draw.rounded_rectangle((470, 154, 934, 386), radius=48, fill=BLUE)
+    draw.polygon([(778, 378), (850, 438), (824, 378)], fill=BLUE)
+
+    mark = symbol(190, background=True)
+    image.paste(mark, (145, 132), mark)
+
+    line_width = 18
+    for y, width in ((214, 250), (264, 320), (314, 220)):
+        draw.rounded_rectangle((615, y, 615 + width, y + line_width), radius=9, fill="white")
+    return image
+
+
 def main() -> None:
     ASSETS.mkdir(exist_ok=True)
     symbol(1024, background=True).convert("RGB").save(ASSETS / "icon-1024.png", optimize=True)
@@ -83,6 +105,12 @@ def main() -> None:
     symbol(1024, background=True).convert("RGB").save(ios_icon, optimize=True)
     for name in ("splash-2732x2732.png", "splash-2732x2732-1.png", "splash-2732x2732-2.png"):
         splash(2732, 2732).save(IOS / "Splash.imageset" / name, optimize=True)
+
+    PLAY_STORE.mkdir(parents=True, exist_ok=True)
+    # Play requires a 512x512 32-bit PNG listing icon and a 1024x500 JPEG or
+    # 24-bit PNG feature graphic. Keep both deterministic and source-derived.
+    symbol(512, background=True).save(PLAY_STORE / "icon.png", optimize=True)
+    feature_graphic().save(PLAY_STORE / "featureGraphic.png", optimize=True)
 
 
 if __name__ == "__main__":
