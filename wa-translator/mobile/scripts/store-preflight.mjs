@@ -1,10 +1,9 @@
 import { pathToFileURL } from "node:url";
-import { PUBLIC_ORIGIN } from "../src/runtime-core.mjs";
+import { MOBILE_PROTOCOL, PUBLIC_ORIGIN } from "../src/runtime-core.mjs";
 
-export { PUBLIC_ORIGIN };
+export { MOBILE_PROTOCOL, PUBLIC_ORIGIN };
 export const APP_ID = "com.javin23863.linguarelay";
 export const PARTICIPANT_LIMIT = 2;
-export const MOBILE_PROTOCOL = 1;
 export const PLAY_VERSION_CODE_MAX = 2_100_000_000;
 
 function requireCondition(condition, message) {
