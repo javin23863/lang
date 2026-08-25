@@ -120,6 +120,18 @@ describe("OAuth sign-in, session, and the room-creation gate", () => {
     expect(JSON.stringify(account)).not.toContain("google-subject-1");
   });
 
+  it("sanitizes provider display metadata without changing provider/account identity", async () => {
+    const { session } = await signIn("google", "fixture-google-unsafe-name");
+    const account = await snapshot(session);
+
+    expect(account.signed_in).toBe(true);
+    expect(account.user).toEqual({
+      name: "HostAdmin", email: "host@example.test", provider: "google"
+    });
+    expect(account.user?.name).not.toMatch(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/);
+    expect(JSON.stringify(account)).not.toContain("google-subject-1");
+  });
+
   it("refuses a callback whose state does not match its cookie", async () => {
     const started = await start("google");
     const state = new URL(started.headers.get("Location")!).searchParams.get("state")!;
