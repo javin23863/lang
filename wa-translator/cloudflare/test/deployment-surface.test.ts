@@ -109,10 +109,18 @@ describe("permanent deployment surface", () => {
     expect(dashboardCss.status).toBe(200);
     expectBaselineHeaders(dashboardCss);
     expect(await dashboardCss.text()).toContain(".page{");
+
     const dashboardJs = await exports.default.fetch(`${ORIGIN}/dashboard.js`);
     expect(dashboardJs.status).toBe(200);
     expectBaselineHeaders(dashboardJs);
-    expect(await dashboardJs.text()).toContain("async function createRoom(mode)");
+    expect(await dashboardJs.text()).toContain("window.LinguaDashboardRoomController.create");
+
+    const dashboardRoomController = await exports.default.fetch(`${ORIGIN}/dashboard-room-controller.js`);
+    expect(dashboardRoomController.status).toBe(200);
+    expectBaselineHeaders(dashboardRoomController);
+    const dashboardRoomControllerSource = await dashboardRoomController.text();
+    expect(dashboardRoomControllerSource).toContain("async function createRoom(mode)");
+    expect(dashboardRoomControllerSource).toContain("create: createRoom");
 
     // Both pages load the QR encoder as a plain asset, so a 404 here is a share
     // row whose code silently never draws.

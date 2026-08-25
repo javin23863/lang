@@ -124,10 +124,14 @@ test("the room and dashboard features read every rendered string through a key",
 test("room controller status and confirmation keys exist in the base dictionary", async () => {
   const expected = baseKeys();
   const source = await readFile(new URL("dashboard-room-controller.js", staticRoot), "utf8");
-  const calls = [...source.matchAll(/\b(?:onNotice|onClear|confirmAction|clear)\(\s*["']([\w.]+)["']/g)]
+  const directKeys = [...source.matchAll(/\b(?:onNotice|confirmAction)\(\s*["']([\w.]+)["']/g)]
     .map(match => match[1]);
-  assert.ok(calls.length > 0, "room controller carries localized state keys");
-  for (const key of calls) assert.ok(expected.has(key), `room controller key exists: ${key}`);
+  const stateKeys = [...source.matchAll(
+    /\b(?:onClear|clear)\(\s*["'][\w.]+["']\s*,\s*["']([\w.]+)["']/g
+  )].map(match => match[1]);
+  const keys = [...directKeys, ...stateKeys];
+  assert.ok(keys.length > 0, "room controller carries localized state keys");
+  for (const key of keys) assert.ok(expected.has(key), `room controller key exists: ${key}`);
 });
 
 test("no screen text is written as an English literal", async () => {
