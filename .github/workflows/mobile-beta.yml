@@ -44,6 +44,11 @@ jobs:
           ruby-version: "3.3"
           bundler-cache: true
           working-directory: wa-translator/mobile
+      - name: Verify Play target API
+        shell: bash
+        run: |
+          grep -Eq 'compileSdkVersion\s*=\s*36' android/variables.gradle
+          grep -Eq 'targetSdkVersion\s*=\s*36' android/variables.gradle
       - name: Set unique Android version
         shell: bash
         run: |
@@ -111,6 +116,21 @@ jobs:
           ruby-version: "3.3"
           bundler-cache: true
           working-directory: wa-translator/mobile
+      - name: Verify App Store SDK floor
+        shell: bash
+        run: |
+          xcode_version="$(xcodebuild -version | awk '/^Xcode / {print $2}')"
+          sdk_version="$(xcrun --sdk iphoneos --show-sdk-version)"
+          xcode_major="${xcode_version%%.*}"
+          sdk_major="${sdk_version%%.*}"
+          if [[ ! "$xcode_major" =~ ^[0-9]+$ || "$xcode_major" -lt 26 ]]; then
+            echo "App Store build requires Xcode 26 or newer; found ${xcode_version}" >&2
+            exit 1
+          fi
+          if [[ ! "$sdk_major" =~ ^[0-9]+$ || "$sdk_major" -lt 26 ]]; then
+            echo "App Store build requires iOS SDK 26 or newer; found ${sdk_version}" >&2
+            exit 1
+          fi
       - name: Set unique iOS build number
         shell: bash
         run: echo "LINGUA_IOS_BUILD_NUMBER=$(date -u +%s)" >> "$GITHUB_ENV"
