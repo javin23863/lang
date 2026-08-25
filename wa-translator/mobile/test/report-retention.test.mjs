@@ -16,8 +16,10 @@ test("abuse report routing metadata expires with the room", async () => {
                "routing fields are removed as soon as their room expiry is reached");
   assert.match(wrapper, /nextRoomExpiryMs < existing/,
                "room expiry may move the inbox alarm earlier but never later than retention");
-  assert.match(wrapper, /await super\.alarm\(\)/,
-               "the base 30-day category-report deletion lifecycle remains authoritative");
+  assert.match(wrapper, /const response = await super\.fetch\(request\);[\s\S]*?await this\.pruneExpiredRouting\(\);[\s\S]*?return response/,
+               "every base list/insert operation is followed by routing-alarm reconciliation");
+  assert.match(wrapper, /await super\.alarm\(\);[\s\S]*?await this\.pruneExpiredRouting\(\)/,
+               "the 30-day cleanup runs before the next shorter routing alarm is restored");
   assert.match(wrapper, /return new Response\("Not found", \{status: 404\}\)/,
                "moderator resolution stops once routing data is unavailable");
 
