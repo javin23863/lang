@@ -41,8 +41,8 @@ body[data-auth="out"] #authPanel{display:grid}
 .signIn{display:flex;align-items:center;justify-content:center;min-height:52px;border:1px solid transparent;border-radius:13px;background:var(--accent);color:#FFF;font:650 16px var(--font);text-decoration:none;padding:11px 14px;text-align:center;transition:transform .12s ease,filter .15s ease}
 .signIn:active{transform:scale(.985)}
 .signIn~.signIn{background:var(--fill);border-color:var(--separator);color:var(--accent)}
-.signIn[data-provider="apple"]{background:#000;color:#FFF;border-color:#000}
-@media (prefers-color-scheme:dark){.signIn[data-provider="apple"]{background:#FFF;color:#000;border-color:#FFF}}
+#signInApple{background:#000;color:#FFF;border-color:#000}
+@media (prefers-color-scheme:dark){#signInApple{background:#FFF;color:#000;border-color:#FFF}}
 #authStatus{margin:0;color:var(--destructive);font-size:13px;min-height:0}
 /* An id carrying `display` outranks the `.authed` rule above and the card can
    never be hidden, so the account surfaces state their layout only for the
