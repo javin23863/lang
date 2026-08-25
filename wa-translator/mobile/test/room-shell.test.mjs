@@ -62,6 +62,19 @@ test("native room shell is decomposed, accessible, bridge-enabled and two-person
   assert.match(js, /leaving = true;\n  connectGeneration\+\+;/,
                "suspension invalidates preflight and TURN work already in flight");
 
+  // Auxiliary room HTTP is bounded separately from translated-audio synthesis.
+  // A stalled capability/TURN/preflight/report request must not strand room UI,
+  // while TTS keeps its longer controller because audio generation has retries.
+  assert.match(js, /const ROOM_CONTROL_FETCH_TIMEOUT_MS = 12000/);
+  assert.match(js, /async function roomFetch\(input, init = \{\}\)/);
+  assert.match(js, /setTimeout\(\(\) => controller\.abort\(\), ROOM_CONTROL_FETCH_TIMEOUT_MS\)/);
+  for (const path of ["/api/capabilities", "/api/turn", "/api/room", "/api/reports"]) {
+    assert.match(js, new RegExp(`roomFetch\\(runtime\\.apiUrl\\('${path.replaceAll("/", "\\/")}'\\)`),
+                 `${path} uses the bounded control-plane fetch helper`);
+  }
+  assert.match(js, /fetch\(runtime\.apiUrl\('\/tts'\)/,
+               "TTS retains its audio-specific abort/retry envelope");
+
   // Voice mode is a foreground two-person room, not an incoming-call service.
   // Joining either before or after the other participant must converge on the
   // same Connected state without a synthetic ringing/answer dependency.
