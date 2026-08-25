@@ -22,6 +22,11 @@ matrix after development is declared complete.
 - [x] Voice, video, text chat, live translated captions, and optional translated
   voice use the same private room bearer lifecycle.
 - [x] Starting a room requires an OAuth account; joining an invite does not.
+- [x] A room-creation session is accepted only while its `UserDirectory` account
+  still exists. Account deletion immediately blocks old browser/native sessions
+  from creating another room.
+- [x] The retired `POST /rooms` HTML-form creator is disabled; `/api/rooms` and
+  its native versioned adapter are the only host room-creation contract.
 - [x] Account deletion is available in the app and removes account-held data.
 - [x] Version 1.0 is non-monetized: no purchase surface, stored credit balance,
   StoreKit product, or Google Play Billing product is part of the active app.
@@ -50,6 +55,8 @@ matrix after development is declared complete.
   sent only to the versioned account/room-creation endpoints that require it.
 - [x] A stale/expired native session self-clears on a protected-endpoint `401` or
   on the signed-out `/api/v1/me` snapshot instead of persisting across launches.
+- [x] A stale browser session cookie is expired when `/api/me` confirms that its
+  account is gone, rather than remaining plausible until the 30-day token expiry.
 - [x] Every native session endpoint, including room creation, requires the exact
   installed-app origin in addition to the bearer.
 - [x] Versioned native CORS preflights reject unknown/wrong methods and advertise
@@ -119,8 +126,12 @@ matrix after development is declared complete.
 - [x] The internal room routing ID/expiry used only for moderator closure are
   removed when the room expires, no later than 24 hours after room creation;
   malformed routing metadata is stripped immediately.
+- [x] The operator moderation CLI reads its admin token only from the environment,
+  exposes only the minimized queue, and can close a still-live room by report ID.
 - [x] Store declarations are maintained in `STORE-DECLARATIONS.md` and match the
   non-monetized account schema and report-retention lifetimes.
+- [ ] Assign a monitored moderation operator/on-call owner and verify the live
+  private queue before public store submission.
 - [ ] Complete the final App Store age-rating/export-compliance questionnaires
   from actual product behavior and signing configuration.
 - [ ] Complete the final Google Play Data safety/content-rating/app-access forms
@@ -167,6 +178,9 @@ matrix after development is declared complete.
   transient delivery failures retry every five minutes only within the room's
   existing lifetime, successful retries restore the normal expiry alarm, and a
   deleted account (`404`) drops both backlog and later counters without revival.
+- [x] Each pending usage snapshot has a stable per-kind delivery ID. Account
+  totals, recent row and dedupe marker commit atomically, so a lost response and
+  retry cannot double-count; dedupe markers expire after 48 hours.
 - [x] A usage retry that fires after the room has been rejoined drains only the
   older backlog and leaves the active call's counters in the active buffer.
 - [ ] Before raising production GPU ceilings, retain measured latency, memory,
@@ -214,9 +228,9 @@ matrix after development is declared complete.
 
 `cloudflare/src/worker.ts` still contains the legacy four-person implementation
 that predates the version 1.0 decision. Production/dev Wrangler entry points use
-`src/launch-entry.ts` → `src/mobile-entry.ts`, which exports the strict two-person
-`Room` wrapper, and installed clients independently fail closed on a different
-contract. Do not deploy/export the base `worker.ts` `Room` directly. A later
-refactor should move the two-person invariant into the base Room and delete the
-wrapper, but that refactor should be performed only with the complete room suite
-available to run.
+`src/account-guard-entry.ts` → `src/launch-entry.ts` → `src/mobile-entry.ts`,
+which exports the strict two-person `Room` wrapper, and installed clients
+independently fail closed on a different participant contract. Do not deploy or
+export the base `worker.ts` `Room` directly. A later refactor should move the
+two-person invariant into the base Room and delete the wrapper layers, but that
+refactor should be performed only with the complete room suite available to run.
