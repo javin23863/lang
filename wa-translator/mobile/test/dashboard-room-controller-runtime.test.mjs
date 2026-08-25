@@ -166,3 +166,26 @@ test("a delayed status response for a replaced room cannot clear the new host co
   assert.deepEqual(h.stats(), {forgotten: 1, saved: 2});
   assert.equal(h.clears.some(entry => entry.key === "home.controlLost"), false);
 });
+
+test("account teardown invalidates a room creation that is already in flight", async () => {
+  const pendingCreate = deferred();
+  const h = harness(async input => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/rooms") return pendingCreate.promise;
+    throw new Error(`unexpected request ${path}`);
+  });
+
+  const createResult = h.controller.create("video");
+  await h.controller.discard();
+  assert.equal(h.controller.current(), null);
+  assert.deepEqual(h.stats(), {forgotten: 1, saved: 0});
+
+  pendingCreate.resolve(response(200, {...CREATED_ROOM}));
+  assert.equal(await createResult, false);
+  assert.equal(h.controller.current(), null,
+    "a response from the signed-out account cannot resurrect host control");
+  assert.deepEqual(h.stats(), {forgotten: 1, saved: 0},
+    "the invalidated response is rejected before persistence");
+  assert.equal(h.events.some(entry => entry.name === "room.create.result"), false,
+    "teardown is not misreported as a create failure or success");
+});
