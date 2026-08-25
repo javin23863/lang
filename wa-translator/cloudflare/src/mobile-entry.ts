@@ -218,6 +218,10 @@ function nativeAuthReturn(provider: string, fragment: string): string {
   return `${MOBILE_AUTH_SCHEME}://auth/${provider}#${fragment}`;
 }
 
+function nativeCallbackMethodAllowed(provider: string, method: string): boolean {
+  return provider === "apple" ? method === "POST" : method === "GET";
+}
+
 function extractSession(headers: Headers): string | null {
   const values = typeof headers.getSetCookie === "function"
     ? headers.getSetCookie() : [headers.get("Set-Cookie") || ""];
@@ -443,6 +447,9 @@ export default {
 
     const callback = url.pathname.match(/^\/auth\/([a-z]{1,20})\/callback$/);
     if (callback && PROVIDERS.has(callback[1])) {
+      if (!nativeCallbackMethodAllowed(callback[1], request.method)) {
+        return routeWorker(request, env, ctx);
+      }
       return nativeAuthCallback(request, env, ctx, callback[1]);
     }
 
