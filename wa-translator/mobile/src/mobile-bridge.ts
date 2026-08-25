@@ -1,6 +1,7 @@
 import { App } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
 import { Share } from "@capacitor/share";
+import { StatusBar, Style } from "@capacitor/status-bar";
 import { SecureStorage } from "@aparajita/capacitor-secure-storage";
 
 import {
@@ -187,6 +188,17 @@ async function routeAppLink(value: string | undefined): Promise<void> {
   }
 }
 
+async function applyNativeChrome(): Promise<void> {
+  if (!isNative) return;
+  // Capacitor's Style.Dark value is light foreground content for a dark
+  // background; Style.Light is dark foreground content for a light background.
+  // The room is deliberately always dark, while the dashboard is light-first.
+  const roomPage = /(?:^|\/)room\.html$/.test(location.pathname);
+  try {
+    await StatusBar.setStyle({style: roomPage ? Style.Dark : Style.Light});
+  } catch { /* a status-bar cosmetic failure must never block the call */ }
+}
+
 window.LinguaNative = {
   isNative,
   publicOrigin: PUBLIC_ORIGIN,
@@ -209,8 +221,10 @@ window.LinguaNative = {
 };
 
 if (isNative) {
+  void applyNativeChrome();
   App.addListener("appUrlOpen", event => { void routeAppLink(event.url); });
   App.addListener("appStateChange", state => {
+    if (state.isActive) void applyNativeChrome();
     window.dispatchEvent(new CustomEvent("lingua-app-state", { detail: state }));
   });
   App.getLaunchUrl().then(value => { void routeAppLink(value?.url); }).catch(() => {});
