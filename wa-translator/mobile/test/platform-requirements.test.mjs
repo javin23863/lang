@@ -10,6 +10,31 @@ test("Android release config targets the current Play API floor", async () => {
   assert.match(gradle, /targetSdkVersion\s*=\s*36\b/);
 });
 
+test("Android packaging is ready for 16 KB page-size enforcement", async () => {
+  const gradle = await read("../android/build.gradle");
+  const version = gradle.match(/com\.android\.tools\.build:gradle:(\d+)\.(\d+)\.(\d+)/);
+  assert.ok(version, "Android Gradle Plugin version is explicit");
+  const [, majorRaw, minorRaw, patchRaw] = version;
+  const [major, minor, patch] = [majorRaw, minorRaw, patchRaw].map(Number);
+  assert.ok(major > 8 || (major === 8 && (minor > 5 || (minor === 5 && patch >= 1))),
+            "AGP must remain at least 8.5.1 for 16 KB zip alignment");
+
+  const verifier = await read("../scripts/verify-android-16k.sh");
+  assert.match(verifier, /PAGE_ALIGNMENT_16K/);
+  assert.match(verifier, /readelf -lW/);
+  assert.match(verifier, /alignment < 0x4000/);
+
+  const workflow = await read("../../../.github/workflows/mobile-build.yml");
+  assert.match(workflow, /name: Verify Android 16 KB compatibility/);
+  assert.match(workflow, /bash scripts\/verify-android-16k\.sh/);
+
+  const fastfile = await read("../fastlane/Fastfile");
+  const verifyAt = fastfile.indexOf("verify-android-16k.sh");
+  const uploadAt = fastfile.indexOf("upload_to_play_store");
+  assert.ok(verifyAt >= 0 && uploadAt > verifyAt,
+            "signed Play uploads verify 16 KB compatibility before upload");
+});
+
 test("iOS release metadata requires the 64-bit device architecture", async () => {
   const plist = await read("../ios/App/App/Info.plist");
   const capabilities = plist.match(
