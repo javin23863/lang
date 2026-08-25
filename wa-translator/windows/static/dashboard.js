@@ -1,5 +1,6 @@
 const $ = id => document.getElementById(id);
 const runtime = window.LinguaRuntime;
+const dashboardFetch = window.LinguaDashboardApi.fetch;
 const t = runtime.t;
 let currentRoom = null;
 let account = null;
@@ -14,23 +15,12 @@ let authStatusKey = "";
 // The three surfaces a room can open as. Video is the mode that needs no
 // parameter, so every link made before modes existed still opens a video call.
 const MODES = new Set(["voice", "chat", "video"]);
-const DASHBOARD_REQUEST_TIMEOUT_MS = 15_000;
 // Google is provisioned day one and leads the list; the others appear only
 // when the worker reports credentials for them.
 const PROVIDERS = [["google", "signInGoogle"], ["apple", "signInApple"],
                    ["facebook", "signInFacebook"]];
 const USAGE_KIND = {call: "credits.callMinutes", chat: "credits.chatMessages",
                     tts: "credits.ttsPhrases"};
-
-async function dashboardFetch(input, init = {}) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), DASHBOARD_REQUEST_TIMEOUT_MS);
-  try {
-    return await fetch(input, {...init, signal: controller.signal});
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
 function roomMode(room) {
   return MODES.has(room?.mode) ? room.mode : "video";
@@ -254,6 +244,7 @@ async function refreshStatus() {
 
 async function createRoom(mode) {
   if (busy) return;
+  const requestedMode = MODES.has(mode) ? mode : "video";
   if (currentRoom) {
     if (!window.confirm(t("home.confirmReplace"))) return;
     await closeRoom(false);
@@ -269,14 +260,16 @@ async function createRoom(mode) {
     const room = await response.json();
     if (!validRoom(room)) throw new Error("storage unavailable");
     // Mode is local presentation metadata; the server signs only the room.
-    room.mode = MODES.has(mode) ? mode : "video";
+    room.mode = requestedMode;
     if (!await saveRoom(room)) throw new Error("storage unavailable");
     currentRoom = room;
     hideQr();
     renderRoom("ready", 0);
     startPolling();
+    window.LinguaProductEvents?.emit("room.create.result", {mode: requestedMode, result: "success"});
     setNotice("home.linkReady");
   } catch (_) {
+    window.LinguaProductEvents?.emit("room.create.result", {mode: requestedMode, result: "failure"});
     setState("error", "home.createFailed");
   } finally {
     setBusy(false);
@@ -346,9 +339,11 @@ async function closeRoom(withConfirmation = true) {
       headers: {Authorization: "Bearer " + currentRoom.host_control, Accept: "application/json"}
     });
     if (!response.ok) throw new Error("close failed");
+    window.LinguaProductEvents?.emit("room.close.result", {result: "success"});
     await clearCurrentRoom("closed", "home.roomClosedLink");
     setNotice("");
   } catch (_) {
+    window.LinguaProductEvents?.emit("room.close.result", {result: "failure"});
     setState("error", "home.closeFailed");
   } finally {
     setBusy(false);
