@@ -34,6 +34,7 @@ const NATIVE_AUTH_START_PATTERN = /^\/auth\/native\/(google|apple|facebook)\/sta
 const MODAL_UPSTREAM_TIMEOUT_MS = 30_000;
 const TURN_UPSTREAM_TIMEOUT_MS = 10_000;
 const OAUTH_UPSTREAM_TIMEOUT_MS = 20_000;
+const ABUSE_IP_PURPOSE = "abuse-ip.v1";
 const NATIVE_PREFLIGHT_METHODS = new Map([
   ["/api/v1/mobile/bootstrap", "GET"],
   ["/api/v1/auth/handoff", "POST"],
@@ -53,6 +54,37 @@ const NATIVE_PREFLIGHT_METHODS = new Map([
 type RoomAssets = { shell: string; css: string; js: string };
 
 type FetchSource = { fetch(request: Request): Promise<Response> };
+
+function base64url(bytes: ArrayBuffer): string {
+  let binary = "";
+  for (const byte of new Uint8Array(bytes)) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+async function pseudonymizeEdgeIp(request: Request, env: Env): Promise<Request> {
+  const ip = request.headers.get("CF-Connecting-IP");
+  const secret = env.ROOM_SIGNING_KEY || "";
+  if (!ip || new TextEncoder().encode(secret).byteLength < 32) return request;
+  try {
+    const key = await crypto.subtle.importKey(
+      "raw", new TextEncoder().encode(secret),
+      {name: "HMAC", hash: "SHA-256"}, false, ["sign"]
+    );
+    const digest = await crypto.subtle.sign(
+      "HMAC", key, new TextEncoder().encode(`${ABUSE_IP_PURPOSE}\0${ip}`)
+    );
+    const headers = new Headers(request.headers);
+    // The base Worker hashes this value again when naming the short-lived quota
+    // Durable Object. Replacing the raw edge IP here keeps bucket stability but
+    // makes that stored identity impossible to dictionary-test without the key.
+    headers.set("CF-Connecting-IP", `p1.${base64url(digest)}`);
+    return new Request(request, {headers});
+  } catch {
+    // Quotas already hash the edge-owned value in the base Worker. A local
+    // crypto failure must not disable abuse controls or fail the user request.
+    return request;
+  }
+}
 
 function boundedFetcher(source: FetchSource | undefined, timeoutMs: number): Fetcher {
   return {
@@ -257,8 +289,9 @@ export default {
     if (challengeStart) return hardenResponse(request, challengeStart);
 
     const boundedEnv = boundedUpstreamEnv(env);
-    const preflight = await nativePreflight(request, boundedEnv, ctx);
+    const routedRequest = await pseudonymizeEdgeIp(request, boundedEnv);
+    const preflight = await nativePreflight(routedRequest, boundedEnv, ctx);
     if (preflight) return hardenResponse(request, preflight);
-    return hardenResponse(request, await mobileEntry.fetch(request, boundedEnv, ctx));
+    return hardenResponse(request, await mobileEntry.fetch(routedRequest, boundedEnv, ctx));
   },
 } satisfies ExportedHandler<Env>;
