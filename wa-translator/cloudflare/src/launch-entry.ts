@@ -12,7 +12,7 @@ const TWO_PERSON_FALLBACK = 'id="participantCount" aria-live="polite">0 / 2 peop
 const ROOM_STYLE_PATTERN = /<style>\n([\s\S]*?)\n<\/style>/;
 const ROOM_SCRIPT_PATTERN = /<script>\n(const \$ = \(id\) => document\.getElementById\(id\);[\s\S]*?)\n<\/script>\n<\/body>/;
 const STATUS_STYLE_SEAM = "el.style.display = text ? 'block' : 'none';";
-const STATUS_TIMEOUT_SEAM = "setTimeout(() => { if (el.textContent === text) el.style.display = 'none'; }, 3000);";
+const STATUS_TIMEOUT_SEAM = "setTimeout(() => { if (el.textContent === text) el.hidden = true; }, 3000);";
 const PARTICIPANT_COUNT_SEAM = "const derived = myId === null ? 0 : peers.size + 1;\n  participantCount = Number.isInteger(serverCount) && serverCount >= 0 && serverCount <= 4\n    ? serverCount : derived;";
 const PARTICIPANT_COUNT_TWO_PERSON = "const derived = myId === null ? 0 : Math.min(2, peers.size + 1);\n  participantCount = Number.isInteger(serverCount) && serverCount >= 0 && serverCount <= 2\n    ? serverCount : derived;";
 const WELCOME_SEAM = "if (m.type === 'welcome') {";
@@ -29,12 +29,14 @@ const CONNECT_SEAM = "async function connect() {\n  if (leaving) return;\n  if (
 const CONNECT_GUARDED = "async function connect() {\n  if (leaving) return;\n  if (ws && ws.readyState < WebSocket.CLOSING) return;\n  const generation = ++connectGeneration;\n  if (!await preflightRoom()) return;\n  if (leaving || generation !== connectGeneration) return;\n  await refreshIceServers();\n  if (leaving || generation !== connectGeneration) return;\n  ws = new WebSocket(runtime.websocketUrl(roomId));";
 const DISCONNECT_SEAM = "function disconnectRoom(notifyServer, preserveServerClose = false) {\n  if (leaving) return;\n  leaving = true;";
 const DISCONNECT_GUARDED = "function disconnectRoom(notifyServer, preserveServerClose = false) {\n  if (leaving) return;\n  leaving = true;\n  connectGeneration++;";
+const NATIVE_AUTH_CHALLENGE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const NATIVE_AUTH_START_PATTERN = /^\/auth\/native\/(google|apple|facebook)\/start$/;
 
 type RoomAssets = { shell: string; css: string; js: string };
 
 function normalizeRoomScript(source: string): string {
   for (const seam of [
-    STATUS_STYLE_SEAM, STATUS_TIMEOUT_SEAM, PARTICIPANT_COUNT_SEAM, WELCOME_SEAM,
+    STATUS_STYLE_SEAM, PARTICIPANT_COUNT_SEAM, WELCOME_SEAM,
     AUDIO_ENDED_SEAM, VIDEO_ENDED_SEAM, SOCKET_TEARDOWN_SEAM, CONNECTION_STATE_SEAM,
     CONNECT_SEAM, DISCONNECT_SEAM,
   ]) {
@@ -42,8 +44,6 @@ function normalizeRoomScript(source: string): string {
   }
   return source
     .replace(STATUS_STYLE_SEAM, "el.hidden = !text;")
-    .replace(STATUS_TIMEOUT_SEAM,
-      "setTimeout(() => { if (el.textContent === text) el.hidden = true; }, 3000);")
     .replace(PARTICIPANT_COUNT_SEAM, PARTICIPANT_COUNT_TWO_PERSON)
     .replace(WELCOME_SEAM, WELCOME_TWO_PERSON)
     .replace(AUDIO_ENDED_SEAM, AUDIO_ENDED_RECOVERY)
@@ -104,6 +104,30 @@ function roomAsset(pathname: string): Response | null {
   }});
 }
 
+function nativeAuthChallengeStart(request: Request, env: Env): Response | null {
+  const url = new URL(request.url);
+  const match = url.pathname.match(NATIVE_AUTH_START_PATTERN);
+  if (!match) return null;
+
+  // Older installed builds sent the raw binding as `binding=`. Preserve that
+  // path through mobileEntry during the migration; current clients send only a
+  // one-way SHA-256 challenge and are handled here before the legacy route.
+  const entries = [...url.searchParams.entries()];
+  if (entries.length === 1 && entries[0][0] === "binding") return null;
+  if (request.method !== "GET") return new Response("Method Not Allowed", {status: 405});
+  if (!env.PUBLIC_ORIGIN) return new Response("Sign-in is not configured", {status: 503});
+  const challenge = entries.length === 1 && entries[0][0] === "challenge" ? entries[0][1] : "";
+  if (!NATIVE_AUTH_CHALLENGE_PATTERN.test(challenge)) {
+    return new Response("Invalid native authentication challenge", {status: 400});
+  }
+
+  const headers = new Headers();
+  headers.set("Location", `${env.PUBLIC_ORIGIN}/auth/${match[1]}/start`);
+  headers.append("Set-Cookie",
+    `lr_native_oauth=${match[1]}.${challenge}; HttpOnly; Secure; SameSite=None; Path=/auth; Max-Age=600`);
+  return new Response(null, {status: 302, headers});
+}
+
 function roomContentPolicy(request: Request): string {
   const url = new URL(request.url);
   const websocketOrigin = `${url.protocol === "https:" ? "wss:" : "ws:"}//${url.host}`;
@@ -153,8 +177,11 @@ async function hardenResponse(request: Request, response: Response): Promise<Res
 
 export default {
   async fetch(request, env, ctx): Promise<Response> {
-    const asset = roomAsset(new URL(request.url).pathname);
+    const url = new URL(request.url);
+    const asset = roomAsset(url.pathname);
     if (asset && request.method === "GET") return asset;
+    const challengeStart = nativeAuthChallengeStart(request, env);
+    if (challengeStart) return hardenResponse(request, challengeStart);
     return hardenResponse(request, await mobileEntry.fetch(request, env, ctx));
   },
 } satisfies ExportedHandler<Env>;
