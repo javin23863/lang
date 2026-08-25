@@ -16,8 +16,12 @@ test("abuse reports enforce both report retention and shorter routing retention 
                "missing, malformed, future, and over-retention reports are deleted before direct resolve can use them");
   assert.match(wrapper, /delete retained\.room_id/);
   assert.match(wrapper, /delete retained\.room_expires/);
-  assert.match(wrapper, /const MAX_ROUTING_LIFETIME_SECONDS = 24 \* 60 \* 60/,
-               "even corrupted future expiries cannot retain routing beyond the documented room lifetime");
+  assert.match(wrapper, /const MAX_ROUTING_LIFETIME_MS = 24 \* 60 \* 60 \* 1000/,
+               "routing cannot outlive the documented room lifetime");
+  assert.match(wrapper, /expiryMs <= createdAt \+ MAX_ROUTING_LIFETIME_MS/,
+               "an old report cannot slide its routing deadline forward based on the current clock");
+  assert.doesNotMatch(wrapper, /expires <= nowSeconds \+ MAX_ROUTING_LIFETIME/,
+                      "routing lifetime is not recalculated relative to each later access");
   assert.match(wrapper, /const ROOM_ID_PATTERN = \/\^\[A-Za-z0-9_-\]\{24\}\$\//,
                "the routing identifier must retain the exact internal room-id shape");
   assert.match(wrapper, /if \(!validRoomId \|\| !validLifetime \|\| expires! <= nowSeconds\)/,
