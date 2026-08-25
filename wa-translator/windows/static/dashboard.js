@@ -28,14 +28,14 @@ function roomUrl(room) {
   const url = new URL(runtime.inviteUrl(room));
   const mode = roomMode(room);
   if (mode !== "video") url.searchParams.set("m", mode);
-  // The callee's name is a label on the call screen and nothing else: it is
-  // never sent to the server and never part of the signed token.
-  if (mode === "voice" && room?.callee) url.searchParams.set("n", room.callee);
+  // Shareable bearer URLs carry only the room credential and call mode. Do not
+  // add human names or other account/device labels to messages, QR codes,
+  // browser history, edge logs, or analytics surfaces.
   return url.toString();
 }
 
-// `mode` and `callee` are optional on purpose: a record saved before modes
-// existed is still a valid room and still opens.
+// `mode` is optional on purpose: a record saved before modes existed is still
+// a valid room and still opens. Legacy local-only fields are simply ignored.
 function validRoom(value) {
   return value && typeof value.path === "string" && typeof value.host_control === "string"
     && Number.isSafeInteger(value.expires_at);
@@ -247,11 +247,8 @@ async function createRoom(mode) {
     if (!response.ok) throw new Error("creation failed");
     const room = await response.json();
     if (!validRoom(room)) throw new Error("storage unavailable");
-    // The mode and the callee's label belong to this device's record, not to
-    // the room the server signed.
+    // Mode is local presentation metadata; the server signs only the room.
     room.mode = MODES.has(mode) ? mode : "video";
-    const callee = $("calleeName").value.trim();
-    if (room.mode === "voice" && callee) room.callee = callee;
     if (!await saveRoom(room)) throw new Error("storage unavailable");
     currentRoom = room;
     hideQr();
@@ -311,7 +308,9 @@ async function shareLink() {
 
 function openRoom() {
   if (!currentRoom || busy) return;
-  if (!runtime.openRoom(currentRoom, roomMode(currentRoom))) {
+  // Pass the bearer path, not the whole saved record, so legacy local metadata
+  // can never be promoted into a public navigation URL.
+  if (!runtime.openRoom(currentRoom.path, roomMode(currentRoom))) {
     setNotice("home.openBlocked");
   }
 }
@@ -353,7 +352,7 @@ $("waBtn").onclick = () => {
   if (currentRoom && !busy) openShareApp("https://wa.me/?text=" + encodeURIComponent(shareMessage()));
 };
 // The /R/share form carries the sentence and the link together; the
-// social-plugins form takes a url only and drops everything that explains it.
+// social-plugins form takes a url only and drops it.
 $("lineBtn").onclick = () => {
   if (currentRoom && !busy) openShareApp("https://line.me/R/share?text=" + encodeURIComponent(shareMessage()));
 };
