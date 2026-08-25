@@ -24,6 +24,10 @@ test("shipping entrypoint publishes protocol 2 and never exposes legacy native s
                "handoff JSON cannot lie about the token's signed expiry");
   assert.match(issuance, /await mintSessionV2\(legacy\.userId, env\.ROOM_SIGNING_KEY, legacy\.expiresAt\)/,
                "native handoff preserves expiry while adding independent issuance entropy");
+  assert.match(issuance, /function withoutSetCookie\(response: Response\): Response/);
+  assert.match(issuance,
+    /if \(!response\.ok \|\| request\.method !== "POST"\) return withoutSetCookie\(response\)/,
+    "failed and wrong-method native handoff responses cannot leak lower-layer cookies");
   assert.match(issuance, /headers\.delete\("Set-Cookie"\)/,
                "native handoff never persists a browser-style session into the WebView");
 });
