@@ -3,7 +3,7 @@ import { ReportInbox as WorkerReportInbox } from "./worker";
 const REPORT_KEY_PREFIX = "report:";
 const ALARM_FLOOR_MS = 1_000;
 const REPORT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
-const MAX_ROUTING_LIFETIME_SECONDS = 24 * 60 * 60;
+const MAX_ROUTING_LIFETIME_MS = 24 * 60 * 60 * 1000;
 const ROOM_ID_PATTERN = /^[A-Za-z0-9_-]{24}$/;
 
 type StoredReportShape = Record<string, unknown> & {
@@ -47,8 +47,14 @@ export class ReportInbox extends WorkerReportInbox {
       const expires = typeof value.room_expires === "number"
         && Number.isSafeInteger(value.room_expires) ? value.room_expires : null;
       const validRoomId = typeof value.room_id === "string" && ROOM_ID_PATTERN.test(value.room_id);
-      const validLifetime = expires !== null
-        && expires <= nowSeconds + MAX_ROUTING_LIFETIME_SECONDS;
+      const expiryMs = expires === null ? NaN : expires * 1000;
+      // A report is created at or after room creation, so room routing can never
+      // legitimately remain useful more than 24 hours after this server-written
+      // report timestamp. Bounding against created_at prevents old/corrupt rows
+      // from sliding their routing lifetime forward merely because they are
+      // inspected again later.
+      const validLifetime = Number.isFinite(expiryMs)
+        && expiryMs <= createdAt + MAX_ROUTING_LIFETIME_MS;
 
       // Corrupt/legacy routing metadata is less useful than no routing metadata
       // and must not outlive the privacy bound simply because its expiry cannot
@@ -57,7 +63,6 @@ export class ReportInbox extends WorkerReportInbox {
         await this.ctx.storage.put(key, withoutRouting(value));
         continue;
       }
-      const expiryMs = expires! * 1000;
       nextRoomExpiryMs = nextRoomExpiryMs === null
         ? expiryMs : Math.min(nextRoomExpiryMs, expiryMs);
     }
