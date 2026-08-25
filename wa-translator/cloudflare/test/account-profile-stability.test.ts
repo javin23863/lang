@@ -58,12 +58,13 @@ describe("stable OAuth account metadata", () => {
     const snapshot = await directory().fetch("https://users.internal/");
     expect(snapshot.status).toBe(200);
     const body = await snapshot.json<any>();
-    expect(body.profile).toMatchObject({
-      user_id: USER_ID,
+    expect(body.user).toMatchObject({
       provider: "apple",
       name: "Relay User",
       email: "relay-user@privaterelay.appleid.com",
     });
+    expect(body).not.toHaveProperty("profile");
+    expect(JSON.stringify(body)).not.toContain(USER_ID);
   });
 
   it("rejects attempts to mutate provider or derived account id after creation", async () => {
