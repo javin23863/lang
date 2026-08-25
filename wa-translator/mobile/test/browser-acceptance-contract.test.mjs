@@ -3,9 +3,14 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const browser = new URL("../../tools/browser/", import.meta.url);
+const mobile = new URL("../", import.meta.url);
 
 async function source(name) {
   return readFile(new URL(name, browser), "utf8");
+}
+
+async function mobileSource(name) {
+  return readFile(new URL(name, mobile), "utf8");
 }
 
 test("real-browser acceptance follows current auth and affirmative-consent contracts", async () => {
@@ -40,4 +45,39 @@ test("real-browser acceptance follows current auth and affirmative-consent contr
   assert.match(run, /LINGUA_SESSION is required/);
   assert.doesNotMatch(run, /ROOM_SIGNING_KEY/,
     "the browser entrypoint must not claim a signing key is sufficient for host acceptance");
+});
+
+test("store screenshots can only be promoted from passing exact-head en-US browser captures", async () => {
+  const [run, promotion, packageText] = await Promise.all([
+    source("run.mjs"),
+    mobileSource("scripts/promote-browser-screenshots.py"),
+    mobileSource("package.json"),
+  ]);
+  const packageJson = JSON.parse(packageText);
+
+  assert.match(run, /en: "en-US"/,
+    "the real-browser sweep must have a canonical English store-listing locale");
+  assert.match(run, /writeFile\(path\.join\(SHOTS, "capture\.json"\)/);
+  assert.match(run, /head,\s*origin: ORIGIN,\s*languages: LANGUAGES/,
+    "capture provenance must record the exact source head and selected language sweep");
+  assert.match(run, /if \(!failed\.length\)/,
+    "failed browser journeys must never receive a promotable capture manifest");
+
+  assert.match(promotion, /CAPTURE_SIZE = \(390, 844\)/);
+  assert.match(promotion, /manifest\.get\("head"\) != head/,
+    "promotion must reject screenshots captured from any other source head");
+  assert.match(promotion, /"en" not in languages/,
+    "promotion must require the en-US acceptance sweep");
+  for (const mapping of [
+    ["dash-en.png", "01-dashboard.png"],
+    ["dash-en-room.png", "02-room-control.png"],
+    ["gate-en.png", "03-choose-language.png"],
+    ["room-live-en.png", "04-room.png"],
+  ]) {
+    assert.ok(promotion.includes(`("${mapping[0]}", "${mapping[1]}")`),
+      `store screenshot mapping missing: ${mapping[0]} -> ${mapping[1]}`);
+  }
+
+  assert.equal(packageJson.scripts["screenshots:refresh"],
+    "python scripts/promote-browser-screenshots.py && python scripts/prepare-store-screenshots.py");
 });
