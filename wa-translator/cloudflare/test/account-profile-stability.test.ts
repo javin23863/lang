@@ -3,13 +3,16 @@ import { describe, expect, it } from "vitest";
 
 const USER_ID = "AppleProfileUser123456";
 const OTHER_ID = "OtherProfileUser123456";
+const BLANK_ID = "BlankProfileUser123456";
 
 function directory(userId = USER_ID) {
   return env.USERS.get(env.USERS.idFromName(userId));
 }
 
-async function writeProfile(body: Record<string, unknown>): Promise<Response> {
-  return directory().fetch(new Request("https://users.internal/", {
+async function writeProfile(
+  body: Record<string, unknown>, userId = USER_ID
+): Promise<Response> {
+  return directory(userId).fetch(new Request("https://users.internal/", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify(body),
@@ -17,6 +20,24 @@ async function writeProfile(body: Record<string, unknown>): Promise<Response> {
 }
 
 describe("stable OAuth account metadata", () => {
+  it("requires usable profile metadata on first account creation", async () => {
+    const incomplete = await writeProfile({
+      user_id: BLANK_ID,
+      provider: "apple",
+      name: "",
+      email: "",
+    }, BLANK_ID);
+    expect(incomplete.status).toBe(422);
+
+    const complete = await writeProfile({
+      user_id: BLANK_ID,
+      provider: "apple",
+      name: "Relay User",
+      email: "relay-user@privaterelay.appleid.com",
+    }, BLANK_ID);
+    expect(complete.status).toBe(204);
+  });
+
   it("preserves established Apple email/name when a later provider refresh omits them", async () => {
     const first = await writeProfile({
       user_id: USER_ID,
