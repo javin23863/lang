@@ -29,25 +29,30 @@ async function start(provider: string): Promise<Response> {
 // A real browser hands the state cookie back on the callback; here the test is
 // the browser, so it carries the same cookie the start response set.
 async function signIn(
-  provider = "google", code = "fixture-google"
+  provider = "google", code = "fixture-google", appleUser?: string
 ): Promise<{ response: Response; session: string | null }> {
   const started = await start(provider);
   const state = new URL(started.headers.get("Location")!).searchParams.get("state")!;
   const callback = `${ORIGIN}/auth/${provider}/callback`;
-  const response = provider === "apple"
-    ? await exports.default.fetch(callback, {
-        method: "POST",
-        headers: {
-          Cookie: cookieHeader(started),
-          "Content-Type": "application/x-www-form-urlencoded"
-        },
-        body: new URLSearchParams({code, state}).toString(),
-        redirect: "manual"
-      })
-    : await exports.default.fetch(
-        `${callback}?code=${code}&state=${encodeURIComponent(state)}`,
-        { headers: { Cookie: cookieHeader(started) }, redirect: "manual" }
-      );
+  let response: Response;
+  if (provider === "apple") {
+    const form = new URLSearchParams({code, state});
+    if (appleUser !== undefined) form.set("user", appleUser);
+    response = await exports.default.fetch(callback, {
+      method: "POST",
+      headers: {
+        Cookie: cookieHeader(started),
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: form.toString(),
+      redirect: "manual"
+    });
+  } else {
+    response = await exports.default.fetch(
+      `${callback}?code=${code}&state=${encodeURIComponent(state)}`,
+      { headers: { Cookie: cookieHeader(started) }, redirect: "manual" }
+    );
+  }
   return { response, session: cookieValue(response, "lr_s") };
 }
 
@@ -168,7 +173,7 @@ describe("OAuth sign-in, session, and the room-creation gate", () => {
     });
   });
 
-  it("signs in through Apple's form_post callback and ES256 client secret", async () => {
+  it("captures Apple's one-time name and preserves it when later logins omit user metadata", async () => {
     const started = await start("apple");
     expect(started.status).toBe(302);
     const target = new URL(started.headers.get("Location")!);
@@ -177,13 +182,25 @@ describe("OAuth sign-in, session, and the room-creation gate", () => {
     expect(target.searchParams.get("scope")).toBe("name email");
     expect(target.searchParams.get("response_mode")).toBe("form_post");
 
-    const { session } = await signIn("apple", "fixture-apple");
+    const firstUser = JSON.stringify({
+      name: {firstName: "Relay", lastName: "User"},
+      email: "untrusted-form-email@example.test",
+    });
+    const { session } = await signIn("apple", "fixture-apple", firstUser);
     const account = await snapshot(session);
     expect(account.signed_in).toBe(true);
     expect(account.user).toEqual({
-      // Apple does not place the person's name in the ID token. Until the
-      // optional first-login `user` field is consumed, email is the safe label.
-      name: "relay-user@privaterelay.appleid.com",
+      name: "Relay User",
+      // Email remains provider-token data; the one-time form cannot replace it.
+      email: "relay-user@privaterelay.appleid.com",
+      provider: "apple"
+    });
+
+    // Apple normally omits `user` after first authorization. A later login must
+    // not downgrade the captured display name back to the relay email fallback.
+    const { session: laterSession } = await signIn("apple", "fixture-apple");
+    expect((await snapshot(laterSession)).user).toEqual({
+      name: "Relay User",
       email: "relay-user@privaterelay.appleid.com",
       provider: "apple"
     });
