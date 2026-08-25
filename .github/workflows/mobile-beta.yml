@@ -8,6 +8,10 @@ on:
         required: true
         type: choice
         options: [android, ios]
+      release_sha:
+        description: Exact 40-character commit SHA approved for beta
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -18,7 +22,7 @@ concurrency:
 
 jobs:
   android:
-    if: inputs.platform == 'android' && github.ref == 'refs/heads/main'
+    if: inputs.platform == 'android'
     runs-on: ubuntu-latest
     environment: mobile-beta
     defaults:
@@ -29,6 +33,24 @@ jobs:
       GOOGLE_PLAY_JSON_KEY: ${{ github.workspace }}/wa-translator/mobile/google-play.json
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify frozen release commit
+        shell: bash
+        env:
+          EXPECTED_RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          if [[ ! "$EXPECTED_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "release_sha must be an exact lowercase 40-character commit SHA" >&2
+            exit 1
+          fi
+          actual="$(git rev-parse HEAD)"
+          if [[ "$actual" != "$EXPECTED_RELEASE_SHA" ]]; then
+            echo "Checked out ${actual}, expected frozen release ${EXPECTED_RELEASE_SHA}" >&2
+            exit 1
+          fi
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
@@ -116,7 +138,7 @@ jobs:
         run: rm -f release.keystore "$GOOGLE_PLAY_JSON_KEY"
 
   ios:
-    if: inputs.platform == 'ios' && github.ref == 'refs/heads/main'
+    if: inputs.platform == 'ios'
     runs-on: macos-26
     environment: mobile-beta
     defaults:
@@ -127,6 +149,24 @@ jobs:
       APPLE_PROVISIONING_PROFILE: ${{ github.workspace }}/wa-translator/mobile/lingua-relay.mobileprovision
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify frozen release commit
+        shell: bash
+        env:
+          EXPECTED_RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          if [[ ! "$EXPECTED_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "release_sha must be an exact lowercase 40-character commit SHA" >&2
+            exit 1
+          fi
+          actual="$(git rev-parse HEAD)"
+          if [[ "$actual" != "$EXPECTED_RELEASE_SHA" ]]; then
+            echo "Checked out ${actual}, expected frozen release ${EXPECTED_RELEASE_SHA}" >&2
+            exit 1
+          fi
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"

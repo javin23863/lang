@@ -50,7 +50,25 @@ test("credential-gated Fastlane lanes stop at beta tracks", async () => {
   assert.match(lockfile, /multi_json \(= 1\.21\.1\)/);
   assert.match(workflow, /npm ci && npm run check && npm run sync/);
   assert.match(workflow, /bundle exec fastlane --version/);
-  assert.match(workflow, /github\.ref == 'refs\/heads\/main'/);
+  assert.match(workflow, /release_sha:\s*\n\s+description: Exact 40-character commit SHA approved for beta/,
+               "signed beta dispatch requires an explicit frozen commit SHA");
+  assert.doesNotMatch(workflow, /github\.ref == 'refs\/heads\/main'/,
+                      "signed beta must be runnable against the frozen pre-merge candidate");
+  assert.equal((workflow.match(/ref: \$\{\{ inputs\.release_sha \}\}/g) || []).length, 2,
+               "both platform jobs must check out the requested frozen commit");
+  assert.equal((workflow.match(/name: Verify frozen release commit/g) || []).length, 2);
+  assert.equal((workflow.match(/EXPECTED_RELEASE_SHA: \$\{\{ inputs\.release_sha \}\}/g) || []).length, 2);
+  assert.equal((workflow.match(/actual="\$\(git rev-parse HEAD\)"/g) || []).length, 2);
+  assert.equal((workflow.match(/"\$actual" != "\$EXPECTED_RELEASE_SHA"/g) || []).length, 2);
+  assert.equal((workflow.match(/persist-credentials: false/g) || []).length, 2,
+               "beta checkout must not leave the repository token in git configuration");
+  assert.equal((workflow.match(/environment: mobile-beta/g) || []).length, 2,
+               "both signed jobs stay behind the protected beta environment");
+  assert.match(workflow, /\^\[0-9a-f\]\{40\}\$/,
+               "release SHA input is fail-closed to an exact lowercase commit id");
+  assert.ok(workflow.indexOf("Verify frozen release commit")
+    < workflow.indexOf("Materialize signing credentials"),
+    "the exact checkout is verified before credentials are written to disk");
   assert.match(workflow, /migration_base=1900000000/,
                "the new strategy stays above any pre-switch 2026 Unix-seconds versionCode");
   assert.match(workflow, /run_number="\$\{GITHUB_RUN_NUMBER\}"/);
