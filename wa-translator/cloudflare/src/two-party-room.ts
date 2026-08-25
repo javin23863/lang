@@ -327,7 +327,7 @@ export class Room extends RoomBase {
         const attachment = socket.deserializeAttachment() as SocketAttachment;
         if (value && typeof value === "object" && !Array.isArray(value)
             && (value as Record<string, unknown>).type === "join"
-            && attachment?.joined !== true) {
+            && attachment !== null && attachment.joined !== true) {
           const join = value as Record<string, unknown>;
           if (join.block_id !== undefined
               && (typeof join.block_id !== "string" || !BLOCK_ID_PATTERN.test(join.block_id))) {
