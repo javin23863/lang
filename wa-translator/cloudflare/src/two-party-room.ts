@@ -2,6 +2,7 @@ import { Room as WorkerRoom, type Env } from "./worker";
 
 export const PARTICIPANT_LIMIT = 2;
 const COMPUTE_FETCH_TIMEOUT_MS = 30_000;
+const PRESENCE_LEASE_MS = 90_000;
 
 type RoomBaseShape = {
   ctx: DurableObjectState;
@@ -18,7 +19,7 @@ type RoomBaseShape = {
 // duplicating the room protocol, metering, signalling, quotas, or lifecycle.
 const RoomBase = WorkerRoom as unknown as new (...args: any[]) => RoomBaseShape;
 
-type SocketAttachment = { joined?: unknown } | null;
+type SocketAttachment = { joined?: unknown; lastSeenAt?: unknown } | null;
 
 function withTwoPartyLimit(message: object): object {
   const value = {...message} as Record<string, unknown>;
@@ -28,10 +29,16 @@ function withTwoPartyLimit(message: object): object {
 }
 
 export class Room extends RoomBase {
-  private joinedCount(): number {
+  private joinedCount(now = Date.now()): number {
     return this.ctx.getWebSockets("browser").filter(socket => {
       const value = socket.deserializeAttachment() as SocketAttachment;
-      return value?.joined === true;
+      // Match WorkerRoom's lease boundary. Expired joined sockets must reach the
+      // base join path so its sweep can evict them; counting them here would
+      // reject a legitimate replacement participant before that sweep runs.
+      return value?.joined === true
+        && typeof value.lastSeenAt === "number"
+        && Number.isFinite(value.lastSeenAt)
+        && now - value.lastSeenAt < PRESENCE_LEASE_MS;
     }).length;
   }
 
