@@ -36,6 +36,7 @@ const NATIVE_AUTH_BINDING_PREFIX = "lingua-relay.native-auth-binding.v3.";
 const LEGACY_AUTH_BINDING_PREFIX = "lingua-relay.native-auth-binding.v2.";
 const NATIVE_AUTH_START = /^\/auth\/(google|apple|facebook)\/start$/;
 const NATIVE_AUTH_PROVIDERS = ["google", "apple", "facebook"] as const;
+const MAX_HANDLED_AUTH_HANDOFFS = 16;
 const SESSION_API_PATHS = new Set([
   "/api/v1/me", "/api/v1/rooms", "/api/v1/account/delete", "/api/v1/auth/logout"
 ]);
@@ -135,6 +136,17 @@ async function retireAuthBinding(provider: string): Promise<void> {
   await hostStorage.removeItem(authBindingKey(provider)).catch(() => {});
   try { localStorage.removeItem(legacyAuthBindingKey(provider)); }
   catch { /* legacy storage may be unavailable */ }
+}
+
+function rememberAuthHandoff(handoff: string): boolean {
+  if (handledAuthHandoffs.has(handoff)) return false;
+  while (handledAuthHandoffs.size >= MAX_HANDLED_AUTH_HANDOFFS) {
+    const oldest = handledAuthHandoffs.values().next().value;
+    if (typeof oldest !== "string") break;
+    handledAuthHandoffs.delete(oldest);
+  }
+  handledAuthHandoffs.add(handoff);
+  return true;
 }
 
 function nativeApiPath(path: string): string {
@@ -258,11 +270,10 @@ async function routeAppLink(value: string | undefined): Promise<void> {
   const auth = parseNativeAuthLink(value);
   if (auth) {
     if ("handoff" in auth && typeof auth.handoff === "string") {
-      // A cold start can surface the same URL through both getLaunchUrl() and
-      // appUrlOpen. The handoff is one-time, so process a given value once or a
-      // successful first exchange can be followed by a misleading failure.
-      if (handledAuthHandoffs.has(auth.handoff)) return;
-      handledAuthHandoffs.add(auth.handoff);
+      // Capacitor can surface one cold-start URL through both getLaunchUrl() and
+      // appUrlOpen. Keep a small replay window so that duplicate is ignored,
+      // without letting arbitrary custom-scheme deliveries grow memory forever.
+      if (!rememberAuthHandoff(auth.handoff)) return;
       await acceptNativeHandoff(auth.provider, auth.handoff);
     } else {
       await retireAuthBinding(auth.provider);
