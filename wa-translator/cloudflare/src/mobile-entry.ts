@@ -1,6 +1,8 @@
 import worker, { type Env } from "./worker";
+import { PARTICIPANT_LIMIT, Room } from "./two-party-room";
 
-export { AbuseGate, ReportInbox, Room, UserDirectory } from "./worker";
+export { AbuseGate, ReportInbox, UserDirectory } from "./worker";
+export { Room };
 
 const NATIVE_ORIGINS = new Set(["https://localhost", "capacitor://localhost"]);
 const NATIVE_OAUTH_COOKIE = "lr_native_oauth";
@@ -55,6 +57,16 @@ function nativeCors(request: Request, response: Response): Response {
 // but widens the TypeScript generic. Keep that type-only mismatch at one seam.
 function routeWorker(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   return worker.fetch(request as never, env, ctx);
+}
+
+async function twoPartyBootstrap(
+  request: Request, env: Env, ctx: ExecutionContext
+): Promise<Response> {
+  const response = await routeWorker(request, env, ctx);
+  if (!response.ok || request.method !== "GET") return response;
+  const body = await response.json<Record<string, unknown>>();
+  body.max_room_participants = PARTICIPANT_LIMIT;
+  return Response.json(body, {status: response.status, headers: response.headers});
 }
 
 function base64url(bytes: ArrayBuffer | Uint8Array): string {
@@ -372,6 +384,9 @@ export default {
     if (url.pathname === "/mobile-auth-complete") return mobileAuthComplete(request);
     if (url.pathname === "/.well-known/apple-app-site-association") {
       return appleAssociation(env);
+    }
+    if (url.pathname === "/api/v1/mobile/bootstrap") {
+      return twoPartyBootstrap(request, env, ctx);
     }
     if (url.pathname === "/api/v1/auth/handoff") {
       if (request.method === "OPTIONS") return routeWorker(request, env, ctx);
