@@ -27,14 +27,18 @@ body:not([data-auth="in"]) .authed{display:none}
 body:not([data-auth="out"]) #authPanel{display:none}
 body[data-auth="out"] #authPanel{display:grid}
 
-/* Signed-out first launch */
+/* Signed-out first launch. Keep the explainer dormant while /api/me is still
+   resolving so a returning signed-in host never flashes signed-out guidance. */
+body:not([data-auth="out"]) #onboardingPanel{display:none}
 .onboardingCard{display:grid;gap:18px;padding:22px;background:
   linear-gradient(145deg,color-mix(in srgb,var(--accent-soft) 72%,var(--card)),var(--card) 58%)}
 .onboardingCard[hidden]{display:none}
 .onboardingCopy{display:grid;gap:7px}
-.onboardingFlow{padding-top:1px;font-size:13px;font-weight:600}
+.onboardingFlow{padding:11px 13px;font-size:13px;font-weight:650;border:1px solid color-mix(in srgb,var(--accent) 14%,var(--separator));
+  border-radius:14px;background:color-mix(in srgb,var(--fill) 72%,transparent);text-align:center}
 .onboardingModes{pointer-events:none}
-#authPanel{gap:15px;padding:22px;border-color:color-mix(in srgb,var(--accent) 20%,var(--separator))}
+#authPanel{gap:15px;padding:22px;border-color:color-mix(in srgb,var(--accent) 20%,var(--separator));
+  background:linear-gradient(180deg,color-mix(in srgb,var(--card) 94%,var(--accent-soft)),var(--card))}
 #authButtons{display:grid;gap:9px}
 .signIn{display:flex;align-items:center;justify-content:center;min-height:54px;border:1px solid transparent;
   border-radius:15px;background:var(--accent);color:#FFF;font:680 16px var(--font);text-decoration:none;padding:11px 14px;
