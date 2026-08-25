@@ -4,6 +4,7 @@ const t = runtime.t;
 let currentRoom = null;
 let account = null;
 let statusTimer = null;
+let statusRefreshing = false;
 let busy = false;
 // Every visible line is stored as its key, never as finished text, so a
 // language switch can re-render the screen the person is already looking at.
@@ -13,12 +14,23 @@ let authStatusKey = "";
 // The three surfaces a room can open as. Video is the mode that needs no
 // parameter, so every link made before modes existed still opens a video call.
 const MODES = new Set(["voice", "chat", "video"]);
+const DASHBOARD_REQUEST_TIMEOUT_MS = 15_000;
 // Google is provisioned day one and leads the list; the others appear only
 // when the worker reports credentials for them.
 const PROVIDERS = [["google", "signInGoogle"], ["apple", "signInApple"],
                    ["facebook", "signInFacebook"]];
 const USAGE_KIND = {call: "credits.callMinutes", chat: "credits.chatMessages",
                     tts: "credits.ttsPhrases"};
+
+async function dashboardFetch(input, init = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DASHBOARD_REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(input, {...init, signal: controller.signal});
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function roomMode(room) {
   return MODES.has(room?.mode) ? room.mode : "video";
@@ -100,7 +112,9 @@ async function loadAccount() {
   try {
     // Browser sessions ride same-origin cookies. The native bridge attaches its
     // securely stored bearer only to the versioned account/room-creation API.
-    const response = await fetch(runtime.apiUrl("/api/me"), {headers: {Accept: "application/json"}});
+    const response = await dashboardFetch(runtime.apiUrl("/api/me"), {
+      headers: {Accept: "application/json"}
+    });
     if (!response.ok) throw new Error("account unavailable");
     return await response.json();
   } catch (_) {
@@ -167,8 +181,8 @@ function renderAccount() {
 async function deleteAccount() {
   if (!window.confirm(t("auth.deleteConfirm"))) return;
   try {
-    const response = await fetch(runtime.apiUrl("/api/account/delete"),
-                                 {method: "POST", headers: {Accept: "application/json"}});
+    const response = await dashboardFetch(runtime.apiUrl("/api/account/delete"),
+      {method: "POST", headers: {Accept: "application/json"}});
     if (!response.ok) throw new Error("delete failed");
     // A room link remains independently valid until room expiry, but the local
     // host-control bearer belongs to the account/device session that created it.
@@ -211,9 +225,10 @@ function startPolling() {
 }
 
 async function refreshStatus() {
-  if (!currentRoom || busy) return;
+  if (!currentRoom || busy || statusRefreshing) return;
+  statusRefreshing = true;
   try {
-    const response = await fetch(runtime.apiUrl("/api/room-control"), {
+    const response = await dashboardFetch(runtime.apiUrl("/api/room-control"), {
       headers: {Authorization: "Bearer " + currentRoom.host_control, Accept: "application/json"}
     });
     if (response.status === 403) {
@@ -232,6 +247,8 @@ async function refreshStatus() {
     setNotice("");
   } catch (_) {
     setState("error", "home.statusUnavailable");
+  } finally {
+    statusRefreshing = false;
   }
 }
 
@@ -245,7 +262,7 @@ async function createRoom(mode) {
   setBusy(true);
   setNotice("");
   try {
-    const response = await fetch(runtime.apiUrl("/api/rooms"), {
+    const response = await dashboardFetch(runtime.apiUrl("/api/rooms"), {
       method: "POST", headers: {Accept: "application/json"}
     });
     if (!response.ok) throw new Error("creation failed");
@@ -324,7 +341,7 @@ async function closeRoom(withConfirmation = true) {
   if (withConfirmation && !window.confirm(t("home.confirmClose"))) return;
   setBusy(true);
   try {
-    const response = await fetch(runtime.apiUrl("/api/room-control/close"), {
+    const response = await dashboardFetch(runtime.apiUrl("/api/room-control/close"), {
       method: "POST",
       headers: {Authorization: "Bearer " + currentRoom.host_control, Accept: "application/json"}
     });
@@ -343,7 +360,7 @@ $("createChatBtn").onclick = () => createRoom("chat");
 $("createBtn").onclick = () => createRoom("video");
 $("signOutBtn").onclick = async () => {
   try {
-    const response = await fetch(runtime.apiUrl("/auth/logout"), {
+    const response = await dashboardFetch(runtime.apiUrl("/auth/logout"), {
       method: "POST", headers: {Accept: "application/json"}
     });
     if (!response.ok) throw new Error("logout failed");
@@ -363,8 +380,8 @@ $("closeBtn").onclick = () => closeRoom(true);
 $("waBtn").onclick = () => {
   if (currentRoom && !busy) openShareApp("https://wa.me/?text=" + encodeURIComponent(shareMessage()));
 };
-// The /R/share form carries the sentence and the link together; the
-// social-plugins form takes a url only and drops it.
+// The /R/share form carries the sentence with the link; the
+// social-plugins form takes a url alone and drops it.
 $("lineBtn").onclick = () => {
   if (currentRoom && !busy) openShareApp("https://line.me/R/share?text=" + encodeURIComponent(shareMessage()));
 };
