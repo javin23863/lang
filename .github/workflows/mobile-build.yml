@@ -70,9 +70,9 @@ jobs:
       - run: npm run check
       - run: npm run sync
       - run: chmod +x android/gradlew && cd android && ./gradlew :app:bundleRelease
-      - name: Verify Android 16 KB compatibility
+      - name: Verify Android release artifact
         shell: bash
-        run: bash scripts/verify-android-16k.sh android/app/build/outputs/bundle/release/app-release.aab
+        run: bash scripts/verify-android-aab.sh android/app/build/outputs/bundle/release/app-release.aab
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: lingua-relay-android-aab
