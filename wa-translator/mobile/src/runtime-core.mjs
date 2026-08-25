@@ -11,6 +11,7 @@ const SESSION_TOKEN_PATTERN =
   /^s1\.[A-Za-z0-9_-]{22}\.\d{10}\.[A-Za-z0-9_-]{43}$/;
 const NATIVE_HANDOFF_PATTERN =
   /^nh2\.(google|apple|facebook)\.[A-Za-z0-9_-]{22}\.\d{10}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}\.[A-Za-z0-9_-]{43}$/;
+const MAX_DEEP_LINK_CHARS = 1024;
 
 const VERSIONED_PATHS = new Map([
   ["/api/capabilities", "/api/v1/capabilities"],
@@ -29,6 +30,10 @@ const VERSIONED_PATHS = new Map([
 const ROOM_MODES = ["voice", "chat", "video"];
 const NATIVE_AUTH_PROVIDERS = new Set(["google", "apple", "facebook"]);
 
+function boundedLink(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= MAX_DEEP_LINK_CHARS;
+}
+
 /** @param {string | null | undefined} value */
 function roomMode(value) {
   return value && ROOM_MODES.includes(value) ? value : "video";
@@ -43,6 +48,7 @@ function roomName(value) {
 
 /** @param {string} value */
 export function parseRoomLink(value) {
+  if (!boundedLink(value)) return null;
   try {
     const url = new URL(value);
     if (url.origin !== PUBLIC_ORIGIN || url.hash) return null;
@@ -66,6 +72,7 @@ export function parseRoomLink(value) {
 
 /** @param {string} value */
 export function parseNativeAuthLink(value) {
+  if (!boundedLink(value)) return null;
   try {
     const url = new URL(value);
     if (url.protocol !== `${MOBILE_AUTH_SCHEME}:` || url.hostname !== "auth" || url.search) {
