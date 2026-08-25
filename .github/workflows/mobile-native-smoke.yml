@@ -1,17 +1,10 @@
 name: Native mobile smoke
 
+# Native runtime acceptance requires Android emulator/device capacity and an iOS
+# runner with the exact simulator SDK. Keep this workflow manual so unavailable
+# hosted resources do not turn otherwise-valid source changes red. Run it against
+# an exact frozen SHA when those resources are available.
 on:
-  pull_request:
-    paths:
-      - "wa-translator/mobile/**"
-      - "wa-translator/windows/static/**"
-      - ".github/workflows/mobile-native-smoke.yml"
-  push:
-    branches: [main]
-    paths:
-      - "wa-translator/mobile/**"
-      - "wa-translator/windows/static/**"
-      - ".github/workflows/mobile-native-smoke.yml"
   workflow_dispatch:
     inputs:
       release_sha:
@@ -38,7 +31,6 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: Verify exact smoke commit
-        if: github.event_name == 'workflow_dispatch'
         shell: bash
         env:
           EXPECTED_RELEASE_SHA: ${{ inputs.release_sha }}
@@ -54,7 +46,7 @@ jobs:
           fi
           actual="$(git rev-parse HEAD)"
           if [[ "$actual" != "$EXPECTED_RELEASE_SHA" ]]; then
-            echo "Checked out ${actual}, expected ${EXPECTED_RELEASE_SHA}" >&2
+            echo "Checked out ${actual}, expected frozen release ${EXPECTED_RELEASE_SHA}" >&2
             exit 1
           fi
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -84,7 +76,6 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: Verify exact smoke commit
-        if: github.event_name == 'workflow_dispatch'
         shell: bash
         env:
           EXPECTED_RELEASE_SHA: ${{ inputs.release_sha }}
@@ -100,7 +91,7 @@ jobs:
           fi
           actual="$(git rev-parse HEAD)"
           if [[ "$actual" != "$EXPECTED_RELEASE_SHA" ]]; then
-            echo "Checked out ${actual}, expected ${EXPECTED_RELEASE_SHA}" >&2
+            echo "Checked out ${actual}, expected frozen release ${EXPECTED_RELEASE_SHA}" >&2
             exit 1
           fi
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
