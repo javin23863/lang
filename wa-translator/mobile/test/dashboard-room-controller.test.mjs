@@ -24,6 +24,7 @@ test("prepared native dashboard isolates room control and polling", async () => 
 
   assert.match(controller, /const POLL_INTERVAL_MS = 15_000/);
   assert.match(controller, /let statusRefreshRoom = null/);
+  assert.match(controller, /let invalidationGeneration = 0/);
   assert.match(controller, /const targetRoom = room/);
   assert.match(controller,
     /if \(!targetRoom \|\| busy \|\| statusRefreshRoom === targetRoom\) return/);
@@ -42,6 +43,15 @@ test("prepared native dashboard isolates room control and polling", async () => 
   assert.match(controller, /model\.load\(\)/);
   assert.match(controller, /model\.forget\(\)/);
   assert.match(controller, /runtime\.openRoom\(room\.path, model\.mode\(room\)\)/);
+
+  assert.match(controller, /const targetGeneration = invalidationGeneration/);
+  assert.match(controller, /invalidationGeneration !== targetGeneration/);
+  assert.match(controller, /invalidationGeneration\+\+/);
+  assert.match(controller,
+    /async function discard\(\)[\s\S]*?invalidationGeneration\+\+[\s\S]*?room = null[\s\S]*?model\.forget\(\)/);
+  assert.match(controller,
+    /model\.save\(created\)[\s\S]*?invalidationGeneration !== targetGeneration[\s\S]*?model\.forget\(\)/,
+    "a teardown that races persistence must remove the stale host control again");
 
   assert.match(controller,
     /emit\("room\.create\.result", \{mode: requestedMode, result: "success"\}\)/);
