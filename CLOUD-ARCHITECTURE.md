@@ -39,8 +39,9 @@ Host dashboard / Android / iOS
   |
   | OAuth session (host only)
   v
-Cloudflare Worker
-  - account/session boundary
+Cloudflare Worker shipping boundary
+  - session-v2 issuance / native protocol-2 compatibility
+  - account existence + exact-session revocation
   - room creation + signed 24-hour participant bearer
   - separate host-control bearer
   - mobile compatibility bootstrap
@@ -71,8 +72,16 @@ Modal ASGI/L4 compute
 Additional Durable Objects
   - AbuseGate: bounded/rate-limited counters and one-time native handoffs
   - ReportInbox: category-only abuse reports, bounded + 30-day retention
-  - UserDirectory: host profile, aggregate usage, capped recent usage rows
+  - UserDirectory: host profile, aggregate usage, capped recent usage rows,
+    short-lived usage-delivery dedupe and exact-session revocation digests
 ```
+
+The Worker entry chain is intentionally layered during P0 hardening:
+`session-issuance-entry.ts` → `account-guard-entry.ts` → `launch-entry.ts` →
+`mobile-entry.ts` → the legacy base Worker. The outer layers enforce the current
+session, account, two-person, privacy, and mobile compatibility contracts without
+renaming Durable Object classes or rewriting the older monolith during launch
+hardening.
 
 Cloudflare is the permanent control plane. Modal does not own room identity,
 presence, signalling, accounts, or natural WebRTC media. A Modal restart loses
@@ -86,17 +95,38 @@ Starting a room requires an OAuth-backed account. Joining does not.
 - Supported provider code paths are Google, Apple, and Facebook. A provider is
   displayed only when its production credentials are configured.
 - No password is created or stored by Lingua Relay.
-- Browser sessions use a signed HttpOnly/Secure/SameSite session cookie.
+- Newly issued external browser/native sessions use `s2`: derived user ID,
+  original expiry, a random 128-bit issuance nonce, and a domain-separated HMAC.
+  Two logins with identical user/expiry values are therefore still independent
+  credentials.
+- Browser sessions expose `s2` only through an HttpOnly/Secure/SameSite cookie.
+  The base Worker may mint a legacy `s1` during OAuth internally, but the outer
+  account boundary verifies and upgrades it before the response leaves the
+  service. Failure to mint `s2` fails closed rather than leaking `s1`.
 - Native sessions use an app-bound one-time OAuth handoff and are kept in native
-  secure storage. The native fetch bridge attaches the bearer only to the exact
-  public origin and the small account/room-creation endpoint allow-list.
+  secure storage. Successful handoff exchange is upgraded to `s2` before the
+  WebView receives it, and the outer handoff response strips any lower-layer
+  `Set-Cookie` header.
+- The shipping edge temporarily accepts a cryptographically valid legacy `s1`
+  during migration. A verified `s2` is translated to an internal `s1` only for
+  calls into the pre-v2 Worker. The original external token remains the security
+  identity at the outer boundary.
+- Logout stores only the SHA-256 digest and original expiry of the **exact
+  external session token**. It never revokes by the internal legacy
+  representation, so logging out one `s2` session cannot invalidate another
+  session merely because user and expiry match.
+- Native compatibility protocol `2` marks this response-format boundary. A
+  pre-v2 installed build must fail bootstrap before entering an OAuth flow it
+  cannot complete correctly.
+- The native fetch bridge attaches the bearer only to the exact public origin
+  and the small account/room-creation endpoint allow-list.
 - Native session APIs require the installed-app origin in addition to a valid
   session bearer.
 - The custom auth scheme is protected by a 256-bit app-held binding; seeing an
   intercepted handoff is insufficient to exchange it.
 - Account deletion is available in-product and deletes the profile, aggregate
-  usage totals, and recent usage rows. An old signed session whose account has
-  been deleted is treated as signed out.
+  usage totals, recent usage rows, delivery markers, and revocation markers. An
+  old signed session whose account has been deleted is treated as signed out.
 
 Version 1.0 is non-monetized. There is no purchase control, StoreKit/Play
 Billing product, payment method, or stored credit balance in the active account
@@ -234,7 +264,10 @@ Account data:
 - aggregate usage totals — until deletion;
 - recent usage rows — 90 days, capped at 200 rows;
 - each usage row contains time, kind, units, and an opaque one-way room
-  reference; never the participant link or conversation content.
+  reference; never the participant link or conversation content;
+- usage-delivery dedupe markers — 48 hours;
+- logout revocation marker — exact external-token digest plus original expiry,
+  deleted at token expiry and on account deletion.
 
 Abuse reports:
 
@@ -242,7 +275,9 @@ Abuse reports:
   non-invite routing ID needed for moderator closure;
 - no report free text, participant name, transcript, chat text, audio, video,
   caption, screenshot, or participant bearer;
-- 30-day retention with a bounded inbox.
+- category record ceiling of 30 days;
+- internal room routing metadata is stripped when the room expires, never later
+  than 24 hours after the report's server timestamp.
 
 Room lifecycle:
 
@@ -256,6 +291,7 @@ Room lifecycle:
 
 Current fail-closed limits include:
 
+- native compatibility protocol `2` for nonce-bearing session issuance;
 - 8 KiB normal control messages;
 - up to 64 KiB only for validated WebRTC signalling;
 - 32,000-byte PCM frames;
@@ -283,7 +319,7 @@ production configuration:
 | Gate | Required evidence |
 |---|---|
 | Two-person room | Browser/native tests show third participant rejected and all server/client limits report 2. |
-| Account lifecycle | Google + Apple (and Facebook if enabled) sign-in, native handoff, logout, deletion, deleted-session rejection. |
+| Account lifecycle | Google + Apple (and Facebook if enabled) sign-in, nonce-bearing browser/native sessions, independent same-expiry session revocation, native handoff, logout, deletion, deleted-session rejection. |
 | Native lifecycle | Real iOS/Android foreground/background, permission deny/regrant, device-loss and reconnect behavior. |
 | WebRTC | Two real devices carry natural audio/video; forced direct-ICE failure proves a selected `relay` candidate. |
 | Translation | Supported ASR/MT fixtures plus real two-person caption/chat flows; no unsupported quality claim. |
