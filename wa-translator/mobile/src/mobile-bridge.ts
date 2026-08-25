@@ -268,8 +268,13 @@ async function acceptNativeHandoff(provider: string, handoff: string): Promise<v
     if (!response.ok) throw new Error("handoff refused");
     const body = await response.json() as {session?: unknown};
     if (!isSessionToken(body.session)) throw new Error("invalid native session");
-    nativeSession = String(body.session);
-    await hostStorage.setItem(NATIVE_SESSION_KEY, nativeSession);
+    const session = String(body.session);
+    // Do not expose a session to the in-process fetch interceptor until the
+    // platform secure store confirms persistence. Otherwise a Keychain/Keystore
+    // write failure could redirect to auth=failed while this process still acts
+    // authenticated until restart.
+    await hostStorage.setItem(NATIVE_SESSION_KEY, session);
+    nativeSession = session;
     await retireAuthBinding(provider);
     window.location.replace("index.html");
   } catch {
