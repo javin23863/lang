@@ -152,17 +152,17 @@ export class Room extends RoomBase {
     const roomRef = await roomUsageRef(this.ctx.id.name || "");
     const stub = this.env.USERS.get(this.env.USERS.idFromName(owner));
 
-    // At most two snapshots are relevant to one flush: an older durable backlog
-    // plus the active counters that accumulated while that backlog was waiting.
-    // A fresh snapshot created during this very delivery stays active for the
-    // next normal close; we never chase a live room in an unbounded loop.
+    // At most two snapshots are relevant to one idle-room flush: an older
+    // durable backlog plus the active counters that accumulated while that
+    // backlog was waiting. If the room has been rejoined, a retry delivers only
+    // the old backlog and leaves the new active call counters untouched.
     for (let pass = 0; pass < 2; pass++) {
       const snapshot = await this.claimUsageSnapshot();
       if (!snapshot) return false;
       const pending = snapshot.usage;
       if (usageEmpty(pending)) {
         await this.ctx.storage.delete(USAGE_PENDING_KEY);
-        if (snapshot.wasPending && pass === 0) continue;
+        if (snapshot.wasPending && pass === 0 && this.joinedCount() === 0) continue;
         return false;
       }
 
@@ -205,7 +205,7 @@ export class Room extends RoomBase {
         else await this.ctx.storage.put(USAGE_PENDING_KEY, {...pending});
       }
 
-      if (!snapshot.wasPending) return false;
+      if (!snapshot.wasPending || this.joinedCount() > 0) return false;
     }
     return false;
   }
