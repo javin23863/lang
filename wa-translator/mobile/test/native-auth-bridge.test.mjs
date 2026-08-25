@@ -30,15 +30,29 @@ test("stale native sessions clear themselves on auth failure or signed-out accou
   assert.match(bridge, /if \(clearSession\) await clearNativeSession\(\)/);
 });
 
-test("native one-time auth handoffs are idempotent and always retire their binding", async () => {
+test("native auth keeps the raw binding on-device and exposes only its challenge", async () => {
+  const bridge = await read("../src/mobile-bridge.ts");
+  assert.match(bridge, /NATIVE_AUTH_BINDING_PREFIX = "lingua-relay\.native-auth-binding\.v3\."/);
+  assert.match(bridge, /await hostStorage\.setItem\(authBindingKey\(provider\), binding\)/,
+               "current bindings use the platform secure-storage adapter");
+  assert.match(bridge, /crypto\.subtle\.digest\("SHA-256", new TextEncoder\(\)\.encode\(binding\)\)/,
+               "the browser receives a one-way challenge rather than the binding");
+  assert.match(bridge, /\?challenge=\$\{encodeURIComponent\(challenge\)\}/);
+  assert.doesNotMatch(bridge, /\?binding=\$\{encodeURIComponent\(binding\)\}/,
+                      "current native start URLs never contain the raw binding");
+  assert.doesNotMatch(bridge, /localStorage\.setItem\(authBindingKey\(provider\), binding\)/,
+                      "current bindings are never written to WebView localStorage");
+  assert.match(bridge, /LEGACY_AUTH_BINDING_PREFIX/,
+               "an older in-flight localStorage binding can be migrated once rather than stranded");
+});
+
+test("native one-time handoffs remain idempotent across cold-launch delivery", async () => {
   const bridge = await read("../src/mobile-bridge.ts");
   assert.match(bridge, /const handledAuthHandoffs = new Set<string>\(\)/);
   assert.match(bridge, /if \(handledAuthHandoffs\.has\(auth\.handoff\)\) return/);
   assert.match(bridge, /handledAuthHandoffs\.add\(auth\.handoff\)/);
-  assert.match(bridge, /await hostStorage\.setItem\(NATIVE_SESSION_KEY, nativeSession\);\s*clearAuthBinding\(provider\)/,
-               "successful exchange removes the temporary binding after the session is persisted");
-  assert.match(bridge, /catch \{[\s\S]*?clearAuthBinding\(provider\);[\s\S]*?index\.html\?auth=failed/,
-               "failed one-shot exchange also removes a binding that can no longer be used safely");
+  assert.match(bridge, /const binding = await readAuthBinding\(provider\)/,
+               "cold return reloads the same app-held proof before exchanging the handoff");
   assert.match(bridge, /App\.addListener\("appUrlOpen"/);
   assert.match(bridge, /App\.getLaunchUrl\(\)/,
                "both Capacitor delivery paths remain supported while duplicate handoffs are ignored");
