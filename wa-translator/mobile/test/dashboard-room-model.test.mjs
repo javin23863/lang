@@ -27,12 +27,17 @@ test("prepared native dashboard centralizes room capability and persistence rule
 
   assert.match(model, /const MODES = new Set\(\["voice", "chat", "video"\]\)/);
   assert.match(model, /return MODES\.has\(value\) \? value : "video"/);
+  assert.match(model, /ROOM_PATH_PATTERN = \/\^\\\/room\\\//);
+  assert.match(model, /HOST_CONTROL_PATTERN = \/\^hc1\\\./);
+  assert.match(model, /const room = ROOM_PATH_PATTERN\.exec\(value\.path\)/);
+  assert.match(model, /const control = HOST_CONTROL_PATTERN\.exec\(value\.host_control\)/);
+  assert.match(model, /room\[1\] === control\[1\]/);
+  assert.match(model, /room\[2\] === control\[2\]/);
+  assert.match(model, /room\[2\] === expires/);
+  assert.match(model, /if \(!valid\(room\)\) throw new TypeError\("invalid room capability"\)/);
   assert.match(model, /url\.searchParams\.set\("m", selected\)/);
   assert.doesNotMatch(model, /searchParams\.set\("n"/,
     "shareable capability URLs never carry names");
-  assert.match(model, /typeof value\.path === "string"/);
-  assert.match(model, /typeof value\.host_control === "string"/);
-  assert.match(model, /Number\.isSafeInteger\(value\.expires_at\)/);
   assert.match(model, /runtime\.loadHostRoom\(\)/);
   assert.match(model, /runtime\.saveHostRoom\(JSON\.stringify\(room\)\)/);
   assert.match(model, /runtime\.forgetHostRoom\(\)/);
