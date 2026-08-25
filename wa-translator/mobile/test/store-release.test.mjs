@@ -3,7 +3,7 @@ import { readFile, stat } from "node:fs/promises";
 import test from "node:test";
 
 import {
-  APP_ID, PLAY_VERSION_CODE_MAX, PUBLIC_ORIGIN, normalizeFingerprint,
+  APP_ID, MOBILE_PROTOCOL, PLAY_VERSION_CODE_MAX, PUBLIC_ORIGIN, normalizeFingerprint,
   releaseBuildNumber, validateAndroidAssociation, validateAppleAssociation,
   validateBootstrap, validateProviderSnapshot,
 } from "../scripts/store-preflight.mjs";
@@ -51,15 +51,18 @@ test("credential-gated Fastlane lanes stop at beta tracks", async () => {
   assert.match(workflow, /npm ci && npm run check && npm run sync/);
   assert.match(workflow, /bundle exec fastlane --version/);
   assert.match(workflow, /github\.ref == 'refs\/heads\/main'/);
-  assert.match(workflow, /epoch_2020=1577836800/,
-               "Android versioning uses a fixed compact epoch rather than raw Unix seconds");
-  assert.match(workflow, /build_minutes=\$\(\( \(epoch_seconds - epoch_2020\) \/ 60 \)\)/);
-  assert.match(workflow, /version_code=\$\(\( build_minutes \* 10 \+ attempt \)\)/);
+  assert.match(workflow, /migration_base=1900000000/,
+               "the new strategy stays above any pre-switch 2026 Unix-seconds versionCode");
+  assert.match(workflow, /run_number="\$\{GITHUB_RUN_NUMBER\}"/);
+  assert.match(workflow, /attempt="\$\{GITHUB_RUN_ATTEMPT\}"/);
+  assert.match(workflow, /version_code=\$\(\( migration_base \+ run_number \* 100 \+ attempt \)\)/,
+               "run number and retry remain monotonic without consuming wall-clock seconds");
   assert.match(workflow, /version_code > 2100000000/,
                "the release generator refuses values above Google Play's versionCode ceiling");
   assert.match(workflow, /LINGUA_ANDROID_VERSION_CODE=\$\{version_code\}/);
   assert.match(workflow, /LINGUA_ANDROID_VERSION_NAME=1\.0\.\$\{GITHUB_RUN_NUMBER\}\.\$\{GITHUB_RUN_ATTEMPT\}/);
-  assert.equal((workflow.match(/date -u \+%s/g) || []).length, 2);
+  assert.equal((workflow.match(/date -u \+%s/g) || []).length, 1,
+               "only iOS still uses epoch seconds; Android has a migration-safe monotonic sequence");
   assert.match(workflow, /LINGUA_IOS_BUILD_NUMBER=\$\(date -u \+%s\)/);
   for (const job of ["android", "ios"]) {
     const section = workflow.split(`\n  ${job}:`)[1].split("\n  ")[0];
@@ -98,24 +101,28 @@ test("credential-gated Fastlane lanes stop at beta tracks", async () => {
 
 test("store preflight rejects live backend, build, provider, and association drift", () => {
   const bootstrap = {
-    protocol: 1,
+    protocol: MOBILE_PROTOCOL,
     minimum_client_build: 1,
     public_origin: PUBLIC_ORIGIN,
     account_mode: "session",
     call_lifecycle: "foreground",
     max_room_participants: 2,
   };
+  assert.equal(MOBILE_PROTOCOL, 2,
+               "session-v2 issuance is a deliberate installed-client protocol boundary");
   assert.equal(PLAY_VERSION_CODE_MAX, 2_100_000_000);
-  assert.equal(releaseBuildNumber("android", {LINGUA_ANDROID_VERSION_CODE: "123"}), 123);
+  assert.equal(releaseBuildNumber("android", {LINGUA_ANDROID_VERSION_CODE: "1900000101"}), 1_900_000_101);
   assert.equal(releaseBuildNumber("ios", {LINGUA_IOS_BUILD_NUMBER: "456"}), 456);
   assert.throws(() => releaseBuildNumber("android", {}), /build number/);
   assert.throws(() => releaseBuildNumber("android", {LINGUA_ANDROID_VERSION_CODE: "2100000001"}),
     /Google Play maximum/);
-  assert.equal(validateBootstrap(bootstrap, 123), true);
-  assert.throws(() => validateBootstrap({...bootstrap, minimum_client_build: 124}, 123),
-    /requires mobile build 124/);
-  assert.throws(() => validateBootstrap({...bootstrap, max_room_participants: 4}, 123), /two-person/);
-  assert.throws(() => validateBootstrap({...bootstrap, public_origin: "https://attacker.test"}, 123),
+  assert.equal(validateBootstrap(bootstrap, 1_900_000_101), true);
+  assert.throws(() => validateBootstrap({...bootstrap, protocol: 1}, 1_900_000_101),
+    /protocol mismatch/);
+  assert.throws(() => validateBootstrap({...bootstrap, minimum_client_build: 1_900_000_102}, 1_900_000_101),
+    /requires mobile build 1900000102/);
+  assert.throws(() => validateBootstrap({...bootstrap, max_room_participants: 4}, 1_900_000_101), /two-person/);
+  assert.throws(() => validateBootstrap({...bootstrap, public_origin: "https://attacker.test"}, 1_900_000_101),
     /public origin/);
 
   assert.equal(validateProviderSnapshot({providers: ["google"]}, "android"), true);
