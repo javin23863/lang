@@ -36,8 +36,13 @@ test("room usage survives transient account delivery failures without extending 
   assert.match(source, /private usageFlush: Promise<void> \| null = null/);
   assert.match(source, /if \(this\.usageFlush\) return this\.usageFlush/,
                "last-peer and host-close flushes share one live delivery operation");
-  assert.match(source, /this\.ctx\.storage\.transaction\(async transaction => \{[\s\S]*?transaction\.put\(USAGE_PENDING_KEY, \{\.\.\.active\}\)[\s\S]*?transaction\.put\("usage", \{\.\.\.EMPTY_USAGE\}\)/,
-               "active counters are durably moved to a pending snapshot before any network delivery");
+  assert.match(source, /const pending: PendingUsage = \{\.\.\.active, deliveryId: usageDeliveryId\(\)\};[\s\S]*?transaction\.put\(USAGE_PENDING_KEY, pending\)[\s\S]*?transaction\.put\("usage", \{\.\.\.EMPTY_USAGE\}\)/,
+               "active counters and a stable delivery id are durably moved before any network delivery");
+  assert.match(source, /if \(!DELIVERY_ID_PATTERN\.test\(existing\.deliveryId \|\| ""\)\)[\s\S]*?existing\.deliveryId = usageDeliveryId\(\)/,
+               "a pending snapshot from the previous wrapper revision is upgraded in place before retry");
+  assert.match(source, /const deliveryId = `u1\.\$\{roomRef\}\.\$\{pending\.deliveryId\}\.\$\{kind\}`/,
+               "every kind in one pending snapshot receives a stable retry idempotency key");
+  assert.match(source, /JSON\.stringify\(\{kind, units, room_ref: roomRef, delivery_id: deliveryId\}\)/);
   assert.match(source, /catch \{\s*return true; \/\/ pending storage remains intact for the retry alarm/,
                "a thrown account delivery leaves the pending snapshot and requests a retry");
   assert.match(source, /if \(status < 200 \|\| status >= 300\) return true/,
@@ -52,4 +57,17 @@ test("room usage survives transient account delivery failures without extending 
                "one idle-room flush can drain a backlog and the counters accumulated behind it without an unbounded loop");
   assert.match(source, /if \(!snapshot\.wasPending \|\| this\.joinedCount\(\) > 0\) return false/,
                "a retry during a rejoined room delivers only the old backlog and leaves active-call counters in place");
+});
+
+test("account usage wrapper atomically deduplicates current room deliveries", async () => {
+  const source = await read("../../cloudflare/src/account-directory.ts");
+  assert.match(source, /const DELIVERY_RETENTION_MS = 48 \* 60 \* 60 \* 1000/,
+               "dedupe markers outlive every 24-hour room retry but not account history");
+  assert.match(source, /if \(await transaction\.get<DeliveryMarker>\(markerKey\)\) return "duplicate"/);
+  assert.match(source, /transaction\.put\("totals", totals\)[\s\S]*?transaction\.put\(usageKey, row\)[\s\S]*?transaction\.put\(markerKey, \{createdAt: now\}\)/,
+               "totals, row and dedupe marker commit in one Durable Object transaction");
+  assert.match(source, /if \(outcome === "missing"\) return new Response\("Not found", \{status: 404\}\)/,
+               "account deletion remains authoritative and is never recreated by a retry");
+  assert.match(source, /if \(!\("delivery_id" in data\)\) return null/,
+               "old room objects can finish during rolling deployment through the legacy base path");
 });
