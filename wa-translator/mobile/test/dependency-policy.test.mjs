@@ -21,6 +21,7 @@ test("dependency install scripts are explicit and version-pinned", async () => {
   const worker = await projectPolicy("../../cloudflare/package.json", "../../cloudflare/.npmrc");
   assert.deepEqual(worker, {
     "esbuild@0.28.1": true,
+    "fsevents@2.3.3": true,
     "workerd@1.20260811.1": true,
   });
 
