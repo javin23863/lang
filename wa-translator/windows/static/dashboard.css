@@ -59,8 +59,6 @@ body[data-auth="in"] #accountChip{display:flex}
 .tileText{min-width:0;font-weight:700;line-height:1.2}
 .tilePrimary{background:var(--accent);border-color:var(--accent);color:#FFF}
 .tilePrimary .tileIcon{background:rgba(255,255,255,.16);color:#FFF}
-.calleeField{padding:16px 17px;gap:8px}
-.hint{color:var(--label-2);font-size:13px;line-height:1.4}
 .credits{display:grid;gap:12px;padding:18px}
 #usageList{list-style:none;margin:0;padding:0;display:grid}
 #usageList li{display:flex;justify-content:space-between;gap:12px;align-items:baseline;min-height:36px;padding:8px 0;border-top:1px solid var(--separator);font-size:15px}
