@@ -4,6 +4,8 @@ export const PARTICIPANT_LIMIT = 2;
 const COMPUTE_FETCH_TIMEOUT_MS = 30_000;
 const PRESENCE_LEASE_MS = 90_000;
 const USAGE_PENDING_KEY = "usagePendingV1";
+const USAGE_RETRY_MS = 5 * 60 * 1000;
+const ALARM_FLOOR_MS = 1_000;
 
 type RoomBaseShape = {
   ctx: DurableObjectState;
@@ -12,6 +14,7 @@ type RoomBaseShape = {
   webSocketMessage(socket: WebSocket, message: string | ArrayBuffer): Promise<void>;
   webSocketClose(socket: WebSocket, code: number, reason: string): Promise<void>;
   webSocketError(socket: WebSocket): Promise<void>;
+  alarm(): Promise<void>;
 };
 
 // The original room implementation predates the final two-person product
@@ -113,22 +116,38 @@ export class Room extends RoomBase {
     });
   }
 
+  private async reconcileUsageAlarm(retry: boolean): Promise<void> {
+    const expiresAt = await this.ctx.storage.get<number>("expiresAt");
+    if (!Number.isSafeInteger(expiresAt)) return;
+    const now = Date.now();
+    const expiryMs = expiresAt! * 1000;
+    if (expiryMs <= now) return;
+    const target = retry ? Math.min(expiryMs, now + USAGE_RETRY_MS) : expiryMs;
+    await this.ctx.storage.setAlarm(Math.max(now + ALARM_FLOOR_MS, target));
+  }
+
   private flushUsage(): Promise<void> {
     // Last-socket close and host close can arrive close together. Serialize the
     // delivery side so one pending snapshot cannot be sent twice by concurrent
     // flush calls on the same live Durable Object instance.
     if (this.usageFlush) return this.usageFlush;
-    const operation = this.flushUsageOnce().finally(() => {
+    const operation = (async () => {
+      const retry = await this.flushUsageOnce();
+      // A transient account-object failure gets another chance inside the
+      // existing room lifetime. Success restores the room's original expiry
+      // alarm. Nothing here can extend storage beyond that expiry.
+      await this.reconcileUsageAlarm(retry);
+    })().finally(() => {
       if (this.usageFlush === operation) this.usageFlush = null;
     });
     this.usageFlush = operation;
     return operation;
   }
 
-  private async flushUsageOnce(): Promise<void> {
+  private async flushUsageOnce(): Promise<boolean> {
     await this.settleCallUsage();
     const owner = await this.ctx.storage.get<string>("owner");
-    if (!owner) return;
+    if (!owner) return false;
 
     const roomRef = await roomUsageRef(this.ctx.id.name || "");
     const stub = this.env.USERS.get(this.env.USERS.idFromName(owner));
@@ -139,12 +158,12 @@ export class Room extends RoomBase {
     // next normal close; we never chase a live room in an unbounded loop.
     for (let pass = 0; pass < 2; pass++) {
       const snapshot = await this.claimUsageSnapshot();
-      if (!snapshot) return;
+      if (!snapshot) return false;
       const pending = snapshot.usage;
       if (usageEmpty(pending)) {
         await this.ctx.storage.delete(USAGE_PENDING_KEY);
         if (snapshot.wasPending && pass === 0) continue;
-        return;
+        return false;
       }
 
       const deliveries: Array<[UsageKind, number]> = [
@@ -163,7 +182,7 @@ export class Room extends RoomBase {
             body: JSON.stringify({kind, units, room_ref: roomRef}),
           }));
         } catch {
-          return; // pending storage remains intact for the next close/expiry flush
+          return true; // pending storage remains intact for the retry alarm
         }
         const status = response.status;
         await response.body?.cancel().catch(() => {});
@@ -176,9 +195,9 @@ export class Room extends RoomBase {
             await transaction.delete(USAGE_PENDING_KEY);
             await transaction.put("usage", {...EMPTY_USAGE});
           });
-          return;
+          return false;
         }
-        if (status < 200 || status >= 300) return;
+        if (status < 200 || status >= 300) return true;
 
         if (kind === "call") pending.callMs = 0;
         else pending[kind] = 0;
@@ -186,8 +205,9 @@ export class Room extends RoomBase {
         else await this.ctx.storage.put(USAGE_PENDING_KEY, {...pending});
       }
 
-      if (!snapshot.wasPending) return;
+      if (!snapshot.wasPending) return false;
     }
+    return false;
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -230,5 +250,17 @@ export class Room extends RoomBase {
       }
     }
     await super.webSocketMessage(socket, message);
+  }
+
+  async alarm(): Promise<void> {
+    const expiresAt = await this.ctx.storage.get<number>("expiresAt");
+    if (Number.isSafeInteger(expiresAt) && Date.now() < expiresAt! * 1000) {
+      // This is a usage-delivery retry alarm, not room expiry. Retry without
+      // touching sockets or room state; flushUsage restores expiry or schedules
+      // the next bounded retry depending on the delivery result.
+      await this.flushUsage();
+      return;
+    }
+    await super.alarm();
   }
 }
