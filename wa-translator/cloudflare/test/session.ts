@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { mintSessionV2 } from "../src/session-v2";
 
 // Every suite that creates a room needs a signed-in caller now. The fixture
 // creates the matching account first so tests model the production invariant:
@@ -48,6 +49,14 @@ export async function hostSession(
     "HMAC", key, new TextEncoder().encode(`session.v1.${userId}.${expiresAt}`)
   );
   return `s1.${userId}.${expiresAt}.${base64url(signature)}`;
+}
+
+export async function hostSessionV2(
+  userId = "TestHostUser0123456789", ttlSeconds = SESSION_TTL_SECONDS
+): Promise<string> {
+  await ensureHostAccount(userId);
+  const expiresAt = Math.floor(Date.now() / 1000) + ttlSeconds;
+  return (await mintSessionV2(userId, SECRET, expiresAt)).token;
 }
 
 export async function hostSessionCookie(userId?: string): Promise<string> {
