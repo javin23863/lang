@@ -7,11 +7,37 @@ if [[ ! -s "$bundle" ]]; then
   exit 1
 fi
 
-bundletool_root="$HOME/.gradle/caches/modules-2/files-2.1/com.android.tools.build/bundletool"
-bundletool_jar="$(find "$bundletool_root" -type f -name 'bundletool-*.jar' -print 2>/dev/null | sort | tail -n 1 || true)"
-if [[ -z "$bundletool_jar" ]]; then
-  echo "Android artifact check: bundletool was not found in the Gradle cache." >&2
-  exit 1
+# The Maven bundletool artifact pulled transitively by AGP is a library JAR and
+# does not carry the executable Main-Class. Artifact inspection needs Google's
+# standalone shadow JAR instead. Pin both version and digest so this release
+# gate never executes an unverified mutable download.
+bundletool_version="1.18.1"
+bundletool_sha256="675786493983787ffa11550bdb7c0715679a44e1643f3ff980a529e9c822595c"
+bundletool_dir="${XDG_CACHE_HOME:-$HOME/.cache}/lingua-relay/bundletool"
+bundletool_jar="$bundletool_dir/bundletool-all-$bundletool_version.jar"
+bundletool_url="https://github.com/google/bundletool/releases/download/$bundletool_version/bundletool-all-$bundletool_version.jar"
+
+bundletool_valid() {
+  [[ -s "$bundletool_jar" ]] \
+    && printf '%s  %s\n' "$bundletool_sha256" "$bundletool_jar" | sha256sum -c - >/dev/null 2>&1
+}
+
+if ! bundletool_valid; then
+  mkdir -p "$bundletool_dir"
+  rm -f "$bundletool_jar"
+  bundletool_tmp="$(mktemp "$bundletool_dir/.bundletool.XXXXXX")"
+  if ! curl --fail --location --silent --show-error --retry 3 \
+      --proto '=https' --tlsv1.2 "$bundletool_url" --output "$bundletool_tmp"; then
+    rm -f "$bundletool_tmp"
+    echo "Android artifact check: could not download pinned standalone bundletool." >&2
+    exit 1
+  fi
+  if ! printf '%s  %s\n' "$bundletool_sha256" "$bundletool_tmp" | sha256sum -c - >/dev/null 2>&1; then
+    rm -f "$bundletool_tmp"
+    echo "Android artifact check: standalone bundletool checksum mismatch." >&2
+    exit 1
+  fi
+  mv "$bundletool_tmp" "$bundletool_jar"
 fi
 
 manifest="$(java -jar "$bundletool_jar" dump manifest --bundle="$bundle" --module=base)"
