@@ -1,6 +1,6 @@
 import { exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import { hostSession } from "./session";
+import { hostSessionV2 } from "./session";
 
 const ORIGIN = "https://room.test";
 const NATIVE_ORIGIN = "https://localhost";
@@ -21,11 +21,14 @@ async function browserSnapshot(session: string): Promise<Response> {
 }
 
 describe("server-side session revocation", () => {
-  it("revokes only the browser session that logged out", async () => {
+  it("revokes only the v2 browser session that logged out even when both expire together", async () => {
     const userId = "LogoutHostUser00000001";
-    const first = await hostSession(userId, SESSION_TTL_SECONDS);
-    const second = await hostSession(userId, SESSION_TTL_SECONDS - 60);
+    const first = await hostSessionV2(userId, SESSION_TTL_SECONDS);
+    const second = await hostSessionV2(userId, SESSION_TTL_SECONDS);
+    expect(first).toMatch(/^s2\./);
+    expect(second).toMatch(/^s2\./);
     expect(first).not.toBe(second);
+    expect(first.split(".")[2]).toBe(second.split(".")[2]);
 
     const foreign = await exports.default.fetch(`${ORIGIN}/auth/logout`, {
       method: "POST",
@@ -63,8 +66,8 @@ describe("server-side session revocation", () => {
     expect((await otherDevice.json<Snapshot>()).signed_in).toBe(true);
   });
 
-  it("revokes a native bearer and keeps the signed-out response readable by the app", async () => {
-    const session = await hostSession("NativeLogoutUser000001");
+  it("revokes a v2 native bearer and keeps the signed-out response readable by the app", async () => {
+    const session = await hostSessionV2("NativeLogoutUser000001");
     const logout = await exports.default.fetch(`${ORIGIN}/api/v1/auth/logout`, {
       method: "POST",
       headers: {Origin: NATIVE_ORIGIN, Authorization: `Bearer ${session}`},
