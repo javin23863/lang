@@ -32,9 +32,9 @@ behavior change.
 - Account deletion: available in the app (Delete account, on the main menu) and
   on the web at the same signed-in menu on the site. Deletion removes the
   account record, balance, totals, and usage rows immediately.
-- Credits: a balance is displayed and metered honestly, but the Buy credits
-  control is DISABLED and collects nothing. There is no purchase, no payment
-  method, no price, and no in-app purchase product in this version.
+- Monetization: version 1.0 has no purchase surface, payment method, price,
+  StoreKit product, or Google Play Billing product. The app may display recent
+  usage as account activity, but it does not sell or unlock digital capacity.
 - No advertising, advertising identifier, or cross-app tracking.
 - No analytics SDK.
 - No transcript history or call recording.
