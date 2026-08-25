@@ -2,7 +2,8 @@
 
 Use these answers when creating the Play Console and App Store Connect records.
 They describe version 1.0 and must be reviewed again whenever SDKs or product
-behavior change.
+behavior change. Current platform-policy rationale is pinned separately in
+`STORE-PRIVACY-SOURCES.md` and must be rechecked before a later submission.
 
 - Account required to START a call: the person who creates a room signs in with
   one of the OAuth providers enabled for that release. The source supports Google
@@ -41,11 +42,39 @@ behavior change.
   — never for tracking, advertising, or third-party sharing. Usage rows carry an
   opaque room reference, never a room link, and no message, caption, audio, or
   video content.
+- Apple App Privacy classification: retained account name, email, user ID, and
+  usage data are linked and used for App Functionality. The retained fixed-choice
+  abuse-report category is unlinked `Other User Content`. The SHA-256-derived
+  network-source identity used only to route a bounded abuse-quota counter is
+  conservatively declared as unlinked `Other Data Types`. Live microphone audio
+  and typed chat that are discarded after servicing the real-time request are not
+  labeled as Apple collection merely because they cross the network.
+- Google Play Data Safety classification: account name, email, and user ID are
+  collected for Account management/App functionality; usage counts are collected
+  as App interactions for App functionality; the fixed-choice abuse-report
+  category is collected as Other user-generated content for safety functionality.
+  `Voice or sound recordings` sent for speech recognition/translation and `Other
+  in-app messages` sent through room chat are included in the form response and
+  marked as processed ephemerally for App functionality. The SHA-256-derived
+  source-IP quota identity is conservatively `Device or other IDs`: collected,
+  not shared, required for abuse prevention, not ephemeral, and used for `Fraud
+  prevention, security, and compliance`. Natural WebRTC camera/video and natural
+  call audio remain end-to-end encrypted between participants, including through
+  TURN relay, and are not readable by the developer or relay intermediary.
+  Treat Cloudflare/Modal transfers as service-provider processing only if the
+  actual production contractual role still satisfies Google's service-provider
+  exception when the console form is completed.
 - Authentication/security metadata: when a user logs out, the service stores
   only a one-way SHA-256 digest of that specific session token plus its original
   expiry so replay of a copied credential is rejected. The raw token is not
   stored in the revocation record. The digest is removed at token expiry (no
   later than 30 days from sign-in) or immediately when the account is deleted.
+- Abuse-prevention network metadata: Cloudflare supplies the request source IP at
+  the edge. The Worker hashes it with SHA-256 before quota routing and uses the
+  digest only to select a per-action abuse-control object; the quota record itself
+  contains only a window start and count and is deleted automatically at the end
+  of its bounded window, never later than 24 hours. The quota identity is not
+  joined to the signed-in account and is not used for advertising or tracking.
 - Account deletion: available in the app (Delete account, on the main screen)
   and on the web at the same signed-in screen. Deletion removes the account
   profile, aggregate usage totals, usage rows, and logout-revocation markers
@@ -77,7 +106,10 @@ behavior change.
   public room reference for up to 30 days. Its internal non-invite room routing
   ID and room-expiry value exist only while moderator closure can still work and
   are deleted when that room expires, no later than 24 hours after creation.
-  Infrastructure security and error logs may be retained by the providers.
+  Abuse-quota counters keep only a window start/count in an object selected by a
+  SHA-256-derived source-IP identity and are deleted at the quota-window end,
+  never later than 24 hours. Infrastructure security and error logs may be
+  retained by the providers.
 - Room control: the host can close a room; otherwise its bearer link expires
   after 24 hours.
 - Safety/reporting: a live participant can submit a private category-only report.
