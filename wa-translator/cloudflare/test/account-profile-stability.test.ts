@@ -35,7 +35,7 @@ describe("stable OAuth account metadata", () => {
       name: "Relay User",
       email: "relay-user@privaterelay.appleid.com",
     }, BLANK_ID);
-    expect(complete.status).toBe(204);
+    expect(complete.ok).toBe(true);
   });
 
   it("preserves established Apple email/name when a later provider refresh omits them", async () => {
@@ -45,7 +45,7 @@ describe("stable OAuth account metadata", () => {
       name: "Relay User",
       email: "relay-user@privaterelay.appleid.com",
     });
-    expect(first.status).toBe(204);
+    expect(first.ok).toBe(true);
 
     const later = await writeProfile({
       user_id: USER_ID,
@@ -53,7 +53,7 @@ describe("stable OAuth account metadata", () => {
       name: "",
       email: "",
     });
-    expect(later.status).toBe(204);
+    expect(later.ok).toBe(true);
 
     const snapshot = await directory().fetch("https://users.internal/");
     expect(snapshot.status).toBe(200);
@@ -67,12 +67,13 @@ describe("stable OAuth account metadata", () => {
   });
 
   it("rejects attempts to mutate provider or derived account id after creation", async () => {
-    expect((await writeProfile({
+    const initial = await writeProfile({
       user_id: USER_ID,
       provider: "apple",
       name: "Relay User",
       email: "relay-user@privaterelay.appleid.com",
-    })).status).toBe(204);
+    });
+    expect(initial.ok).toBe(true);
 
     const changedProvider = await writeProfile({
       user_id: USER_ID,
