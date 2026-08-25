@@ -46,6 +46,13 @@ test("public legal pages share current Lingua chrome and deletion remains discov
   assert.match(privacy, /Usage rows are kept for 90 days/);
   assert.match(privacy, /does not sell credits or accept in-app payments/i);
   assert.doesNotMatch(privacy, /credit balance/i);
+  assert.match(privacy, /one-way SHA-256 digest of that specific signed-out session token/i,
+               "logout replay protection is disclosed without implying raw token retention");
+  assert.match(privacy, /token itself is not stored in this revocation record/i);
+  assert.match(privacy, /no longer than 30 days from sign-in/i,
+               "security metadata has the same maximum lifetime as its session credential");
+  assert.match(privacy, /any signed-out session revocation digests/i,
+               "account deletion explicitly removes logout-security metadata too");
 
   const terms = await read("terms.html");
   assert.match(terms, /Version 1\.0 does not sell credits or accept in-app payments/);
