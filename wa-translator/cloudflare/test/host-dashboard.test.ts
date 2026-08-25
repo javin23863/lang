@@ -10,15 +10,10 @@ describe("installed host dashboard client", () => {
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
     const html = await response.text();
-    const scriptResponse = await exports.default.fetch(`${ORIGIN}/dashboard.js`);
-    expect(scriptResponse.status).toBe(200);
-    const script = await scriptResponse.text();
-    const apiResponse = await exports.default.fetch(`${ORIGIN}/dashboard-api.js`);
-    expect(apiResponse.status).toBe(200);
-    const api = await apiResponse.text();
-    const cssResponse = await exports.default.fetch(`${ORIGIN}/dashboard.css`);
-    expect(cssResponse.status).toBe(200);
-    const css = await cssResponse.text();
+    const script = await (await exports.default.fetch(`${ORIGIN}/dashboard.js`)).text();
+    const api = await (await exports.default.fetch(`${ORIGIN}/dashboard-api.js`)).text();
+    const account = await (await exports.default.fetch(`${ORIGIN}/dashboard-account.js`)).text();
+    const css = await (await exports.default.fetch(`${ORIGIN}/dashboard.css`)).text();
 
     for (const id of [
       "roomState", "createBtn", "shareLink", "copyBtn", "shareBtn", "openBtn", "closeBtn",
@@ -35,25 +30,37 @@ describe("installed host dashboard client", () => {
     expect(script).not.toContain("room.callee");
     expect(script).toContain("runtime.openRoom(currentRoom.path, roomMode(currentRoom))");
 
-    expect(script).toContain('"signInGoogle"');
-    expect(script).toContain('"signInApple"');
-    expect(script).toContain('"signInFacebook"');
     expect(html).toContain('aria-live="polite"');
     expect(html).toContain('<script src="/app-runtime.js"></script>');
     expect(html).toContain('<script src="/dashboard-api.js"></script>');
+    expect(html).toContain('<script src="/dashboard-account.js"></script>');
     expect(html).toContain('<script src="/qr.js" defer></script>');
     expect(html).toContain('<link rel="stylesheet" href="/dashboard.css">');
     expect(html).toContain('<script src="/dashboard.js"></script>');
-    expect(html.indexOf('<script src="/dashboard-api.js"></script>'))
-      .toBeLessThan(html.indexOf('<script src="/dashboard.js"></script>'));
+    const dashboardTag = html.indexOf('<script src="/dashboard.js"></script>');
+    expect(html.indexOf('<script src="/dashboard-api.js"></script>')).toBeLessThan(dashboardTag);
+    expect(html.indexOf('<script src="/dashboard-account.js"></script>')).toBeLessThan(dashboardTag);
     expect(html).not.toContain("<style>");
+
+    // Account/auth rendering is a feature boundary rather than dashboard boot
+    // code. It still uses the shared deadline client and the provider contract.
+    expect(script).toContain("window.LinguaDashboardAccount.create");
+    expect(script).toContain("accountPresenter.load()");
+    expect(script).toContain("accountPresenter.render(account)");
+    expect(script).not.toContain('dashboardFetch(runtime.apiUrl("/api/me")');
+    expect(account).toContain('dashboardFetch(runtime.apiUrl("/api/me")');
+    expect(account).toContain('"signInGoogle"');
+    expect(account).toContain('"signInApple"');
+    expect(account).toContain('"signInFacebook"');
+    expect(account).toContain('/auth/" + provider + "/start');
+    expect(account).toContain('document.body.dataset.auth = account.signed_in ? "in" : "out"');
+    expect(account).not.toContain("new AbortController()");
 
     expect(script).toContain("https://wa.me/?text=");
     expect(script).toContain("https://line.me/R/share?text=");
     expect(script).not.toContain("social-plugins.line.me");
     expect(script).toContain("window.LinguaQR.svg(roomUrl(currentRoom))");
     expect(script).toContain('dashboardFetch(runtime.apiUrl("/api/rooms")');
-    expect(script).toContain('dashboardFetch(runtime.apiUrl("/api/me")');
     expect(script).toContain('dashboardFetch(runtime.apiUrl("/api/room-control")');
     expect(script).toContain('dashboardFetch(runtime.apiUrl("/api/room-control/close")');
 
@@ -83,15 +90,15 @@ describe("installed host dashboard client", () => {
     expect(script).toContain('emit("room.close.result", {result: "failure"})');
 
     expect(css).toContain("[data-auth=");
-    expect(script).toContain('document.body.dataset.auth = account.signed_in ? "in" : "out"');
     for (const rule of css.match(/(?<=[\n;}])#(authPanel|accountChip|creditsPanel|roomPanel)\{[^}]*\}/g) ?? []) {
       expect(rule).not.toContain("display:");
     }
     expect(css).toContain('body[data-auth="in"] #accountChip{display:flex}');
 
-    expect(script).toContain('/auth/" + provider + "/start');
+    // Sign-in is provider-owned; neither feature boundary carries a password.
     expect(html).not.toContain("password");
     expect(script).not.toContain("password");
+    expect(account).not.toContain("password");
     expect(html).not.toContain('type="password"');
     expect(script).toContain("participantCount <= 2");
     expect(script).toContain("value.participant_limit !== 2");
