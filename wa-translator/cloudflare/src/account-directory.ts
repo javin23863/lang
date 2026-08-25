@@ -4,14 +4,7 @@ import { UserDirectory as WorkerUserDirectory } from "./worker";
 // zero-only credits preview from the active product. The base object still owns
 // profile/usage retention and deletion; this wrapper removes the legacy field
 // on the next account read/write and never returns it to clients.
-type UserDirectoryBaseShape = {
-  ctx: DurableObjectState;
-  fetch(request: Request): Promise<Response>;
-};
-
-const UserDirectoryBase = WorkerUserDirectory as unknown as new (...args: any[]) => UserDirectoryBaseShape;
-
-export class UserDirectory extends UserDirectoryBase {
+export class UserDirectory extends WorkerUserDirectory {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const accountRoot = url.pathname === "/";
