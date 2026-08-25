@@ -14,7 +14,7 @@ type Snapshot = {
 type Participant = { id: string; socket: WebSocket };
 
 // Each test signs in as its own provider identity, so no test can inherit a
-// balance, a total, or a usage row from the one before it.
+// total or usage row from the one before it.
 async function signIn(code = "fixture-google"): Promise<string> {
   const started = await exports.default.fetch(`${ORIGIN}/auth/google/start`, {
     redirect: "manual"
@@ -98,6 +98,14 @@ async function closeRoom(hostControl: string): Promise<void> {
   expect(response.status).toBe(200);
 }
 
+async function expectUsageBuffersCleared(token: string): Promise<void> {
+  const stub = env.ROOMS.get(env.ROOMS.idFromName(token.split(".")[0]));
+  await runInDurableObject(stub, async (_instance, ctx) => {
+    expect(await ctx.storage.get("usagePendingV1")).toBeUndefined();
+    expect(await ctx.storage.get("usage")).toEqual({callMs: 0, chat: 0, tts: 0});
+  });
+}
+
 async function account(session: string): Promise<Snapshot> {
   const response = await exports.default.fetch(`${ORIGIN}/api/me`, {
     headers: { Cookie: session }
@@ -106,7 +114,7 @@ async function account(session: string): Promise<Snapshot> {
   return response.json<Snapshot>();
 }
 
-describe("credits balance and real usage metering", () => {
+describe("real usage metering", () => {
   it("meters a two-language call with translated voice back to the host account", async () => {
     const session = await signIn();
     const { token, hostControl } = await createRoom(session);
@@ -126,8 +134,9 @@ describe("credits balance and real usage metering", () => {
     // 90 seconds of occupied room is one whole minute plus a part minute.
     expect(snapshot.totals!.call_minutes).toBeGreaterThanOrEqual(1);
     expect(snapshot.totals!.chat_messages).toBe(0);
-    // No purchase path exists yet, so metering must not move the balance.
-    expect(snapshot.credits).toEqual({ balance: 0 });
+    // Version 1.0 is non-monetized; the retired zero-only field must not leak
+    // back into the active account contract merely because usage is metered.
+    expect(snapshot.credits).toBeUndefined();
 
     const kinds = snapshot.recent!.map(row => row.kind).sort();
     expect(kinds).toEqual(["call", "tts"]);
@@ -141,6 +150,7 @@ describe("credits balance and real usage metering", () => {
     expect(serialized).not.toContain(token);
     expect(serialized).not.toContain(token.split(".")[0]);
     expect(serialized).not.toContain(hostControl);
+    await expectUsageBuffersCleared(token);
   });
 
   it("drops a flush whose account was deleted mid-call instead of resurrecting it", async () => {
@@ -157,6 +167,7 @@ describe("credits balance and real usage metering", () => {
 
     speaker.socket.close(1000, "done");
     await closeRoom(hostControl);
+    await expectUsageBuffersCleared(token);
 
     // Same provider identity signs in again: a fresh, empty account. If the
     // dropped flush had upserted anything, these totals would carry it.
@@ -166,5 +177,6 @@ describe("credits balance and real usage metering", () => {
       call_minutes: 0, chat_messages: 0, tts_phrases: 0
     });
     expect(revived.recent).toEqual([]);
+    expect(revived.credits).toBeUndefined();
   });
 });
