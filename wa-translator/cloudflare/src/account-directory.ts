@@ -5,6 +5,8 @@ const DELIVERY_MARKER_PREFIX = "delivery:";
 const DELIVERY_RETENTION_MS = 48 * 60 * 60 * 1000;
 const SESSION_REVOCATION_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const SESSION_REVOCATION_PREFIX = "session-revoked:";
+const SESSION_ISSUANCE_PREFIX = "session-issued:";
+const ACCOUNT_DELETION_KEY = "account-deletion:v1";
 const SESSION_REVOCATION_MAX_MS = 31 * 24 * 60 * 60 * 1000;
 const UNSAFE_PROFILE_FORMAT = /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g;
 const ALARM_FLOOR_MS = 1_000;
@@ -13,6 +15,8 @@ type UserTotals = {call_minutes: number; chat_messages: number; tts_phrases: num
 type UsageRecord = {at: string; kind: string; units: number; room_ref: string};
 type DeliveryMarker = {createdAt: number};
 type SessionRevocation = {expiresAt: number};
+type SessionIssuance = {issuedAt: number; expiresAt: number};
+type AccountDeletion = {deletedAt: number; expiresAt: number};
 type UserProfile = {
   user_id: string; provider: string; name: string; email: string; created_at: string;
 };
@@ -25,6 +29,11 @@ const TOTAL_FIELD = new Map([
 function cleanProfileText(value: string, maxCodePoints: number): string {
   return Array.from(value.replace(UNSAFE_PROFILE_FORMAT, "").trim())
     .slice(0, maxCodePoints).join("");
+}
+
+function validSessionExpiry(expiresAt: unknown, now = Date.now()): expiresAt is number {
+  return typeof expiresAt === "number" && Number.isSafeInteger(expiresAt)
+    && expiresAt * 1000 > now && expiresAt * 1000 <= now + SESSION_REVOCATION_MAX_MS;
 }
 
 // Keep the existing Durable Object class name/migration while retiring the
@@ -61,19 +70,82 @@ export class UserDirectory extends WorkerUserDirectory {
 
   private async pruneSessionRevocations(): Promise<void> {
     const now = Date.now();
-    const markers = await this.ctx.storage.list<SessionRevocation>({prefix: SESSION_REVOCATION_PREFIX});
-    const expired = [...markers].filter(([, marker]) =>
-      !Number.isSafeInteger(marker.expiresAt)
-      || marker.expiresAt * 1000 <= now
-      || marker.expiresAt * 1000 > now + SESSION_REVOCATION_MAX_MS
+    const revocations = await this.ctx.storage.list<SessionRevocation>({
+      prefix: SESSION_REVOCATION_PREFIX
+    });
+    const expiredRevocations = [...revocations].filter(([, marker]) =>
+      !validSessionExpiry(marker.expiresAt, now)
     );
-    if (expired.length) await this.ctx.storage.delete(expired.map(([key]) => key));
-    for (const [key] of expired) markers.delete(key);
-
-    if (markers.size) {
-      const earliest = Math.min(...[...markers.values()].map(marker => marker.expiresAt * 1000));
-      await this.moveAlarmEarlier(earliest);
+    if (expiredRevocations.length) {
+      await this.ctx.storage.delete(expiredRevocations.map(([key]) => key));
     }
+    for (const [key] of expiredRevocations) revocations.delete(key);
+
+    const issuances = await this.ctx.storage.list<SessionIssuance>({prefix: SESSION_ISSUANCE_PREFIX});
+    const expiredIssuances = [...issuances].filter(([, marker]) =>
+      !Number.isSafeInteger(marker.issuedAt) || marker.issuedAt > now
+      || !validSessionExpiry(marker.expiresAt, now)
+    );
+    if (expiredIssuances.length) {
+      await this.ctx.storage.delete(expiredIssuances.map(([key]) => key));
+    }
+    for (const [key] of expiredIssuances) issuances.delete(key);
+
+    let deletion = await this.ctx.storage.get<AccountDeletion>(ACCOUNT_DELETION_KEY);
+    if (deletion && (!Number.isSafeInteger(deletion.deletedAt) || deletion.deletedAt > now
+        || !Number.isSafeInteger(deletion.expiresAt) || deletion.expiresAt <= now
+        || deletion.expiresAt > deletion.deletedAt + SESSION_REVOCATION_MAX_MS)) {
+      await this.ctx.storage.delete(ACCOUNT_DELETION_KEY);
+      deletion = undefined;
+    }
+
+    const expiries = [
+      ...[...revocations.values()].map(marker => marker.expiresAt * 1000),
+      ...[...issuances.values()].map(marker => marker.expiresAt * 1000),
+      ...(deletion ? [deletion.expiresAt] : []),
+    ];
+    if (expiries.length) await this.moveAlarmEarlier(Math.min(...expiries));
+  }
+
+  private async accountDeletion(request: Request): Promise<Response | null> {
+    const url = new URL(request.url);
+    if (request.method !== "DELETE" || url.pathname !== "/") return null;
+    const response = await super.fetch(request);
+    if (!response.ok) return response;
+    const deletedAt = Date.now();
+    const expiresAt = deletedAt + SESSION_REVOCATION_MAX_MS;
+    // Base deletion intentionally removes profile/usage/session rows. Re-add one
+    // non-identifying generation tombstone so an old signed bearer cannot become
+    // valid again if the same provider subject recreates this deterministic DO.
+    await this.ctx.storage.put(ACCOUNT_DELETION_KEY, {deletedAt, expiresAt});
+    await this.moveAlarmEarlier(expiresAt);
+    return response;
+  }
+
+  private async sessionIssuance(request: Request): Promise<Response | null> {
+    const url = new URL(request.url);
+    if (request.method !== "POST" || url.pathname !== "/session-issuances") return null;
+    let data: Record<string, unknown>;
+    try {
+      const parsed = await request.json<unknown>();
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+      data = parsed as Record<string, unknown>;
+    } catch {
+      return new Response("Invalid session issuance", {status: 400});
+    }
+    const digest = typeof data.digest === "string" ? data.digest : "";
+    const expiresAt = data.expires_at;
+    const now = Date.now();
+    if (Object.keys(data).sort().join(",") !== "digest,expires_at"
+        || !SESSION_REVOCATION_PATTERN.test(digest) || !validSessionExpiry(expiresAt, now)) {
+      return new Response("Invalid session issuance", {status: 400});
+    }
+    if (!await this.ctx.storage.get("profile")) return new Response("Not found", {status: 404});
+    await this.ctx.storage.put(`${SESSION_ISSUANCE_PREFIX}${digest}`, {
+      issuedAt: now, expiresAt
+    });
+    await this.pruneSessionRevocations();
+    return new Response(null, {status: 204});
   }
 
   private async sessionRevocation(request: Request): Promise<Response | null> {
@@ -91,9 +163,7 @@ export class UserDirectory extends WorkerUserDirectory {
       const expiresAt = data.expires_at;
       const now = Date.now();
       if (Object.keys(data).sort().join(",") !== "digest,expires_at"
-          || !SESSION_REVOCATION_PATTERN.test(digest)
-          || typeof expiresAt !== "number" || !Number.isSafeInteger(expiresAt)
-          || expiresAt * 1000 <= now || expiresAt * 1000 > now + SESSION_REVOCATION_MAX_MS) {
+          || !SESSION_REVOCATION_PATTERN.test(digest) || !validSessionExpiry(expiresAt, now)) {
         return new Response("Invalid session revocation", {status: 400});
       }
       if (!await this.ctx.storage.get("profile")) {
@@ -106,17 +176,30 @@ export class UserDirectory extends WorkerUserDirectory {
 
     const match = url.pathname.match(/^\/session-revocations\/([A-Za-z0-9_-]{43})$/);
     if (!match || request.method !== "GET") return null;
-    const key = `${SESSION_REVOCATION_PREFIX}${match[1]}`;
+    const digest = match[1];
+    const key = `${SESSION_REVOCATION_PREFIX}${digest}`;
     const marker = await this.ctx.storage.get<SessionRevocation>(key);
     const now = Date.now();
-    if (!marker || !Number.isSafeInteger(marker.expiresAt)
-        || marker.expiresAt * 1000 <= now
-        || marker.expiresAt * 1000 > now + SESSION_REVOCATION_MAX_MS) {
-      if (marker) await this.ctx.storage.delete(key);
-      await this.pruneSessionRevocations();
-      return new Response("Not found", {status: 404});
+    if (marker && validSessionExpiry(marker.expiresAt, now)) return new Response(null, {status: 204});
+    if (marker) await this.ctx.storage.delete(key);
+
+    const deletion = await this.ctx.storage.get<AccountDeletion>(ACCOUNT_DELETION_KEY);
+    if (deletion && Number.isSafeInteger(deletion.deletedAt) && deletion.deletedAt <= now
+        && Number.isSafeInteger(deletion.expiresAt) && deletion.expiresAt > now
+        && deletion.expiresAt <= deletion.deletedAt + SESSION_REVOCATION_MAX_MS) {
+      const issuance = await this.ctx.storage.get<SessionIssuance>(
+        `${SESSION_ISSUANCE_PREFIX}${digest}`
+      );
+      if (!issuance || !Number.isSafeInteger(issuance.issuedAt)
+          || issuance.issuedAt <= deletion.deletedAt
+          || !validSessionExpiry(issuance.expiresAt, now)) {
+        await this.pruneSessionRevocations();
+        return new Response(null, {status: 204});
+      }
     }
-    return new Response(null, {status: 204});
+
+    await this.pruneSessionRevocations();
+    return new Response("Not found", {status: 404});
   }
 
   // A Durable Object is named from provider+subject, so once its profile exists
@@ -317,6 +400,12 @@ export class UserDirectory extends WorkerUserDirectory {
   }
 
   async fetch(request: Request): Promise<Response> {
+    const deletion = await this.accountDeletion(request);
+    if (deletion) return deletion;
+
+    const issuance = await this.sessionIssuance(request);
+    if (issuance) return issuance;
+
     const revocation = await this.sessionRevocation(request);
     if (revocation) return revocation;
 

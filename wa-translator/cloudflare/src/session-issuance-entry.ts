@@ -8,7 +8,7 @@ import {
   operationalSuccessRecord,
   withFailureRequestId,
 } from "./operational-telemetry";
-import { inspectSessionToken, mintSessionV2 } from "./session-v2";
+import { inspectSessionToken, mintSessionV2, type SessionIdentity } from "./session-v2";
 import type { Env } from "./worker";
 
 export { AbuseGate, ReportInbox, Room, UserDirectory };
@@ -17,11 +17,35 @@ const NATIVE_HANDOFF_PATH = "/api/v1/auth/handoff";
 const MOBILE_BOOTSTRAP_PATH = "/api/v1/mobile/bootstrap";
 const NATIVE_REPORT_PATH = "/api/v1/reports";
 const BROWSER_OAUTH_START_PATTERN = /^\/auth\/(google|apple|facebook)\/start$/;
+const BROWSER_OAUTH_CALLBACK_PATTERN = /^\/auth\/(google|apple|facebook)\/callback$/;
+const SESSION_COOKIE = "lr_s";
 const NATIVE_ORIGINS = new Set(["https://localhost", "capacitor://localhost"]);
 const ROOM_TOKEN_PATTERN = /^([A-Za-z0-9_-]{24})\.(\d{10})\.[A-Za-z0-9_-]{43}$/;
 const MOBILE_PROTOCOL = 2;
 const ROOM_RUNTIME_MARKER = '<script src="/app-runtime.js"></script>';
 const ROOM_PRODUCT_EVENTS = `${ROOM_RUNTIME_MARKER}\n<script src="/product-events.js"></script>\n<script src="/room-product-events.js"></script>`;
+
+function setCookieValues(headers: Headers): string[] {
+  return typeof headers.getSetCookie === "function"
+    ? headers.getSetCookie() : [headers.get("Set-Cookie") || ""].filter(Boolean);
+}
+
+function clearSessionCookie(): string {
+  return `${SESSION_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`;
+}
+
+async function registerSessionIssuance(identity: SessionIdentity, env: Env): Promise<boolean> {
+  const response = await env.USERS.get(env.USERS.idFromName(identity.userId)).fetch(
+    new Request("https://users.internal/session-issuances", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({digest: identity.digest, expires_at: identity.expiresAt}),
+    })
+  );
+  const status = response.status;
+  await response.body?.cancel().catch(() => {});
+  return status === 204;
+}
 
 async function browserOAuthAccountSwitchGuard(
   request: Request, env: Env, ctx: ExecutionContext
@@ -67,6 +91,40 @@ async function browserOAuthAccountSwitchGuard(
       "X-Content-Type-Options": "nosniff",
     },
   });
+}
+
+async function registeredBrowserOAuthCallback(
+  request: Request, env: Env, ctx: ExecutionContext
+): Promise<Response | null> {
+  const url = new URL(request.url);
+  if (!BROWSER_OAUTH_CALLBACK_PATTERN.test(url.pathname)) return null;
+  const response = await accountGuardEntry.fetch(request, env, ctx);
+  const cookies = setCookieValues(response.headers);
+  const sessionCookie = cookies.find(value => /^lr_s=s2\./.test(value));
+  if (!sessionCookie) return response;
+
+  const token = sessionCookie.slice(`${SESSION_COOKIE}=`.length).split(";")[0];
+  try {
+    const identity = await inspectSessionToken(token, env.ROOM_SIGNING_KEY);
+    if (!identity || identity.version !== 2 || !await registerSessionIssuance(identity, env)) {
+      throw new Error("session issuance registration failed");
+    }
+    return response;
+  } catch {
+    // The provider identity may already be stored, but no external bearer may
+    // escape unless its post-deletion generation is durably registered.
+    await response.body?.cancel().catch(() => {});
+    const headers = new Headers(response.headers);
+    headers.delete("Location");
+    headers.delete("Content-Length");
+    headers.delete("Set-Cookie");
+    for (const cookie of cookies) {
+      if (!cookie.startsWith(`${SESSION_COOKIE}=`)) headers.append("Set-Cookie", cookie);
+    }
+    headers.append("Set-Cookie", clearSessionCookie());
+    headers.set("Cache-Control", "no-store");
+    return new Response("Authentication unavailable", {status: 503, headers});
+  }
 }
 
 async function v2MobileBootstrap(
@@ -116,6 +174,10 @@ async function upgradedNativeHandoff(
     if (!legacy || legacy.version !== 1) throw new Error("native legacy session invalid");
     if (body.expires_at !== legacy.expiresAt) throw new Error("native session expiry mismatch");
     const upgraded = await mintSessionV2(legacy.userId, env.ROOM_SIGNING_KEY, legacy.expiresAt);
+    const identity = await inspectSessionToken(upgraded.token, env.ROOM_SIGNING_KEY);
+    if (!identity || identity.version !== 2 || !await registerSessionIssuance(identity, env)) {
+      throw new Error("native session issuance registration failed");
+    }
     const headers = new Headers(response.headers);
     headers.delete("Content-Length");
     // A native handoff is bearer-only. Even if a lower layer regresses, never
@@ -180,6 +242,8 @@ async function nativeReportAndBlock(
 async function routeRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const oauthSwitch = await browserOAuthAccountSwitchGuard(request, env, ctx);
   if (oauthSwitch) return oauthSwitch;
+  const oauthCallback = await registeredBrowserOAuthCallback(request, env, ctx);
+  if (oauthCallback) return oauthCallback;
   const bootstrap = await v2MobileBootstrap(request, env, ctx);
   if (bootstrap) return bootstrap;
   const handoff = await upgradedNativeHandoff(request, env, ctx);
