@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { hostSessionCookie } from "./session";
 
 const ORIGIN = "https://room.test";
+const MESSAGE_TIMEOUT_MS = 1_500;
 
 type CreatedRoom = {path: string; host_control: string; expires_at: number};
 type Client = {socket: WebSocket; next: () => Promise<Record<string, unknown>>};
@@ -29,6 +30,23 @@ async function openSocket(path: string): Promise<Client> {
   };
 }
 
+function nextWithTimeout(client: Client, expected: string): Promise<Record<string, unknown>> {
+  return Promise.race([
+    client.next(),
+    new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error(`timed out waiting for ${expected}`)), MESSAGE_TIMEOUT_MS);
+    }),
+  ]);
+}
+
+async function nextOfType(client: Client, type: string, limit = 12): Promise<Record<string, unknown>> {
+  for (let index = 0; index < limit; index++) {
+    const message = await nextWithTimeout(client, type);
+    if (message.type === type) return message;
+  }
+  throw new Error(`did not receive ${type} within ${limit} messages`);
+}
+
 function join(client: Client, locale: string): Promise<Record<string, unknown>> {
   client.socket.send(JSON.stringify({
     type: "join",
@@ -36,7 +54,7 @@ function join(client: Client, locale: string): Promise<Record<string, unknown>> 
     name: locale,
     voice_profile: locale === "es-ES" ? "es-es-elvira" : "en-us-af-heart",
   }));
-  return client.next();
+  return nextOfType(client, "welcome");
 }
 
 describe("prelaunch host-to-guest journey", () => {
@@ -72,13 +90,15 @@ describe("prelaunch host-to-guest journey", () => {
       participant_limit: 2,
       participant_count: 2,
     });
-    expect(await host.next()).toMatchObject({type: "peer_join", participant_count: 2});
+    expect(await nextOfType(host, "peer_join")).toMatchObject({type: "peer_join", participant_count: 2});
 
     const third = await openSocket(room.path);
     third.socket.send(JSON.stringify({
       type: "join", locale: "fr-FR", name: "fr-FR", voice_profile: null,
     }));
-    expect(await third.next()).toMatchObject({type: "room_full", limit: 2, participant_count: 2});
+    expect(await nextOfType(third, "room_full")).toMatchObject({
+      type: "room_full", limit: 2, participant_count: 2,
+    });
 
     const close = await exports.default.fetch(`${ORIGIN}/api/room-control/close`, {
       method: "POST",
@@ -86,8 +106,8 @@ describe("prelaunch host-to-guest journey", () => {
     });
     expect(close.status).toBe(200);
     expect(await close.json()).toMatchObject({state: "closed", participant_count: 0});
-    expect(await host.next()).toMatchObject({type: "room_closed"});
-    expect(await guest.next()).toMatchObject({type: "room_closed"});
+    expect(await nextOfType(host, "room_closed")).toMatchObject({type: "room_closed"});
+    expect(await nextOfType(guest, "room_closed")).toMatchObject({type: "room_closed"});
     expect((await exports.default.fetch(`${ORIGIN}${room.path}`)).status).toBe(404);
   });
 });
