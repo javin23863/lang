@@ -3,14 +3,14 @@ export const PUBLIC_ORIGIN =
 export const MOBILE_PROTOCOL = 1;
 export const MOBILE_BUILD = 1;
 export const PARTICIPANT_LIMIT = 2;
-export const MOBILE_AUTH_COMPLETE_PATH = "/mobile-auth-complete";
+export const MOBILE_AUTH_SCHEME = "com.javin23863.linguarelay";
 
 const ROOM_TOKEN_PATTERN =
   /^[A-Za-z0-9_-]{24}\.\d{10}\.[A-Za-z0-9_-]{43}$/;
 const SESSION_TOKEN_PATTERN =
   /^s1\.[A-Za-z0-9_-]{22}\.\d{10}\.[A-Za-z0-9_-]{43}$/;
 const NATIVE_HANDOFF_PATTERN =
-  /^nh1\.[A-Za-z0-9_-]{22}\.\d{10}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/;
+  /^nh2\.(google|apple|facebook)\.[A-Za-z0-9_-]{22}\.\d{10}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}\.[A-Za-z0-9_-]{43}$/;
 
 const VERSIONED_PATHS = new Map([
   ["/api/capabilities", "/api/v1/capabilities"],
@@ -68,17 +68,23 @@ export function parseRoomLink(value) {
 export function parseNativeAuthLink(value) {
   try {
     const url = new URL(value);
-    if (url.origin !== PUBLIC_ORIGIN || url.pathname !== MOBILE_AUTH_COMPLETE_PATH
-        || url.search) return null;
+    if (url.protocol !== `${MOBILE_AUTH_SCHEME}:` || url.hostname !== "auth" || url.search) {
+      return null;
+    }
+    const provider = url.pathname.match(/^\/(google|apple|facebook)$/)?.[1];
+    if (!provider || !NATIVE_AUTH_PROVIDERS.has(provider)) return null;
     const params = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash);
     const entries = [...params.entries()];
     if (entries.length !== 1) return null;
-    if (entries[0][0] === "auth" && entries[0][1] === "failed") return {error: "failed"};
+    if (entries[0][0] === "auth" && entries[0][1] === "failed") {
+      return {error: "failed", provider};
+    }
     if (entries[0][0] !== "handoff" || !NATIVE_HANDOFF_PATTERN.test(entries[0][1])) return null;
     const parts = entries[0][1].split(".");
-    const expiresAt = Number(parts[2]);
+    if (parts[1] !== provider) return null;
+    const expiresAt = Number(parts[3]);
     if (!Number.isSafeInteger(expiresAt) || expiresAt <= Math.floor(Date.now() / 1000)) return null;
-    return {handoff: entries[0][1]};
+    return {handoff: entries[0][1], provider};
   } catch {
     return null;
   }
