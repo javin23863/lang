@@ -2,10 +2,12 @@ import { ReportInbox as WorkerReportInbox } from "./worker";
 
 const REPORT_KEY_PREFIX = "report:";
 const ALARM_FLOOR_MS = 1_000;
+const REPORT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_ROUTING_LIFETIME_SECONDS = 24 * 60 * 60;
 const ROOM_ID_PATTERN = /^[A-Za-z0-9_-]{24}$/;
 
 type StoredReportShape = Record<string, unknown> & {
+  created_at?: unknown;
   room_id?: unknown;
   room_expires?: unknown;
 };
@@ -19,16 +21,27 @@ function withoutRouting(value: StoredReportShape): StoredReportShape {
 
 // The category-only moderation record is retained for its documented 30-day
 // window, but its internal room routing ID is useful only while that room can
-// still be closed. Keep the existing Durable Object class/migration and trim
-// just those routing fields when the 24-hour room lifetime ends.
+// still be closed. Keep the existing Durable Object class/migration and enforce
+// both ceilings at this wrapper so direct resolve requests cannot bypass a
+// delayed retention alarm.
 export class ReportInbox extends WorkerReportInbox {
-  private async pruneExpiredRouting(): Promise<void> {
+  private async pruneRetentionAndRouting(): Promise<void> {
     const nowMs = Date.now();
     const nowSeconds = Math.floor(nowMs / 1000);
+    const cutoffMs = nowMs - REPORT_RETENTION_MS;
     const rows = await this.ctx.storage.list<StoredReportShape>({prefix: REPORT_KEY_PREFIX});
     let nextRoomExpiryMs: number | null = null;
 
     for (const [key, value] of rows) {
+      const createdAt = typeof value.created_at === "string" ? Date.parse(value.created_at) : NaN;
+      // The base inbox writes server-generated ISO timestamps. Missing,
+      // malformed, future, or over-retention timestamps are not trustworthy
+      // moderation records and are deleted rather than allowed to live longer.
+      if (!Number.isFinite(createdAt) || createdAt > nowMs || createdAt < cutoffMs) {
+        await this.ctx.storage.delete(key);
+        continue;
+      }
+
       const hasRouting = "room_id" in value || "room_expires" in value;
       if (!hasRouting) continue;
       const expires = typeof value.room_expires === "number"
@@ -61,7 +74,7 @@ export class ReportInbox extends WorkerReportInbox {
   }
 
   async fetch(request: Request): Promise<Response> {
-    await this.pruneExpiredRouting();
+    await this.pruneRetentionAndRouting();
 
     const resolve = new URL(request.url).pathname.match(/^\/resolve\/([A-Za-z0-9_-]{22})$/);
     if (request.method === "GET" && resolve) {
@@ -78,7 +91,7 @@ export class ReportInbox extends WorkerReportInbox {
     // The base inbox recalculates its own 30-day alarm on list and insert paths.
     // Always reconcile afterwards so that work cannot accidentally postpone an
     // earlier routing-data expiry back to the longer report-retention deadline.
-    await this.pruneExpiredRouting();
+    await this.pruneRetentionAndRouting();
     return response;
   }
 
@@ -86,6 +99,6 @@ export class ReportInbox extends WorkerReportInbox {
     // Let the base inbox delete 30-day records first, then restore the earlier
     // of its next retention alarm and any remaining room-routing expiry.
     await super.alarm();
-    await this.pruneExpiredRouting();
+    await this.pruneRetentionAndRouting();
   }
 }
