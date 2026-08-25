@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "npm run typecheck && npm test && npm run dry-run",
+    "check": "node scripts/verify-observability-config.mjs && npm run typecheck && npm test && npm run dry-run",
     "dry-run": "wrangler deploy --dry-run",
     "reports:list": "node scripts/moderate-reports.mjs list",
     "reports:close": "node scripts/moderate-reports.mjs close",
