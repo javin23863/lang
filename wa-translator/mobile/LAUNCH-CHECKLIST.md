@@ -14,7 +14,8 @@ matrix after development is declared complete.
 
 - [x] Room capacity is exactly two joined participants at the active exported
   `Room` boundary.
-- [x] A third joined participant is rejected by the two-person wrapper.
+- [x] A third joined participant is rejected by the two-person wrapper; an
+  already-expired 90-second presence lease does not falsely hold that slot.
 - [x] Installed clients require `max_room_participants: 2` in bootstrap and fail
   closed against a different backend contract.
 - [x] Shared room UI renders a two-person participant count.
@@ -38,13 +39,21 @@ matrix after development is declared complete.
 - [x] Current builds keep that raw proof in platform secure storage and put only
   its SHA-256 challenge in the system-browser start URL. The previous raw-query
   start remains temporarily accepted only for installed-build compatibility.
-- [x] Duplicate cold-launch delivery of the same native handoff is idempotent.
+- [x] A migrated legacy proof is not erased from WebView storage until its
+  secure-storage copy has actually succeeded, so process death cannot strand an
+  OAuth callback during the compatibility transition.
+- [x] A native auth proof is retired after terminal success or failure; duplicate
+  cold-launch delivery of the same handoff is idempotent.
+- [x] Wrong-method provider callback requests use the base `405` path without
+  consuming the native marker/state for a legitimate callback still in flight.
 - [x] The exchanged native session is stored in platform secure storage and is
   sent only to the versioned account/room-creation endpoints that require it.
 - [x] A stale/expired native session self-clears on a protected-endpoint `401` or
   on the signed-out `/api/v1/me` snapshot instead of persisting across launches.
 - [x] Every native session endpoint, including room creation, requires the exact
   installed-app origin in addition to the bearer.
+- [x] Versioned native CORS preflights reject unknown/wrong methods and advertise
+  only each endpoint's actual method plus `OPTIONS`.
 - [x] Native logout and account deletion clear the stored native session.
 - [x] Apple `form_post`, ES256 client-secret generation, token exchange, claims,
   native return and handoff exchange have regression contracts in source.
@@ -102,12 +111,14 @@ matrix after development is declared complete.
 - [x] No advertising or analytics SDK is included in version 1.0.
 - [x] No transcript history or call recording is intentionally stored.
 - [x] Active account responses/storage retire the zero-only legacy credits field;
-  existing accounts delete it on their next account read/write.
+  successful profile reads/writes and usage writes all remove it.
 - [x] Abuse reporting is category-only and excludes names, room links, message
   content, captions, audio, video, screenshots and free text.
-- [x] Category report records remain bounded to 30 days, while the internal room
-  routing ID/expiry used only for moderator closure are removed when the room
-  expires, no later than 24 hours after room creation.
+- [x] Category report records are enforced at a 30-day ceiling even on direct
+  moderator resolve access; malformed/future retention timestamps fail closed.
+- [x] The internal room routing ID/expiry used only for moderator closure are
+  removed when the room expires, no later than 24 hours after room creation;
+  malformed routing metadata is stripped immediately.
 - [x] Store declarations are maintained in `STORE-DECLARATIONS.md` and match the
   non-monetized account schema and report-retention lifetimes.
 - [ ] Complete the final App Store age-rating/export-compliance questionnaires
@@ -149,6 +160,15 @@ matrix after development is declared complete.
   beta-limited` compute capacity as an installed-client compatibility promise.
 - [x] Room compute/network handshakes have a 30-second ceiling while preserving
   shorter caller deadlines such as the existing eight-second chat timeout.
+- [x] Shipping Worker external waits are bounded: Modal 30 seconds, TURN 10
+  seconds, and OAuth/provider calls 20 seconds; network/timeout failures enter
+  each endpoint's existing fail-closed unavailable/auth-failed path.
+- [x] Room usage is moved to a durable pending snapshot before account delivery;
+  transient delivery failures retry every five minutes only within the room's
+  existing lifetime, successful retries restore the normal expiry alarm, and a
+  deleted account (`404`) drops both backlog and later counters without revival.
+- [x] A usage retry that fires after the room has been rejoined drains only the
+  older backlog and leaves the active call's counters in the active buffer.
 - [ ] Before raising production GPU ceilings, retain measured latency, memory,
   scale-out/recovery and cost receipts for the exact release configuration.
 
