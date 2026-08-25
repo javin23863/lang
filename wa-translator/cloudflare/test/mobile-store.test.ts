@@ -92,13 +92,28 @@ describe("mobile store interface", () => {
       "Authorization, Content-Type, X-Participant-ID"
     );
 
+    const session = await hostSession();
     const created = await exports.default.fetch(`${PUBLIC_ORIGIN}/api/v1/rooms`, {
       method: "POST",
-      headers: { Origin: NATIVE_ORIGIN, Authorization: `Bearer ${await hostSession()}` }
+      headers: { Origin: NATIVE_ORIGIN, Authorization: `Bearer ${session}` }
     });
     expect(created.status).toBe(201);
     expect(created.headers.get("Access-Control-Allow-Origin")).toBe(NATIVE_ORIGIN);
     expect((await created.json<{ path: string }>()).path).toMatch(/^\/room\//);
+
+    // The secure-storage bearer is authoritative. A stale WebView lr_s cookie
+    // must be stripped before the request reaches the cookie-authenticated base
+    // worker, otherwise its first-cookie parser would reject the valid bearer.
+    const conflictingCookie = `s1.TestHostUser0123456789.9999999999.${"A".repeat(43)}`;
+    const createdWithStaleCookie = await exports.default.fetch(`${PUBLIC_ORIGIN}/api/v1/rooms`, {
+      method: "POST",
+      headers: {
+        Origin: NATIVE_ORIGIN,
+        Authorization: `Bearer ${session}`,
+        Cookie: `other=kept; lr_s=${conflictingCookie}`,
+      }
+    });
+    expect(createdWithStaleCookie.status).toBe(201);
 
     const denied = await exports.default.fetch(`${PUBLIC_ORIGIN}/api/v1/rooms`, {
       method: "POST",
@@ -111,10 +126,30 @@ describe("mobile store interface", () => {
     expect(denied.headers.get("Access-Control-Allow-Origin")).toBeNull();
   });
 
+  it("advertises CORS only for real versioned endpoints", async () => {
+    const unknown = await exports.default.fetch(`${PUBLIC_ORIGIN}/api/v1/not-a-real-route`, {
+      method: "OPTIONS",
+      headers: {
+        Origin: NATIVE_ORIGIN,
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "authorization,content-type",
+      }
+    });
+    expect(unknown.status).toBe(404);
+    expect(unknown.headers.get("Access-Control-Allow-Origin")).toBeNull();
+    expect(unknown.headers.get("Cache-Control")).toBe("no-store");
+  });
+
   it("returns OAuth through the app scheme and requires the initiating app binding", async () => {
     expect((await exports.default.fetch(`${PUBLIC_ORIGIN}/auth/native/google/start`, {
       redirect: "manual"
     })).status).toBe(400);
+    expect((await exports.default.fetch(`${PUBLIC_ORIGIN}/auth/native/google/start`, {
+      method: "POST", redirect: "manual"
+    })).status).toBe(405);
+    expect((await exports.default.fetch(`${PUBLIC_ORIGIN}/auth/native/myspace/start`, {
+      redirect: "manual"
+    })).status).toBe(404);
 
     const binding = nativeBinding(7);
     const nativeStart = await exports.default.fetch(
@@ -225,6 +260,12 @@ describe("mobile store interface", () => {
         ]
       }]
     }});
+
+    const wrongMethod = await exports.default.fetch(
+      `${PUBLIC_ORIGIN}/.well-known/apple-app-site-association`, {method: "POST"}
+    );
+    expect(wrongMethod.status).toBe(405);
+    expect(wrongMethod.headers.get("Cache-Control")).toBe("no-store");
   });
 
   it("publishes store privacy, terms, and support surfaces", async () => {
