@@ -95,8 +95,11 @@ matrix after development is declared complete.
 - [x] iOS description is at most 4000 characters.
 - [x] iOS keywords are at most 100 UTF-8 bytes.
 - [x] iOS listing has phone screenshots and configured privacy/support URLs.
-- [x] Privacy, Terms, and Support pages exist in shared web/native assets and are
-  routed by the Worker.
+- [x] Privacy, Terms, Support, and a dedicated account-deletion page exist in
+  shared web/native assets.
+- [x] The Google Play external account-deletion resource is the production URL
+  ending in `/delete-account.html`; it identifies Lingua Relay, works without
+  reinstalling the app, and routes into browser account controls.
 - [x] Legal pages use one fail-closed room-return validator and preserve only
   `voice`/`chat` mode, never arbitrary origins or retired personal labels.
 - [x] Owner-supplied App Review / Play review inputs are enumerated in
@@ -114,6 +117,9 @@ matrix after development is declared complete.
 - [x] Camera and microphone usage descriptions are present on iOS.
 - [x] Android declares camera/microphone as optional hardware features.
 - [x] Calls are foreground-only; no background media mode is claimed.
+- [x] Room entry requires affirmative acceptance of the current Terms version;
+  the checkbox is not preselected, and older `2026-08-14` consent does not carry
+  forward to the current `2026-08-25` Terms.
 - [x] iOS privacy manifest is source controlled and declares no tracking.
 - [x] No advertising or analytics SDK is included in version 1.0.
 - [x] No transcript history or call recording is intentionally stored.
@@ -148,6 +154,9 @@ matrix after development is declared complete.
   into `room.css`, `room-ui.css`, and `room.js` without rewriting WebRTC state.
 - [x] Room presentation has the Lingua Relay visual pass, safe-area/landscape
   handling, reduced motion and accessible live status/caption regions.
+- [x] Voice mode is a foreground two-person room rather than a fake incoming-call
+  service; either participant join order converges on Connected without a
+  ringing/answer dependency.
 - [x] Active microphone/camera track loss produces a visible localized recovery
   state rather than silently changing controls.
 - [x] Background teardown closes CONNECTING/OPEN sockets and reconnect generation
@@ -220,6 +229,8 @@ matrix after development is declared complete.
   Worker association output.
 - [ ] Configure the production Apple Team ID in the Worker association output.
 - [ ] Add the required GitHub environment secrets for signed beta automation.
+- [ ] Enter the final production `/delete-account.html` URL in Play Console's
+  designated account-deletion field and verify it returns the public resource.
 - [ ] Run both signed beta workflows successfully and retain install receipts.
 - [ ] Create/verify the Play Console and App Store Connect records, agreements,
   tax/banking state where applicable, pricing/availability and reviewer notes.
