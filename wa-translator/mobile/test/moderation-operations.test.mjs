@@ -9,10 +9,12 @@ test("moderation tooling keeps the admin secret out of argv and client code", as
   const packageJson = JSON.parse(await read("../../cloudflare/package.json"));
   const runbook = await read("../../cloudflare/MODERATION-RUNBOOK.md");
 
-  assert.match(script, /process\.env\.MOBILE_REPORT_ADMIN_TOKEN/);
+  assert.match(script, /const \[command, reportId, \.\.\.extra\] = process\.argv\.slice\(2\)/,
+               "argv contains only the moderation action and report id");
+  assert.match(script, /const token = String\(process\.env\.MOBILE_REPORT_ADMIN_TOKEN \|\| ""\)/,
+               "the admin secret is loaded only from the operator environment");
   assert.match(script, /process\.env\.LINGUA_PUBLIC_ORIGIN/);
-  assert.doesNotMatch(script, /process\.argv[\s\S]*admin.*token/i,
-                      "the admin token must never be accepted as a command-line argument");
+  assert.doesNotMatch(script, /const\s+token\s*=\s*.*process\.argv/);
   assert.match(script, /Authorization: `Bearer \$\{token\}`/);
   assert.match(script, /AbortSignal\.timeout\(10_000\)/);
   assert.match(script, /redirect: "error"/);
