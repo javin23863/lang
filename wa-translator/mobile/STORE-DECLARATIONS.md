@@ -12,6 +12,13 @@ behavior change.
   as an equivalent sign-in option. The Worker intentionally hides providers
   whose credentials are incomplete, so this must be checked against the live
   production account screen before TestFlight/App Store submission.
+- App Store support-contact gate: the public `/support` page currently provides
+  the product-support issue form but no dedicated public support email, phone,
+  or legal contact address. Do not submit version 1.0 to App Review until the
+  operator has created an appropriate support contact and added it to that page.
+  Do not substitute a developer's personal email address from source-control
+  metadata. The App Store support URL must remain the production `/support`
+  page after the contact is added.
 - No password is ever created, collected, or stored. Sign-in is delegated to the
   provider; the app receives an account identifier, an email address, and a
   display name, and stores no provider credential.
