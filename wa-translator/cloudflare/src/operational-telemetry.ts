@@ -13,6 +13,7 @@ export type RouteClass =
   | "other";
 
 type FailureResult = "client_error" | "rate_limited" | "server_error";
+type SuccessResult = "success" | "redirect" | "upgrade";
 export type FailureCode =
   | "http.bad_request"
   | "http.unauthorized"
@@ -26,6 +27,16 @@ export type FailureCode =
   | "http.unavailable"
   | "http.gateway_timeout"
   | "http.server_error";
+
+export interface OperationalSuccessRecord {
+  event: "edge.request.success";
+  request_id: string;
+  route_class: RouteClass;
+  method: string;
+  status: number;
+  result: SuccessResult;
+  duration_ms: number;
+}
 
 export interface OperationalFailureRecord {
   event: "edge.request.failure";
@@ -98,6 +109,20 @@ export function routeClassForRequest(request: Request): RouteClass {
   return "other";
 }
 
+export function operationalSuccessRecord(
+  request: Request, status: number, requestId: string, durationMs: number
+): OperationalSuccessRecord {
+  return {
+    event: "edge.request.success",
+    request_id: requestId,
+    route_class: routeClassForRequest(request),
+    method: methodClass(request.method),
+    status,
+    result: status === 101 ? "upgrade" : status >= 300 ? "redirect" : "success",
+    duration_ms: boundedDuration(durationMs),
+  };
+}
+
 export function operationalFailureRecord(
   request: Request, status: number, requestId: string, durationMs: number
 ): OperationalFailureRecord {
@@ -124,6 +149,14 @@ export function operationalExceptionRecord(
     error_type: safeErrorType(error),
     duration_ms: boundedDuration(durationMs),
   };
+}
+
+export function logOperationalSuccess(record: OperationalSuccessRecord): void {
+  // Assets and the plain health probe already have native Workers telemetry;
+  // custom success events are reserved for product/control-plane SLOs so logs
+  // stay useful without copying capability-bearing URLs or flooding on assets.
+  if (record.route_class === "asset" || record.route_class === "health" || record.route_class === "other") return;
+  console.log(JSON.stringify(record));
 }
 
 export function logOperationalFailure(record: OperationalFailureRecord): void {

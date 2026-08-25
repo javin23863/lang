@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   failureCodeForStatus,
+  logOperationalSuccess,
   operationalExceptionRecord,
   operationalFailureRecord,
+  operationalSuccessRecord,
   routeClassForRequest,
   withFailureRequestId,
 } from "../src/operational-telemetry";
@@ -34,6 +36,45 @@ describe("privacy-safe operational telemetry", () => {
     expect(serialized).not.toContain(querySecret);
     expect(serialized).not.toContain("room.example");
     expect(serialized).not.toContain("Authorization");
+  });
+
+  it("records coarse success latency for product routes without copying capabilities", () => {
+    const roomBearer = "ABCDEFGHIJKLMNOPQRSTUVWX.1760000000.abcdefghijklmnopqrstuvwxyzABCDEFGH123456789";
+    const request = new Request(`https://room.example/room/${roomBearer}?secret=hidden`);
+    const record = operationalSuccessRecord(request, 200, "request-success-1", 4.6);
+    expect(record).toEqual({
+      event: "edge.request.success",
+      request_id: "request-success-1",
+      route_class: "room",
+      method: "GET",
+      status: 200,
+      result: "success",
+      duration_ms: 5,
+    });
+    const serialized = JSON.stringify(record);
+    expect(serialized).not.toContain(roomBearer);
+    expect(serialized).not.toContain("room.example");
+    expect(serialized).not.toContain("secret");
+  });
+
+  it("logs control-plane success records but leaves assets and health to native Workers telemetry", () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      logOperationalSuccess(operationalSuccessRecord(
+        new Request("https://room.example/api/v1/mobile/bootstrap"), 200, "request-a", 2
+      ));
+      expect(spy).toHaveBeenCalledTimes(1);
+
+      logOperationalSuccess(operationalSuccessRecord(
+        new Request("https://room.example/dashboard.js"), 200, "request-b", 1
+      ));
+      logOperationalSuccess(operationalSuccessRecord(
+        new Request("https://room.example/health"), 200, "request-c", 1
+      ));
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("uses stable coarse result codes suitable for dashboards without response bodies", () => {

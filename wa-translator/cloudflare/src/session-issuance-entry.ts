@@ -2,8 +2,10 @@ import accountGuardEntry, { AbuseGate, ReportInbox, Room, UserDirectory } from "
 import {
   logOperationalException,
   logOperationalFailure,
+  logOperationalSuccess,
   operationalExceptionRecord,
   operationalFailureRecord,
+  operationalSuccessRecord,
   withFailureRequestId,
 } from "./operational-telemetry";
 import { inspectSessionToken, mintSessionV2 } from "./session-v2";
@@ -141,8 +143,14 @@ export default {
     const started = performance.now();
     try {
       const response = await routeRequest(request, env, ctx);
-      if (response.status < 400) return response;
-      const record = operationalFailureRecord(request, response.status, requestId, performance.now() - started);
+      const duration = performance.now() - started;
+      if (response.status < 400) {
+        logOperationalSuccess(operationalSuccessRecord(request, response.status, requestId, duration));
+        // Successful responses—including WebSocket upgrades—are never cloned or
+        // decorated. Telemetry observes them without changing transport behavior.
+        return response;
+      }
+      const record = operationalFailureRecord(request, response.status, requestId, duration);
       logOperationalFailure(record);
       // Only ordinary HTTP failures are cloned. Successful responses—including
       // WebSocket upgrades—remain byte-for-byte on the lower-layer response.
