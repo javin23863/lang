@@ -28,13 +28,15 @@ test("deep links accept only exact signed public room URLs", () => {
   assert.equal(parseRoomLink("not a url"), null);
 });
 
-test("a deep link carries its mode and bounded voice-call label", () => {
+test("deep links preserve mode and accept only bounded legacy voice labels", () => {
   assert.deepEqual(
     parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?m=voice`), {token: TOKEN, mode: "voice"}
   );
   assert.deepEqual(
     parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?m=chat`), {token: TOKEN, mode: "chat"}
   );
+  // This is compatibility for already-issued URLs only. roomPageUrl below is
+  // the generator and deliberately cannot create the label anymore.
   assert.deepEqual(
     parseRoomLink(`${PUBLIC_ORIGIN}/room/${TOKEN}?m=voice&n=Maria`),
     {token: TOKEN, mode: "voice", name: "Maria"}
@@ -95,10 +97,12 @@ test("native traffic stays on the versioned backend seam", () => {
   assert.equal(websocketPath(TOKEN, false), `/ws/${TOKEN}`);
   assert.equal(roomPageUrl(TOKEN), `room.html?room=${encodeURIComponent(TOKEN)}`);
   assert.equal(roomPageUrl(TOKEN, "voice"), `room.html?room=${encodeURIComponent(TOKEN)}&m=voice`);
+  // Extra legacy metadata is ignored even if old calling code supplies it.
   assert.equal(
     roomPageUrl(TOKEN, "voice", "Maria"),
-    `room.html?room=${encodeURIComponent(TOKEN)}&m=voice&n=Maria`
+    `room.html?room=${encodeURIComponent(TOKEN)}&m=voice`
   );
+  assert.doesNotMatch(roomPageUrl(TOKEN, "voice", "Maria"), /[?&]n=/);
   // Video is the shell an older link already opens, so it stays off the URL.
   assert.equal(roomPageUrl(TOKEN, "video"), roomPageUrl(TOKEN));
   assert.equal(roomPageUrl(TOKEN, "hologram"), roomPageUrl(TOKEN));
