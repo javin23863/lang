@@ -40,7 +40,8 @@ function decomposeRoom(source) {
   if (!style || !script) throw new Error("room source decomposition seam is missing");
   return {
     html: enhanceRoomShell(source
-      .replace(style[0], '<link rel="stylesheet" href="/room.css">')
+      .replace(style[0],
+        '<link rel="stylesheet" href="/room.css">\n<link rel="stylesheet" href="/room-ui.css">')
       .replace(script[0], '<script src="/room.js"></script>\n</body>')),
     css: `${style[1]}\n`,
     js: `${normalizeRoomScript(script[1])}\n`,
