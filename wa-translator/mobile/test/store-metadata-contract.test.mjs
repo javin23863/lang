@@ -6,11 +6,12 @@ const mobile = new URL("../", import.meta.url);
 const read = path => readFile(new URL(path, mobile), "utf8");
 
 test("store metadata matches the shipping private two-person account model", async () => {
-  const [androidTitle, androidShort, androidFull, iosName, iosSubtitle, iosDescription,
-    iosKeywords, iosSupport, iosPrivacy, iosMarketing] = await Promise.all([
+  const [androidTitle, androidShort, androidFull, androidChangelog, iosName, iosSubtitle,
+    iosDescription, iosKeywords, iosSupport, iosPrivacy, iosMarketing, iosReleaseNotes] = await Promise.all([
     read("fastlane/metadata/android/en-US/title.txt"),
     read("fastlane/metadata/android/en-US/short_description.txt"),
     read("fastlane/metadata/android/en-US/full_description.txt"),
+    read("fastlane/metadata/android/en-US/changelogs/default.txt"),
     read("fastlane/metadata/ios/en-US/name.txt"),
     read("fastlane/metadata/ios/en-US/subtitle.txt"),
     read("fastlane/metadata/ios/en-US/description.txt"),
@@ -18,6 +19,7 @@ test("store metadata matches the shipping private two-person account model", asy
     read("fastlane/metadata/ios/en-US/support_url.txt"),
     read("fastlane/metadata/ios/en-US/privacy_url.txt"),
     read("fastlane/metadata/ios/en-US/marketing_url.txt"),
+    read("fastlane/metadata/ios/en-US/release_notes.txt"),
   ]);
 
   assert.equal(androidTitle.trim(), "Lingua Relay");
@@ -48,6 +50,20 @@ test("store metadata matches the shipping private two-person account model", asy
     "buy credits",
     "subscription",
   ]) assert.ok(!copy.includes(stale), `store description excludes stale claim: ${stale}`);
+
+  for (const [surface, value] of [
+    ["Android short description", androidShort],
+    ["iOS subtitle", iosSubtitle],
+    ["Android closed-test changelog", androidChangelog],
+    ["iOS TestFlight release notes", iosReleaseNotes],
+  ]) {
+    const lower = value.toLowerCase();
+    for (const mode of ["video", "voice", "chat"]) {
+      assert.ok(lower.includes(mode), `${surface} includes shipping ${mode} mode`);
+    }
+    assert.ok(!/video (?:rooms|calls)[.!]?\s*$/i.test(value.trim()),
+      `${surface} cannot describe a multi-mode product as video-only`);
+  }
 
   for (const value of [iosSupport, iosPrivacy, iosMarketing]) {
     const url = new URL(value.trim());
