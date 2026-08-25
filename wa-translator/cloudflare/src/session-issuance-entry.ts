@@ -29,6 +29,16 @@ async function v2MobileBootstrap(
   }
 }
 
+function withoutSetCookie(response: Response): Response {
+  const headers = new Headers(response.headers);
+  headers.delete("Set-Cookie");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 async function upgradedNativeHandoff(
   request: Request, env: Env, ctx: ExecutionContext
 ): Promise<Response | null> {
@@ -36,7 +46,7 @@ async function upgradedNativeHandoff(
   if (url.pathname !== NATIVE_HANDOFF_PATH || request.method === "OPTIONS") return null;
 
   const response = await accountGuardEntry.fetch(request, env, ctx);
-  if (!response.ok || request.method !== "POST") return response;
+  if (!response.ok || request.method !== "POST") return withoutSetCookie(response);
 
   try {
     const body = await response.json() as {session?: unknown; expires_at?: unknown};
