@@ -66,6 +66,7 @@
     "auth.signInApple": "Continue with Apple",
     "auth.signInFacebook": "Continue with Facebook",
     "auth.signOut": "Sign out",
+    "auth.signOutFailed": "Could not sign out. Try again.",
     "auth.signedInAs": "{name}",
     "auth.failed": "Sign-in did not finish. Try again.",
     "auth.deleteAccount": "Delete account",
