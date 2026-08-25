@@ -4,7 +4,7 @@ import test from "node:test";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
-test("Android declares foreground media and verified room links", async () => {
+test("Android declares foreground media and verified room/auth links", async () => {
   const manifest = await read("../android/app/src/main/AndroidManifest.xml");
   const filePaths = await read("../android/app/src/main/res/xml/file_paths.xml");
   const gradle = await read("../android/app/build.gradle");
@@ -21,6 +21,7 @@ test("Android declares foreground media and verified room links", async () => {
   assert.match(manifest, /android:scheme="https"/);
   assert.match(manifest, /android:host="spoken-translation-room\.spoken-translation-cloudflare\.workers\.dev"/);
   assert.match(manifest, /android:pathPrefix="\/room\/"/);
+  assert.match(manifest, /android:path="\/mobile-auth-complete"/);
   assert.match(variables, /compileSdkVersion = 36/);
   assert.match(variables, /targetSdkVersion = 36/);
   assert.match(gradle, /LINGUA_ANDROID_KEYSTORE/);
