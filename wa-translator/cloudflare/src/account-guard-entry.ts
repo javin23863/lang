@@ -238,6 +238,12 @@ async function accountGuardedMutation(
     return null;
   }
 
+  // Preserve the lower Worker's load-bearing mutation order: reject an
+  // untrusted origin before probing account/session state. Delegating the
+  // denial keeps its exact 403 response semantics while native trusted origins
+  // still proceed through bearer verification below.
+  if (!sessionMutationOriginAllowed(request, env)) return launchEntry.fetch(request, env, ctx);
+
   const identity = await sessionIdentity(request, env);
   // Reuse the normal account endpoint for account existence, but expose only a
   // verified legacy representation to the pre-v2 Worker. Revocation remains
