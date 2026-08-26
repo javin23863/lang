@@ -12,6 +12,7 @@
     "/api/room",
     "/api/reports",
   ]);
+  const PEER_NETWORK_NOTE_KEYS = new Set(["note.videoSlow", "note.videoFailed"]);
   const browserRoomSupported = native || !roomRoute || (
     typeof window.fetch === "function"
     && typeof window.WebSocket === "function"
@@ -138,6 +139,43 @@
 
     function lifecycleAbortError() {
       return new DOMException("Room lifecycle ended", "AbortError");
+    }
+
+    function browserRoomWorkActive() {
+      if (roomSuspended || roomLifecycleEnded) return false;
+      if (typeof leaving !== "undefined" && leaving) return false;
+      if (typeof explicitLeave !== "undefined" && explicitLeave) return false;
+      if (typeof terminalRoom !== "undefined" && terminalRoom) return false;
+      return true;
+    }
+
+    function currentPeerNeedsNetworkNote() {
+      if (typeof peers === "undefined" || !peers || typeof peers.values !== "function") return true;
+      const states = [...peers.values()];
+      if (!states.length) return false;
+      return !states.some(state => {
+        const pc = state?.pc;
+        return pc && (pc.iceConnectionState === "connected"
+          || pc.iceConnectionState === "completed"
+          || pc.connectionState === "connected");
+      });
+    }
+
+    if (typeof handle === "function") {
+      const roomHandle = handle;
+      handle = async function lifecycleAwareRoomHandle(message) {
+        if (!browserRoomWorkActive()) return;
+        return roomHandle(message);
+      };
+    }
+
+    if (typeof showVideoNote === "function") {
+      const roomShowVideoNote = showVideoNote;
+      showVideoNote = function lifecycleAwareVideoNote(key, ...args) {
+        if (PEER_NETWORK_NOTE_KEYS.has(key)
+            && (!browserRoomWorkActive() || !currentPeerNeedsNetworkNote())) return;
+        return roomShowVideoNote(key, ...args);
+      };
     }
 
     function abortControlRequests() {
