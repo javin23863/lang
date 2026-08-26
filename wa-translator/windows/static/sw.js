@@ -1,7 +1,7 @@
 // Cache only the credential-free dashboard shell. Room bearer URLs, APIs,
 // authentication, captions and any request carrying user state are always
 // network-only and must never enter persistent browser Cache Storage.
-const CACHE_NAME = 'lingua-relay-shell-v5';
+const CACHE_NAME = 'lingua-relay-shell-v6';
 const CACHE_PREFIX = 'lingua-relay-shell-';
 const SHELL_PATHS = new Set([
   '/',
@@ -20,14 +20,15 @@ const SHELL_PATHS = new Set([
   '/dashboard-onboarding.js',
   '/dashboard-product-events.js',
   '/qr.js',
+  '/qr-encoder.js',
   '/icon.svg',
   '/manifest.webmanifest',
 ]);
 const DASHBOARD_PATHS = new Set(['/', '/index.html']);
-// app-runtime.js also runs inside browser/PWA room pages. It carries transport
-// recovery policy, so online clients must prefer the deployed copy while still
-// retaining the credential-free shell copy as an offline dashboard fallback.
-const NETWORK_FIRST_SHELL_PATHS = new Set(['/app-runtime.js']);
+// app-runtime.js and qr.js both run inside browser/PWA room pages and carry
+// transport recovery policy. Online clients must prefer deployed copies while
+// retaining credential-free shell copies as offline dashboard fallbacks.
+const NETWORK_FIRST_SHELL_PATHS = new Set(['/app-runtime.js', '/qr.js']);
 
 function requestUrl(request) {
   try { return new URL(request.url); }
