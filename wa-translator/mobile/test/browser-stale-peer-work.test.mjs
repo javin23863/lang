@@ -249,7 +249,9 @@ test("peer warning notes require a current unhealthy peer and cannot overwrite h
 test("source wraps room messages and peer warning notes behind browser lifecycle state", () => {
   assert.match(source, /const PEER_NETWORK_NOTE_KEYS = new Set\(\["note\.videoSlow", "note\.videoFailed"\]\)/);
   assert.match(source,
-    /function browserRoomWorkActive\(\)[\s\S]*?roomSuspended \|\| roomLifecycleEnded[\s\S]*?leaving[\s\S]*?explicitLeave[\s\S]*?terminalRoom/);
+    /function browserRoomGenerationActive\(generation\)[\s\S]*?generation !== browserRoomGeneration \|\| roomSuspended \|\| roomLifecycleEnded[\s\S]*?leaving[\s\S]*?explicitLeave/);
+  assert.match(source,
+    /function browserRoomWorkActive\(\)[\s\S]*?!browserRoomGenerationActive\(browserRoomGeneration\)[\s\S]*?terminalRoom/);
   assert.match(source,
     /const roomHandle = handle;[\s\S]*?handle = async function lifecycleAwareRoomHandle[\s\S]*?!browserRoomWorkActive\(\)/);
   assert.match(source,

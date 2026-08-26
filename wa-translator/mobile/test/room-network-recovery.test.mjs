@@ -131,7 +131,9 @@ test("browser/PWA room control fetches are bounded before normal join and reconn
     "Request-level caller aborts are retained");
   assert.match(source, /const controller = new AbortController\(\)/);
   assert.match(source, /callerSignal\?\.addEventListener\("abort", abortFromCaller, \{once: true\}\)/);
-  assert.match(source, /setTimeout\(\(\) => controller\.abort\(\), ROOM_CONTROL_FETCH_TIMEOUT_MS\)/);
+  assert.match(source,
+    /timer = setTimeout\(\(\) => \{\s*controller\.abort\(\);\s*release\(\);\s*\}, ROOM_CONTROL_FETCH_TIMEOUT_MS\)/,
+    "the browser deadline aborts network work and releases body-read lifecycle ownership");
   assert.match(source, /boundedFetch\(input, \{\.\.\.init, signal: controller\.signal\}\)/);
   assert.match(source, /clearTimeout\(timer\)/);
   assert.match(source, /callerSignal\?\.removeEventListener\("abort", abortFromCaller\)/);
