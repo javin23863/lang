@@ -144,6 +144,8 @@
     let capabilityRetryPromise = null;
     let capabilityRetryTimer = null;
     let capabilityRetryAttempts = [];
+    let browserAudioStartPromise = null;
+    let browserAudioStartGeneration = -1;
 
     function lifecycleAbortError() {
       return new DOMException("Room lifecycle ended", "AbortError");
@@ -153,6 +155,13 @@
       const error = new Error("Peer work superseded by room lifecycle");
       error.name = "AbortError";
       error.linguaPeerLifecycle = true;
+      return error;
+    }
+
+    function audioLifecycleAbortError() {
+      const error = new Error("Audio work superseded by room lifecycle");
+      error.name = "AbortError";
+      error.linguaAudioLifecycle = true;
       return error;
     }
 
@@ -260,6 +269,111 @@
       window.addEventListener("unhandledrejection", event => {
         if (event.reason?.linguaPeerLifecycle === true) event.preventDefault?.();
       });
+    }
+
+    const micButton = document.getElementById("micBtn");
+    const RoomAudioContext = window.AudioContext || window.webkitAudioContext;
+    const RoomAudioWorkletNode = window.AudioWorkletNode;
+    if (micButton && typeof startCapture === "function"
+        && typeof RoomAudioContext === "function" && typeof RoomAudioWorkletNode === "function") {
+      startCapture = function lifecycleAwareStartCapture() {
+        if (browserAudioStartPromise && browserAudioStartGeneration === browserRoomGeneration) {
+          return browserAudioStartPromise;
+        }
+        const generation = browserRoomGeneration;
+        browserAudioStartGeneration = generation;
+        const task = (async () => {
+          const stream = await getAudioMedia();
+          if (generation !== browserRoomGeneration || !browserRoomWorkActive()) {
+            throw audioLifecycleAbortError();
+          }
+
+          let context = audioCtx;
+          if (!context) {
+            context = new RoomAudioContext();
+            audioCtx = context;
+          }
+          if (!workletNode) {
+            await context.audioWorklet.addModule("/static/pcm-worklet.js");
+            if (generation !== browserRoomGeneration
+                || !browserRoomWorkActive() || audioCtx !== context) {
+              throw audioLifecycleAbortError();
+            }
+            const node = new RoomAudioWorkletNode(context, "pcm-worklet");
+            node.port.onmessage = event => {
+              if (generation !== browserRoomGeneration || !browserRoomWorkActive()
+                  || workletNode !== node) return;
+              if (ws && ws.readyState === WebSocket.OPEN) ws.send(event.data);
+            };
+            workletNode = node;
+          }
+          if (generation !== browserRoomGeneration
+              || !browserRoomWorkActive() || audioCtx !== context) {
+            throw audioLifecycleAbortError();
+          }
+          if (audioInputNode) audioInputNode.disconnect();
+          const input = context.createMediaStreamSource(stream);
+          audioInputNode = input;
+          input.connect(workletNode);
+          if (context.state === "suspended") {
+            await context.resume();
+            if (generation !== browserRoomGeneration
+                || !browserRoomWorkActive() || audioCtx !== context) {
+              throw audioLifecycleAbortError();
+            }
+          }
+        })();
+        browserAudioStartPromise = task;
+        task.finally(() => {
+          if (browserAudioStartPromise === task) browserAudioStartPromise = null;
+        }).catch(() => {});
+        return task;
+      };
+
+      micButton.onclick = async () => {
+        const generation = browserRoomGeneration;
+        unlockFallbackAudio();
+        try {
+          if (micOn) {
+            setMicEnabled(false);
+            setStatus("status.muted");
+            return;
+          }
+          micButton.setAttribute("aria-label", t("bar.starting"));
+          await startCapture();
+          if (generation !== browserRoomGeneration || !browserRoomWorkActive()) return;
+          for (const peer of peers.values()) addTracks(peer.pc);
+          setMicEnabled(true);
+          setStatus("status.micOn", {language: spokenLocaleName(myLocale)});
+        } catch (error) {
+          if (error?.linguaAudioLifecycle === true
+              || generation !== browserRoomGeneration || !browserRoomWorkActive()) return;
+          setMicEnabled(false);
+          setStatus("status.micUnavailable", null, true);
+        }
+      };
+    }
+
+    if (typeof fallbackAudio !== "undefined" && fallbackAudio
+        && typeof fallbackAudio.play === "function") {
+      const roomFallbackPlay = fallbackAudio.play.bind(fallbackAudio);
+      fallbackAudio.play = (...args) => {
+        const generation = browserRoomGeneration;
+        return Promise.resolve(roomFallbackPlay(...args)).then(
+          result => {
+            if (generation !== browserRoomGeneration || !browserRoomWorkActive()) {
+              throw audioLifecycleAbortError();
+            }
+            return result;
+          },
+          error => {
+            if (generation !== browserRoomGeneration || !browserRoomWorkActive()) {
+              throw audioLifecycleAbortError();
+            }
+            throw error;
+          },
+        );
+      };
     }
 
     function abortControlRequests() {
