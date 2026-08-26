@@ -1,6 +1,6 @@
 import { build } from "esbuild";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const PRODUCTION_ORIGIN =
   "https://spoken-translation-room.spoken-translation-cloudflare.workers.dev";
@@ -17,7 +17,7 @@ export function resolvePublicOrigin(value = "") {
 }
 
 const invokedDirectly = process.argv[1]
-  && import.meta.url === new URL(`file://${path.resolve(process.argv[1])}`).href;
+  && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 
 if (invokedDirectly) {
   const mobile = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
