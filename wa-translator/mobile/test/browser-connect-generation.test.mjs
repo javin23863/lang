@@ -76,6 +76,7 @@ function harness() {
   MockWebSocket.created = [];
   const windowTarget = new MockTarget();
   windowTarget.window = windowTarget;
+  windowTarget.navigator = {};
   windowTarget.LinguaNative = undefined;
   windowTarget.WebSocket = MockWebSocket;
   windowTarget.RTCPeerConnection = MockRTCPeerConnection;
