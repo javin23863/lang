@@ -135,7 +135,9 @@
   if (!native && roomRoute && typeof window.fetch === "function") {
     const boundedFetch = window.fetch.bind(window);
     const RoomWebSocket = window.WebSocket;
+    const RoomPeerConnection = window.RTCPeerConnection;
     const activeControlControllers = new Set();
+    const peerGenerations = new WeakMap();
     let roomSuspended = false;
     let roomLifecycleEnded = false;
     let activeRoomSocket = null;
@@ -147,12 +149,28 @@
       return new DOMException("Room lifecycle ended", "AbortError");
     }
 
+    function peerLifecycleAbortError() {
+      const error = new Error("Peer work superseded by room lifecycle");
+      error.name = "AbortError";
+      error.linguaPeerLifecycle = true;
+      return error;
+    }
+
     function browserRoomWorkActive() {
       if (roomSuspended || roomLifecycleEnded) return false;
       if (typeof leaving !== "undefined" && leaving) return false;
       if (typeof explicitLeave !== "undefined" && explicitLeave) return false;
       if (typeof terminalRoom !== "undefined" && terminalRoom) return false;
       return true;
+    }
+
+    function peerConnectionActive(pc, generation = peerGenerations.get(pc)) {
+      if (generation !== browserRoomGeneration || !browserRoomWorkActive()) return false;
+      if (typeof peers === "undefined" || !peers || typeof peers.values !== "function") return true;
+      for (const state of peers.values()) {
+        if (state?.pc === pc) return true;
+      }
+      return false;
     }
 
     function currentPeerNeedsNetworkNote() {
@@ -171,7 +189,26 @@
       const roomHandle = handle;
       handle = async function lifecycleAwareRoomHandle(message) {
         if (!browserRoomWorkActive()) return;
-        return roomHandle(message);
+        const generation = browserRoomGeneration;
+        try {
+          return await roomHandle(message);
+        } catch (error) {
+          if (error?.linguaPeerLifecycle === true || generation !== browserRoomGeneration) return;
+          throw error;
+        }
+      };
+    }
+
+    if (typeof send === "function") {
+      const roomSend = send;
+      send = function lifecycleAwareRoomSend(message) {
+        if (message?.type === "signal") {
+          if (!browserRoomWorkActive()
+              || typeof peers === "undefined" || !peers || typeof peers.get !== "function") return;
+          const state = peers.get(message.to);
+          if (!state || !peerConnectionActive(state.pc)) return;
+        }
+        return roomSend(message);
       };
     }
 
@@ -182,6 +219,47 @@
             && (!browserRoomWorkActive() || !currentPeerNeedsNetworkNote())) return;
         return roomShowVideoNote(key, ...args);
       };
+    }
+
+    if (typeof RoomPeerConnection === "function") {
+      const guardedPeerEvents = [
+        "track",
+        "icecandidate",
+        "negotiationneeded",
+        "iceconnectionstatechange",
+        "connectionstatechange",
+      ];
+      const guardedPeerMethods = ["setLocalDescription", "setRemoteDescription", "addIceCandidate"];
+
+      function LifecycleRTCPeerConnection(...args) {
+        const pc = new RoomPeerConnection(...args);
+        const generation = browserRoomGeneration;
+        peerGenerations.set(pc, generation);
+
+        for (const type of guardedPeerEvents) {
+          pc.addEventListener(type, event => {
+            if (!peerConnectionActive(pc, generation)) event.stopImmediatePropagation?.();
+          });
+        }
+        for (const methodName of guardedPeerMethods) {
+          const original = typeof pc[methodName] === "function" ? pc[methodName].bind(pc) : null;
+          if (!original) continue;
+          pc[methodName] = async (...methodArgs) => {
+            if (!peerConnectionActive(pc, generation)) throw peerLifecycleAbortError();
+            const result = await original(...methodArgs);
+            if (!peerConnectionActive(pc, generation)) throw peerLifecycleAbortError();
+            return result;
+          };
+        }
+        return pc;
+      }
+      LifecycleRTCPeerConnection.prototype = RoomPeerConnection.prototype;
+      Object.setPrototypeOf(LifecycleRTCPeerConnection, RoomPeerConnection);
+      window.RTCPeerConnection = LifecycleRTCPeerConnection;
+
+      window.addEventListener("unhandledrejection", event => {
+        if (event.reason?.linguaPeerLifecycle === true) event.preventDefault?.();
+      });
     }
 
     function abortControlRequests() {
