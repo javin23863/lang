@@ -297,6 +297,14 @@ async function settle() {
   await Promise.resolve();
 }
 
+async function waitFor(predicate, message) {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    if (predicate()) return;
+    await Promise.resolve();
+  }
+  assert.fail(message);
+}
+
 test("active browser mic start builds one audio graph and current PCM reaches signalling", async () => {
   const h = harness();
   await h.elements.get("micBtn").onclick();
@@ -350,7 +358,8 @@ test("pending AudioContext resume cannot mutate fresh restored audio state", asy
   const oldResume = deferred();
   MockAudioContext.plans.push({state: "suspended", resume: oldResume});
   const oldClick = h.elements.get("micBtn").onclick();
-  await settle();
+  await waitFor(() => MockAudioContext.created[0]?.inputs.length === 1,
+    "old capture did not reach the pending AudioContext.resume checkpoint");
   const oldContext = MockAudioContext.created[0];
   const oldNode = MockAudioWorkletNode.created[0];
   assert.equal(oldContext.inputs.length, 1);
