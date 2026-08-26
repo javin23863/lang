@@ -31,7 +31,7 @@ class MockPeerConnection extends MockTarget {
   restartIce() {}
 }
 
-function harness() {
+function harness({webSocket = true, peerConnection = true} = {}) {
   const timeoutCallbacks = [];
   const fetchCalls = [];
   const nativeFetch = (input, init = {}) => new Promise((resolve, reject) => {
@@ -48,10 +48,11 @@ function harness() {
 
   const window = {
     LinguaNative: undefined,
-    WebSocket: MockWebSocket,
-    RTCPeerConnection: MockPeerConnection,
     fetch: nativeFetch,
   };
+  if (webSocket) window.WebSocket = MockWebSocket;
+  if (peerConnection) window.RTCPeerConnection = MockPeerConnection;
+
   const document = {
     readyState: "loading",
     documentElement: {lang: "", dir: ""},
@@ -90,9 +91,8 @@ function harness() {
   return {window, timeoutCallbacks, fetchCalls};
 }
 
-test("the first browser capability probe is bounded before deferred room bootstrap runs", async () => {
-  const {window, timeoutCallbacks, fetchCalls} = harness();
-
+async function assertInitialCapabilityDeadline(options = {}) {
+  const {window, timeoutCallbacks, fetchCalls} = harness(options);
   const pending = window.fetch("https://room.test/api/capabilities", {
     cache: "no-store",
     headers: {Accept: "application/json"},
@@ -107,10 +107,20 @@ test("the first browser capability probe is bounded before deferred room bootstr
   timeoutCallbacks[0].callback();
   await assert.rejects(pending, error => error?.name === "AbortError");
   assert.equal(fetchCalls[0].init.signal.aborted, true);
+}
+
+test("the first browser capability probe is bounded before deferred room bootstrap runs", async () => {
+  await assertInitialCapabilityDeadline();
+});
+
+test("the initial capability deadline does not depend on browser transport constructors", async () => {
+  await assertInitialCapabilityDeadline({webSocket: false, peerConnection: false});
+  await assertInitialCapabilityDeadline({webSocket: false, peerConnection: true});
+  await assertInitialCapabilityDeadline({webSocket: true, peerConnection: false});
 });
 
 test("the initial capability deadline preserves caller cancellation", async () => {
-  const {window, fetchCalls} = harness();
+  const {window, fetchCalls} = harness({webSocket: false, peerConnection: false});
   const caller = new AbortController();
   const pending = window.fetch("https://room.test/api/capabilities", {signal: caller.signal});
 
@@ -123,7 +133,7 @@ test("the initial capability deadline preserves caller cancellation", async () =
 });
 
 test("only the first same-origin capability bootstrap consumes the early deadline", () => {
-  const {window, timeoutCallbacks, fetchCalls} = harness();
+  const {window, timeoutCallbacks, fetchCalls} = harness({webSocket: false, peerConnection: false});
 
   void window.fetch("https://other.test/api/capabilities");
   assert.equal(timeoutCallbacks.length, 0, "cross-origin traffic is never given the room deadline");
@@ -137,8 +147,9 @@ test("only the first same-origin capability bootstrap consumes the early deadlin
   assert.equal(fetchCalls.length, 3);
 });
 
-test("source keeps the early deadline browser-room-only and ahead of the TURN response policy", () => {
+test("source installs the browser-room deadline before optional transport recovery", () => {
   assert.match(source, /const BROWSER_BOOTSTRAP_FETCH_TIMEOUT_MS = 12000/);
+  assert.match(source, /function installBrowserCapabilityBootstrapDeadline\(\)/);
   assert.match(source, /let bootstrapCapabilitiesPending = true/);
   assert.match(source,
     /bootstrapCapabilitiesPending[\s\S]*url\.origin === location\.origin[\s\S]*url\.pathname === "\/api\/capabilities"/);
@@ -150,7 +161,13 @@ test("source keeps the early deadline browser-room-only and ahead of the TURN re
   assert.match(source, /clearTimeout\(timer\)/);
   assert.match(source, /callerSignal\?\.removeEventListener\("abort", abortFromCaller\)/);
   assert.ok(
-    source.indexOf('url.pathname === "/api/capabilities"') < source.indexOf('url.pathname !== "/api/turn"'),
-    "capability timeout is applied before the existing TURN response policy",
+    source.indexOf("installBrowserCapabilityBootstrapDeadline();")
+      < source.indexOf("installBrowserRoomNetworkRecovery();"),
+    "the initial deadline is installed before ICE/TURN transport recovery",
+  );
+  assert.ok(
+    source.indexOf("installBrowserCapabilityBootstrapDeadline();")
+      < source.indexOf('typeof NativeWebSocket !== "function" || typeof NativePeerConnection !== "function"'),
+    "transport feature detection cannot suppress the initial capability deadline",
   );
 });
