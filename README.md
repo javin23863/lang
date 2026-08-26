@@ -4,14 +4,20 @@ Lingua Relay is a **two-person, foreground multilingual conversation product**.
 It supports video, voice, text chat, live translated captions, and optional
 translated voice through one private room model.
 
+**Current developers: start with [`CURRENT-DEVELOPER-HANDOFF.md`](CURRENT-DEVELOPER-HANDOFF.md).**
+It records the active branches and exact SHAs, completed product/staging/native
+work, current CI receipts, the frozen prelaunch staging boundary, and everything
+still required through beta/store launch other than paying for Apple/Google
+developer enrollment.
+
 The authoritative Version 1.0 product boundary is
 [`RELEASE-1.0.md`](RELEASE-1.0.md). Read that before changing room capacity,
 authentication, monetization, privacy, native-link behavior, or release gates.
 The implementation/gate status is tracked in
 [`wa-translator/mobile/LAUNCH-CHECKLIST.md`](wa-translator/mobile/LAUNCH-CHECKLIST.md).
-The current development/product-test checkpoint is
-[`PRODUCT-TEST-HANDOFF.md`](PRODUCT-TEST-HANDOFF.md); it states what can actually
-be exercised now and what remains unverified.
+The earlier product-test checkpoint is retained in
+[`PRODUCT-TEST-HANDOFF.md`](PRODUCT-TEST-HANDOFF.md); use the current developer
+handoff above for the latest continuation state.
 
 ## Version 1.0 product contract
 
@@ -182,15 +188,19 @@ store-release architecture. See:
 Use these in order:
 
 1. [`RELEASE-1.0.md`](RELEASE-1.0.md) — Version 1.0 product boundary.
-2. [`wa-translator/mobile/LAUNCH-CHECKLIST.md`](wa-translator/mobile/LAUNCH-CHECKLIST.md)
+2. [`CURRENT-DEVELOPER-HANDOFF.md`](CURRENT-DEVELOPER-HANDOFF.md) — current
+   branches/SHAs, completed work, validation receipts, resume sequence, and the
+   complete remaining technical/operational launch path.
+3. [`wa-translator/mobile/LAUNCH-CHECKLIST.md`](wa-translator/mobile/LAUNCH-CHECKLIST.md)
    — implemented vs remaining release gates.
-3. [`PRODUCT-TEST-HANDOFF.md`](PRODUCT-TEST-HANDOFF.md) — current development
-   checkpoint, test paths, and explicit unverified boundaries.
-4. [`wa-translator/mobile/STORE-DECLARATIONS.md`](wa-translator/mobile/STORE-DECLARATIONS.md)
+4. [`PRODUCT-TEST-HANDOFF.md`](PRODUCT-TEST-HANDOFF.md) — earlier development
+   checkpoint retained for chronology; superseded by the current handoff for
+   present CI/staging status.
+5. [`wa-translator/mobile/STORE-DECLARATIONS.md`](wa-translator/mobile/STORE-DECLARATIONS.md)
    — store/privacy answers.
-5. [`wa-translator/mobile/REVIEW-INPUTS.md`](wa-translator/mobile/REVIEW-INPUTS.md)
+6. [`wa-translator/mobile/REVIEW-INPUTS.md`](wa-translator/mobile/REVIEW-INPUTS.md)
    — owner-provided store-review inputs.
-6. Runtime code/tests and `CLOUD-ARCHITECTURE.md` — implementation detail.
+7. Runtime code/tests and `CLOUD-ARCHITECTURE.md` — implementation detail.
 
 The following are retained as dated history/research and may describe superseded
 beta behavior: `MOBILE-STORE-PLAN.md`, `MOBILE-STORE-HANDOFF.md`,
@@ -199,8 +209,11 @@ beta behavior: `MOBILE-STORE-PLAN.md`, `MOBILE-STORE-HANDOFF.md`,
 
 ## Final release gates still outside source-only development
 
-The launch checklist remains authoritative, but the major non-source gates are:
+The launch checklist and current developer handoff remain authoritative, but the
+major non-source gates are:
 
+- finish the exact-SHA isolated staging deployment and native-artifact receipt;
+- reconcile product/prelaunch validation work into one frozen release source;
 - choose/configure the final public production origin;
 - provision live Google/Apple (and Facebook if offered) OAuth credentials;
 - configure Play App Signing fingerprint and Apple Team ID associations;
