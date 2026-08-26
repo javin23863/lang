@@ -70,6 +70,20 @@
       }
     }
 
+    async function retireCreatedRoom(created) {
+      const hostControl = typeof created?.host_control === "string" ? created.host_control : "";
+      if (!hostControl) return false;
+      try {
+        const response = await dashboardFetch(runtime.apiUrl("/api/room-control/close"), {
+          method: "POST",
+          headers: {Authorization: "Bearer " + hostControl, Accept: "application/json"},
+        });
+        return response.ok;
+      } catch (_) {
+        return false;
+      }
+    }
+
     async function refresh() {
       const targetRoom = room;
       if (!targetRoom || busy || statusRefreshRoom === targetRoom) return;
@@ -153,9 +167,15 @@
         if (!response.ok) throw new Error("creation failed");
         const created = await response.json();
         if (invalidationGeneration !== targetGeneration) return false;
-        if (!model.valid(created)) throw new Error("storage unavailable");
+        if (!model.valid(created)) {
+          await retireCreatedRoom(created);
+          throw new Error("storage unavailable");
+        }
         created.mode = requestedMode;
-        if (!await model.save(created)) throw new Error("storage unavailable");
+        if (!await model.save(created)) {
+          await retireCreatedRoom(created);
+          throw new Error("storage unavailable");
+        }
         if (invalidationGeneration !== targetGeneration) {
           await model.forget();
           return false;
