@@ -6,8 +6,10 @@ on:
       - "wa-translator/mobile/**"
       - "wa-translator/windows/static/**"
       - "wa-translator/cloudflare/**"
+      - "wa-translator/tools/browser/**"
       - ".github/workflows/mobile-build.yml"
       - ".github/workflows/mobile-beta.yml"
+      - ".github/workflows/mobile-native-smoke.yml"
   push:
     branches:
       - main
@@ -16,8 +18,10 @@ on:
       - "wa-translator/mobile/**"
       - "wa-translator/windows/static/**"
       - "wa-translator/cloudflare/**"
+      - "wa-translator/tools/browser/**"
       - ".github/workflows/mobile-build.yml"
       - ".github/workflows/mobile-beta.yml"
+      - ".github/workflows/mobile-native-smoke.yml"
   workflow_dispatch:
     inputs:
       release_sha:

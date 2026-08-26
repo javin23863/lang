@@ -21,6 +21,17 @@ test("prelaunch pushes run the credential-free matrix on the literal pushed SHA"
     "prelaunch branches must have a push-event release matrix independent of the PR merge ref",
   );
 
+  for (const evidencePath of [
+    '"wa-translator/tools/browser/**"',
+    '".github/workflows/mobile-native-smoke.yml"',
+  ]) {
+    assert.equal(
+      workflow.split(evidencePath).length - 1,
+      2,
+      `${evidencePath} must trigger both PR diagnostics and exact-head prelaunch push checks`,
+    );
+  }
+
   const exactShaCheckouts = workflow.match(/ref: \$\{\{ github\.sha \}\}/g) ?? [];
   assert.equal(
     exactShaCheckouts.length,
