@@ -3,19 +3,15 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-export const PRODUCTION_ORIGIN =
-  "https://spoken-translation-room.spoken-translation-cloudflare.workers.dev";
-export const STAGING_ORIGIN =
-  "https://spoken-translation-room-staging.spoken-translation-cloudflare.workers.dev";
-const ALLOWED_ORIGINS = new Set([PRODUCTION_ORIGIN, STAGING_ORIGIN]);
+import {
+  PUBLIC_ORIGIN,
+  STAGING_PUBLIC_ORIGIN,
+  resolvePublicOrigin,
+} from "../src/runtime-core.mjs";
 
-export function resolvePublicOrigin(value = "") {
-  const origin = String(value || PRODUCTION_ORIGIN).trim();
-  if (!ALLOWED_ORIGINS.has(origin)) {
-    throw new Error(`Unsupported LINGUA_PUBLIC_ORIGIN: ${origin}`);
-  }
-  return origin;
-}
+export const PRODUCTION_ORIGIN = PUBLIC_ORIGIN;
+export const STAGING_ORIGIN = STAGING_PUBLIC_ORIGIN;
+export { resolvePublicOrigin };
 
 const invokedDirectly = process.argv[1]
   && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
