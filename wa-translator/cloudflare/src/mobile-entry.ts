@@ -2,7 +2,7 @@ import worker, { type Env } from "./worker";
 import { PARTICIPANT_LIMIT, Room } from "./two-party-room";
 
 export { AbuseGate, ReportInbox } from "./worker";
-export { UserDirectory } from "./account-directory";
+export { UserDirectory } from "./account-room-registry";
 export { Room };
 
 const NATIVE_ORIGINS = new Set(["https://localhost", "capacitor://localhost"]);
