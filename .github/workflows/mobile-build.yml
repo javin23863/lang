@@ -9,7 +9,9 @@ on:
       - ".github/workflows/mobile-build.yml"
       - ".github/workflows/mobile-beta.yml"
   push:
-    branches: [main]
+    branches:
+      - main
+      - "prelaunch/**"
     paths:
       - "wa-translator/mobile/**"
       - "wa-translator/windows/static/**"
