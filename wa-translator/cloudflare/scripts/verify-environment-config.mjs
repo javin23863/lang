@@ -14,8 +14,8 @@ async function readJsonc(name) {
   return JSON.parse(withoutWholeLineComments);
 }
 
-function assertShippingShape(config, label) {
-  assert.equal(config.main, "src/session-issuance-entry.ts", `${label} uses the guarded shipping entrypoint`);
+function assertShippingShape(config, label, entrypoint = "src/session-issuance-entry.ts") {
+  assert.equal(config.main, entrypoint, `${label} uses the guarded shipping entrypoint`);
   assert.equal(config.upload_source_maps, true, `${label} uploads source maps`);
   assert.equal(config.observability?.logs?.enabled, true, `${label} enables Workers Logs`);
   assert.equal(config.observability?.logs?.invocation_logs, false,
@@ -49,7 +49,9 @@ const staging = await readJsonc("wrangler.staging.jsonc");
 const development = await readJsonc("wrangler.dev.jsonc");
 
 assertShippingShape(production, "production");
-assertShippingShape(staging, "staging");
+assertShippingShape(staging, "staging", "src/staging-release-entry.ts");
+assert.equal(staging.vars?.RELEASE_SHA, "__RELEASE_SHA__",
+  "staging release SHA is injected only by the exact-source deployment workflow");
 
 assert.equal(production.name, "spoken-translation-room", "production worker name is pinned");
 assert.equal(staging.name, "spoken-translation-room-staging", "staging worker name is pinned");
