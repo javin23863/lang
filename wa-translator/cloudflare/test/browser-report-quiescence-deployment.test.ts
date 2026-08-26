@@ -16,6 +16,10 @@ describe("browser confirmed-report quiescence deployment", () => {
     expect(source).toContain("setChatEnabled(false)");
     expect(source).toContain("Promise.resolve(context.close()).catch(() => {})");
     expect(source).toMatch(/if \(reportButton\.disabled\) \{[\s\S]*?quiesceRoomForReport\(\);[\s\S]*?endRoomLifecycle\(true\)/);
-    expect(source).not.toMatch(/function quiesceRoomForReport\(\)[\s\S]*?disconnectRoom\(/);
+    const start = source.indexOf("function quiesceRoomForReport()");
+    const end = source.indexOf("function canRetryCapabilities()", start);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(source.slice(start, end)).not.toContain("disconnectRoom(");
   });
 });
