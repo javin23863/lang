@@ -1,0 +1,106 @@
+name: Prelaunch product native smoke
+
+on:
+  push:
+    branches:
+      - "prelaunch/product-test-20260826"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prelaunch-product-native-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-emulator:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: wa-translator/mobile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify exact prelaunch commit
+        shell: bash
+        run: |
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "${GITHUB_SHA}"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: wa-translator/mobile/package-lock.json
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - run: npm ci
+      - run: npm run sync
+      - name: Launch Android app on API 36 emulator
+        shell: bash
+        run: bash scripts/smoke-android-emulator.sh
+      - name: Write Android native smoke receipt
+        shell: bash
+        run: |
+          mkdir -p build/native-smoke
+          completed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          printf '{"schema":1,"platform":"android","head":"%s","runtime":"android-api-36-emulator","result":"passed","completed_at":"%s"}\n' \
+            "$GITHUB_SHA" "$completed_at" > build/native-smoke/android.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lingua-relay-prelaunch-native-smoke-android
+          path: wa-translator/mobile/build/native-smoke/android.json
+          if-no-files-found: error
+          retention-days: 30
+
+  ios-simulator:
+    runs-on: macos-26
+    defaults:
+      run:
+        working-directory: wa-translator/mobile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify exact prelaunch commit
+        shell: bash
+        run: |
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "${GITHUB_SHA}"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: wa-translator/mobile/package-lock.json
+      - name: Verify simulator SDK floor
+        shell: bash
+        run: |
+          sdk_version="$(xcrun --sdk iphonesimulator --show-sdk-version)"
+          sdk_major="${sdk_version%%.*}"
+          if [[ ! "$sdk_major" =~ ^[0-9]+$ || "$sdk_major" -lt 26 ]]; then
+            echo "Native smoke requires iOS Simulator SDK 26 or newer; found ${sdk_version}" >&2
+            exit 1
+          fi
+      - run: npm ci
+      - run: npm run sync
+      - name: Launch iOS app in Simulator
+        shell: bash
+        run: bash scripts/smoke-ios-simulator.sh
+      - name: Write iOS native smoke receipt
+        shell: bash
+        run: |
+          mkdir -p build/native-smoke
+          completed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          printf '{"schema":1,"platform":"ios","head":"%s","runtime":"ios-simulator-sdk-26-plus","result":"passed","completed_at":"%s"}\n' \
+            "$GITHUB_SHA" "$completed_at" > build/native-smoke/ios.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lingua-relay-prelaunch-native-smoke-ios
+          path: wa-translator/mobile/build/native-smoke/ios.json
+          if-no-files-found: error
+          retention-days: 30
