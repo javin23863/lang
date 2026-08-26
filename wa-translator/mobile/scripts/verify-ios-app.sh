@@ -71,6 +71,10 @@ fi
   echo "iOS microphone usage description is missing." >&2
   exit 1
 }
+[[ "$(plist_value ITSAppUsesNonExemptEncryption)" == "false" ]] || {
+  echo "iOS app must declare non-exempt encryption disabled." >&2
+  exit 1
+}
 
 archs="$(lipo -archs "$exe")"
 if [[ " $archs " != *" arm64 "* || " $archs " == *" x86_64 "* ]]; then
