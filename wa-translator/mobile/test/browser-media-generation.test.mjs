@@ -295,5 +295,5 @@ test("source binds browser media requests to room lifecycle generation and teard
   assert.match(source,
     /disconnectRoom = function mediaAwareDisconnectRoom[\s\S]*?invalidatePendingBrowserMedia\(\)[\s\S]*?roomDisconnectRoom/);
   assert.match(source,
-    /function endRoomLifecycle\(\) \{[\s\S]*?browserMediaLifecycleEnded = true;[\s\S]*?invalidatePendingBrowserMedia\(\)/);
+    /function endRoomLifecycle\(preserveReportRequest = false\) \{[\s\S]*?browserMediaLifecycleEnded = true;[\s\S]*?invalidatePendingBrowserMedia\(\)/);
 });
