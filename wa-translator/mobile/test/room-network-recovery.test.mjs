@@ -4,6 +4,8 @@ import test from "node:test";
 
 const root = new URL("../www/", import.meta.url);
 const browserRuntime = new URL("../../windows/static/app-runtime.js", import.meta.url);
+const browserBootstrap = new URL("../../windows/static/qr.js", import.meta.url);
+const qrEncoder = new URL("../../windows/static/qr-encoder.js", import.meta.url);
 
 test("prepared room has bounded reconnect and foreground recovery behavior", async () => {
   const source = await readFile(new URL("room.js", root), "utf8");
@@ -105,4 +107,33 @@ test("browser and PWA rooms have bounded ICE recovery and TURN retry floors", as
   assert.match(source,
     /original\(Math\.max\(Number\(delay\) \|\| 0, retryFloor\)\)/,
     "browser TURN retries cannot run before the server retry window");
+});
+
+test("browser/PWA room control fetches are bounded before normal join and reconnect work", async () => {
+  const source = await readFile(browserBootstrap, "utf8");
+  const encoder = await readFile(qrEncoder, "utf8");
+
+  assert.match(source, /const ROOM_CONTROL_FETCH_TIMEOUT_MS = 12000/);
+  for (const path of ["/api/capabilities", "/api/turn", "/api/room", "/api/reports"]) {
+    assert.ok(source.includes(`"${path}"`), `browser control deadline covers ${path}`);
+  }
+  assert.match(source, /if \(!native && roomRoute && typeof window\.fetch === "function"\)/,
+    "native keeps its stronger generated roomFetch path");
+  assert.match(source, /const boundedFetch = window\.fetch\.bind\(window\)/,
+    "the timeout composes with app-runtime TURN Retry-After handling");
+  assert.match(source, /url\.origin !== location\.origin \|\| !ROOM_CONTROL_PATHS\.has\(url\.pathname\)/,
+    "only same-origin room control APIs receive the browser deadline");
+  assert.match(source, /const callerSignal = init\.signal/);
+  assert.match(source, /input instanceof Request \? input\.signal : null/,
+    "Request-level caller aborts are retained");
+  assert.match(source, /const controller = new AbortController\(\)/);
+  assert.match(source, /callerSignal\?\.addEventListener\("abort", abortFromCaller, \{once: true\}\)/);
+  assert.match(source, /setTimeout\(\(\) => controller\.abort\(\), ROOM_CONTROL_FETCH_TIMEOUT_MS\)/);
+  assert.match(source, /boundedFetch\(input, \{\.\.\.init, signal: controller\.signal\}\)/);
+  assert.match(source, /clearTimeout\(timer\)/);
+  assert.match(source, /callerSignal\?\.removeEventListener\("abort", abortFromCaller\)/);
+  assert.match(source, /qrCore\.src = "\/qr-encoder\.js"/,
+    "existing room/dashboard markup can keep loading /qr.js");
+  assert.match(encoder, /window\.LinguaQR = \{svg: svg, _matrix: matrix\}/,
+    "the original QR encoder remains available behind the bootstrap");
 });
