@@ -19,6 +19,6 @@ test("native bridge accepts the isolated staging Worker", () => {
 test("native bridge rejects arbitrary backend origins", () => {
   assert.throws(
     () => resolvePublicOrigin("https://example.invalid"),
-    /Unsupported LINGUA_PUBLIC_ORIGIN/,
+    /Unsupported Lingua Relay public origin/,
   );
 });
