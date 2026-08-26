@@ -32,8 +32,8 @@ if (invokedDirectly) {
     format: "iife",
     platform: "browser",
     target: "es2022",
-    define: {
-      __LINGUA_PUBLIC_ORIGIN__: JSON.stringify(origin),
+    banner: {
+      js: `globalThis.__LINGUA_PUBLIC_ORIGIN__=${JSON.stringify(origin)};`,
     },
   });
   await writeFile(
