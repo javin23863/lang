@@ -122,6 +122,16 @@ describe("permanent deployment surface", () => {
     expect(dashboardRoomControllerSource).toContain("async function createRoom(mode)");
     expect(dashboardRoomControllerSource).toContain("create: createRoom");
 
+    const appRuntime = await exports.default.fetch(`${ORIGIN}/app-runtime.js`);
+    expect(appRuntime.status).toBe(200);
+    expectBaselineHeaders(appRuntime);
+    const appRuntimeSource = await appRuntime.text();
+    expect(appRuntimeSource).toContain("const BROWSER_ICE_RESTART_WINDOW_MS = 60 * 1000");
+    expect(appRuntimeSource).toContain("const BROWSER_ICE_RESTART_MAX_PER_WINDOW = 3");
+    expect(appRuntimeSource).toContain("function installBrowserRoomNetworkRecovery()");
+    expect(appRuntimeSource).toContain("pc.restartIce()");
+    expect(appRuntimeSource).toContain('response.headers.get("Retry-After")');
+
     // Both pages load the QR encoder as a plain asset, so a 404 here is a share
     // row whose code silently never draws.
     const qr = await exports.default.fetch(`${ORIGIN}/qr.js`);
@@ -135,8 +145,11 @@ describe("permanent deployment surface", () => {
     expect(serviceWorker.headers.get("Service-Worker-Allowed")).toBe("/");
     const serviceWorkerJs = await serviceWorker.text();
     expect(serviceWorkerJs).toContain("cache: 'no-store'");
-    expect(serviceWorkerJs).toContain("const CACHE_NAME = 'lingua-relay-shell-v4'");
+    expect(serviceWorkerJs).toContain("const CACHE_NAME = 'lingua-relay-shell-v5'");
     expect(serviceWorkerJs).toContain("const SHELL_PATHS = new Set([");
+    expect(serviceWorkerJs).toContain("const NETWORK_FIRST_SHELL_PATHS = new Set(['/app-runtime.js'])");
+    expect(serviceWorkerJs).toContain("async function networkFirstShell(url)");
+    expect(serviceWorkerJs).toContain("event.respondWith(networkFirstShell(url))");
     const shellBlock = serviceWorkerJs.match(/const SHELL_PATHS = new Set\(\[([\s\S]*?)\]\);/)?.[1] ?? "";
     for (const path of ["'/'", "'/index.html'", "'/dashboard.css'", "'/product-events.js'", "'/manifest.webmanifest'"]) {
       expect(shellBlock).toContain(path);
