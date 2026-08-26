@@ -47,10 +47,11 @@ test("real-browser acceptance follows current auth and affirmative-consent contr
     "the browser entrypoint must not claim a signing key is sufficient for host acceptance");
 });
 
-test("store screenshots can only be promoted from passing exact-head en-US browser captures", async () => {
-  const [run, promotion, packageText] = await Promise.all([
+test("store screenshots retain exact-head provenance through promotion and resizing", async () => {
+  const [run, promotion, preparation, packageText] = await Promise.all([
     source("run.mjs"),
     mobileSource("scripts/promote-browser-screenshots.py"),
+    mobileSource("scripts/prepare-store-screenshots.py"),
     mobileSource("package.json"),
   ]);
   const packageJson = JSON.parse(packageText);
@@ -68,6 +69,12 @@ test("store screenshots can only be promoted from passing exact-head en-US brows
     "promotion must reject screenshots captured from any other source head");
   assert.match(promotion, /"en" not in languages/,
     "promotion must require the en-US acceptance sweep");
+  assert.match(promotion, /PROVENANCE = TARGET \/ "promotion\.json"/);
+  assert.match(promotion, /"source_head": head/,
+    "the promoted screenshot set must retain the exact captured source SHA");
+  assert.match(promotion, /"captured_at": completed_at/);
+  assert.match(promotion, /"sha256": sha256\(target\)/,
+    "every promoted PNG must be cryptographically bound to its provenance record");
   for (const mapping of [
     ["dash-en.png", "01-dashboard.png"],
     ["dash-en-room.png", "02-room-control.png"],
@@ -77,6 +84,17 @@ test("store screenshots can only be promoted from passing exact-head en-US brows
     assert.ok(promotion.includes(`("${mapping[0]}", "${mapping[1]}")`),
       `store screenshot mapping missing: ${mapping[0]} -> ${mapping[1]}`);
   }
+
+  assert.match(preparation, /PROVENANCE = SOURCE \/ "promotion\.json"/);
+  assert.match(preparation, /promotion\.json source_head is not an exact commit SHA/);
+  assert.match(preparation, /sha256\(path\) != expected_hash/,
+    "store resizing must reject a promoted PNG changed after exact-head promotion");
+  assert.match(preparation, /RECEIPT = ROOT \/ "build" \/ "store-screenshot-receipt\.json"/,
+    "final provenance must stay outside Fastlane image directories");
+  assert.match(preparation, /"android": \{"size": \[1080, 2340\], "files": android\}/);
+  assert.match(preparation, /"ios": \{"size": \[1290, 2796\], "files": ios\}/);
+  assert.match(preparation, /outputs\.append\(\{"file": output_name, "sha256": sha256\(output\)\}\)/,
+    "the final store-sized PNGs must be hashed into the receipt");
 
   assert.equal(packageJson.scripts["screenshots:refresh"],
     "python scripts/promote-browser-screenshots.py && python scripts/prepare-store-screenshots.py");

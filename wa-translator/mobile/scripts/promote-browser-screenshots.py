@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import subprocess
@@ -12,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REPO = ROOT.parents[1]
 SHOTS = ROOT.parent / "tools" / "browser" / "shots"
 TARGET = ROOT / "store" / "screenshots" / "en-US"
+PROVENANCE = TARGET / "promotion.json"
 CAPTURE_SIZE = (390, 844)
 MAPPING = (
     ("dash-en.png", "01-dashboard.png"),
@@ -29,6 +31,14 @@ def current_head() -> str:
     return subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=REPO, text=True
     ).strip()
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def load_manifest() -> dict[str, object]:
@@ -66,14 +76,38 @@ def main() -> None:
     languages = manifest.get("languages")
     if not isinstance(languages, list) or "en" not in languages:
         fail("capture did not include the required en-US browser sweep")
+    origin = manifest.get("origin")
+    completed_at = manifest.get("completed_at")
+    if not isinstance(origin, str) or not origin:
+        fail("capture origin is missing")
+    if not isinstance(completed_at, str) or not completed_at:
+        fail("capture completion timestamp is missing")
 
     TARGET.mkdir(parents=True, exist_ok=True)
+    promoted: list[dict[str, str]] = []
     for source_name, target_name in MAPPING:
         source = SHOTS / source_name
+        target = TARGET / target_name
         validate_capture(source)
-        shutil.copy2(source, TARGET / target_name)
+        shutil.copy2(source, target)
+        promoted.append({
+            "source": source_name,
+            "target": target_name,
+            "sha256": sha256(target),
+        })
+
+    PROVENANCE.write_text(json.dumps({
+        "schema": 1,
+        "source_head": head,
+        "origin": origin,
+        "languages": languages,
+        "captured_at": completed_at,
+        "capture_size": list(CAPTURE_SIZE),
+        "files": promoted,
+    }, indent=2) + "\n", encoding="utf-8")
 
     print(f"Promoted {len(MAPPING)} exact-head en-US browser captures from {head}.")
+    print(f"Promotion provenance: {PROVENANCE}")
     print("Run `python scripts/prepare-store-screenshots.py` to produce Android/iOS listing sizes.")
 
 
