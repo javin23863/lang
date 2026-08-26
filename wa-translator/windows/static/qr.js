@@ -112,7 +112,8 @@
         // A top-level/network/server failure leaves all live catalog containers
         // empty and is safe to retry. A partially validated catalog does not:
         // stop there rather than replaying against half-mutated locale state.
-        if (canRetryCapabilities()) {
+        if (canRetryCapabilities()
+            && capabilityRetryAttempts.length < CAPABILITY_RETRY_MAX_PER_WINDOW) {
           const backoff = Math.min(8000, 1000 * 2 ** capabilityRetryAttempts.length);
           scheduleCapabilityRetry(backoff);
         }
