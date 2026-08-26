@@ -176,8 +176,14 @@ the full credential-free matrix deliberately before signed beta/device gates.
   malformed routing metadata is stripped immediately.
 - [x] The operator moderation CLI reads its admin token only from the environment,
   exposes only the minimized queue, and can close a still-live room by report ID.
+- [x] Private-room participants have an installation-scoped random pseudonymous
+  safety ID and bounded local block list. Either participant's block is enforced
+  before a future room admission involving the same safety ID, the peer never
+  receives the local block list, and the service keeps no persistent block-history
+  database. Reporting also blocks the current peer locally; accepted installed-app
+  reports still close the current room on the backend.
 - [x] Store declarations are maintained in `STORE-DECLARATIONS.md` and match the
-  non-monetized account schema and report-retention lifetimes.
+  non-monetized account schema, participant-safety contract, and retention lifetimes.
 - [ ] Assign a monitored moderation operator/on-call owner and verify the live
   private queue before public store submission.
 - [ ] Complete the final App Store age-rating/export-compliance questionnaires
@@ -274,26 +280,18 @@ the full credential-free matrix deliberately before signed beta/device gates.
   preferred; do not invent one in source before it exists.
 - [ ] Provision live Google OAuth credentials/callback for that origin.
 - [ ] Provision live Apple Services ID, Key ID, private key and Team ID.
-- [ ] Provision Facebook only if it will actually be offered at launch.
-- [ ] Configure the production Android release certificate fingerprint in the
-  Worker association output.
-- [ ] Configure the production Apple Team ID in the Worker association output.
-- [ ] Add the required GitHub environment secrets for signed beta automation.
-- [ ] Enter the final production `/delete-account.html` URL in Play Console's
-  designated account-deletion field and verify it returns the public resource.
-- [ ] Run both signed beta workflows successfully and retain install receipts.
-- [ ] Create/verify the Play Console and App Store Connect records, agreements,
-  tax/banking state where applicable, pricing/availability and reviewer notes.
-
-## Known structural debt after P0
-
-`cloudflare/src/worker.ts` still contains the legacy four-person implementation
-that predates the version 1.0 decision. Production/dev Wrangler entry points use
-`src/session-issuance-entry.ts` → `src/account-guard-entry.ts` →
-`src/launch-entry.ts` → `src/mobile-entry.ts`, which exports the strict
-two-person `Room` wrapper. Installed clients independently fail closed on a
-different participant or native protocol contract. Do not deploy or export the
-base `worker.ts` `Room` directly. A later refactor should move the two-person and
-session-v2 invariants into the base implementation and delete the wrapper layers,
-but that refactor should be performed only with the complete room/auth suite
-available to run.
+- [ ] Provision Facebook only if it is intentionally enabled for the release;
+  its absence is supported and must not block Google/Apple launch.
+- [ ] Set every required Cloudflare/Modal secret and validate deployment config.
+- [ ] Run exact-SHA staging deploy/smoke, then production deploy/smoke with
+  telemetry correlation and the documented protected rollback lane.
+- [ ] Verify the live private moderation queue, assign a monitored operator, and
+  run the moderation closure drill against a disposable room.
+- [ ] Recapture the accepted UI states and promote screenshots only from a
+  successful exact-head browser capture manifest for the final release SHA.
+- [ ] Create the dedicated public product-support contact and publish it on the
+  production `/support` surface.
+- [ ] Complete App Store Connect and Google Play Console privacy, rating, access,
+  export-compliance, and release questionnaires from the final accepted behavior.
+- [ ] Run signed Play Internal/TestFlight uploads only after all source/runtime
+  gates above are frozen and green.
