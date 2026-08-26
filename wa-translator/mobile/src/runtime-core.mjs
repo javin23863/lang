@@ -1,14 +1,21 @@
-const PRODUCTION_ORIGIN =
+export const PUBLIC_ORIGIN =
   "https://spoken-translation-room.spoken-translation-cloudflare.workers.dev";
-const STAGING_ORIGIN =
+export const STAGING_PUBLIC_ORIGIN =
   "https://spoken-translation-room-staging.spoken-translation-cloudflare.workers.dev";
-const INJECTED_PUBLIC_ORIGIN = Reflect.get(globalThis, "__LINGUA_PUBLIC_ORIGIN__");
-const BUILD_PUBLIC_ORIGIN = typeof INJECTED_PUBLIC_ORIGIN === "string"
-  ? INJECTED_PUBLIC_ORIGIN : PRODUCTION_ORIGIN;
-if (BUILD_PUBLIC_ORIGIN !== PRODUCTION_ORIGIN && BUILD_PUBLIC_ORIGIN !== STAGING_ORIGIN) {
-  throw new Error("Unsupported Lingua Relay public origin");
+
+const ALLOWED_PUBLIC_ORIGINS = new Set([PUBLIC_ORIGIN, STAGING_PUBLIC_ORIGIN]);
+
+/** @param {unknown} value */
+export function resolvePublicOrigin(value = "") {
+  const origin = String(value || PUBLIC_ORIGIN).trim();
+  if (!ALLOWED_PUBLIC_ORIGINS.has(origin)) {
+    throw new Error(`Unsupported Lingua Relay public origin: ${origin}`);
+  }
+  return origin;
 }
-export const PUBLIC_ORIGIN = BUILD_PUBLIC_ORIGIN;
+
+const INJECTED_PUBLIC_ORIGIN = Reflect.get(globalThis, "__LINGUA_PUBLIC_ORIGIN__");
+export const ACTIVE_PUBLIC_ORIGIN = resolvePublicOrigin(INJECTED_PUBLIC_ORIGIN);
 export const MOBILE_PROTOCOL = 2;
 export const MOBILE_BUILD = 1;
 export const PARTICIPANT_LIMIT = 2;
@@ -63,7 +70,7 @@ export function parseRoomLink(value) {
   if (!boundedLink(value)) return null;
   try {
     const url = new URL(value);
-    if (url.origin !== PUBLIC_ORIGIN || url.hash) return null;
+    if (url.origin !== ACTIVE_PUBLIC_ORIGIN || url.hash) return null;
     const match = url.pathname.match(/^\/room\/([^/]+)$/);
     if (!match || !ROOM_TOKEN_PATTERN.test(match[1])) return null;
     // `n` is accepted only for backwards compatibility with already-issued
@@ -173,7 +180,7 @@ export function validateBootstrap(value, build) {
   return bootstrap.protocol === MOBILE_PROTOCOL
     && Number.isSafeInteger(bootstrap.minimum_client_build)
     && Number(bootstrap.minimum_client_build) <= build
-    && bootstrap.public_origin === PUBLIC_ORIGIN
+    && bootstrap.public_origin === ACTIVE_PUBLIC_ORIGIN
     && bootstrap.account_mode === "session"
     && bootstrap.call_lifecycle === "foreground"
     && bootstrap.max_room_participants === PARTICIPANT_LIMIT;
