@@ -103,14 +103,16 @@ test("temporary room-status failure preserves the host control for recovery", as
   });
 });
 
-test("revoked host control is cleared instead of retrying a capability that no longer works", async () => {
-  const replies = [response(200, {...CREATED_ROOM}), response(403)];
-  const h = harness(async () => replies.shift());
-  assert.equal(await h.controller.create("chat"), true);
-  await h.controller.refresh();
-  assert.equal(h.controller.current(), null);
-  assert.equal(h.stats().forgotten, 1);
-  assert.deepEqual(plain(h.clears.at(-1)), {state: "expired", key: "home.controlLost"});
+test("terminal host-control status is cleared instead of retrying a capability that cannot recover", async () => {
+  for (const status of [401, 403, 410]) {
+    const replies = [response(200, {...CREATED_ROOM}), response(status)];
+    const h = harness(async () => replies.shift());
+    assert.equal(await h.controller.create("chat"), true);
+    await h.controller.refresh();
+    assert.equal(h.controller.current(), null, `status ${status} must retire host control`);
+    assert.equal(h.stats().forgotten, 1);
+    assert.deepEqual(plain(h.clears.at(-1)), {state: "expired", key: "home.controlLost"});
+  }
 });
 
 test("failed close keeps the room available and emits a coarse failure result", async () => {
@@ -127,6 +129,22 @@ test("failed close keeps the room available and emits a coarse failure result", 
   assert.deepEqual(plain(h.clears.at(-1)), {
     state: "error", key: "home.closeFailed", options: {preserveRoom: true},
   });
+});
+
+test("terminal close response retires stale custody and does not trap replacement or sign-out", async () => {
+  for (const status of [401, 403, 410]) {
+    const replies = [response(200, {...CREATED_ROOM}), response(status)];
+    const h = harness(async () => replies.shift());
+    assert.equal(await h.controller.create("video"), true);
+    assert.equal(await h.controller.close(false), true,
+      `status ${status} means the room capability is already terminal`);
+    assert.equal(h.controller.current(), null);
+    assert.equal(h.stats().forgotten, 1);
+    assert.deepEqual(plain(h.events.at(-1)), {
+      name: "room.close.result", properties: {result: "success"},
+    });
+    assert.deepEqual(plain(h.clears.at(-1)), {state: "expired", key: "home.controlLost"});
+  }
 });
 
 test("a delayed status response for a replaced room cannot clear the new host control", async () => {

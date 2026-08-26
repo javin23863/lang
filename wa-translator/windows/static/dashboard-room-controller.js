@@ -2,6 +2,7 @@
   "use strict";
 
   const POLL_INTERVAL_MS = 15_000;
+  const TERMINAL_CONTROL_STATUSES = new Set([401, 403, 410]);
 
   function create({
     runtime,
@@ -78,7 +79,7 @@
           method: "POST",
           headers: {Authorization: "Bearer " + hostControl, Accept: "application/json"},
         });
-        return response.ok;
+        return response.ok || TERMINAL_CONTROL_STATUSES.has(response.status);
       } catch (_) {
         return false;
       }
@@ -95,7 +96,7 @@
         // A close/replace can complete while this request is in flight. Never
         // let an old room's delayed status mutate or clear the new room.
         if (room !== targetRoom) return;
-        if (response.status === 403) {
+        if (TERMINAL_CONTROL_STATUSES.has(response.status)) {
           await clear("expired", "home.controlLost");
           return;
         }
@@ -133,6 +134,12 @@
           headers: {Authorization: "Bearer " + targetRoom.host_control, Accept: "application/json"},
         });
         if (invalidationGeneration !== targetGeneration || room !== targetRoom) return false;
+        if (TERMINAL_CONTROL_STATUSES.has(response.status)) {
+          if (!await clear("expired", "home.controlLost")) return false;
+          events()?.emit("room.close.result", {result: "success"});
+          onNotice("");
+          return true;
+        }
         if (!response.ok) throw new Error("close failed");
         if (!await clear("closed", "home.roomClosedLink")) return false;
         events()?.emit("room.close.result", {result: "success"});
