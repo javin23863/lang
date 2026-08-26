@@ -136,6 +136,7 @@ test("source preserves only tracked report delivery during confirmed-report tear
   assert.match(source, /function abortControlRequests\(preserveReportRequest = false\)/);
   assert.match(source, /preserveReportRequest && reportControlControllers\.has\(controller\)/);
   assert.match(source, /function endRoomLifecycle\(preserveReportRequest = false\)/);
-  assert.match(source, /if \(reportButton\.disabled\) endRoomLifecycle\(true\)/);
+  assert.match(source,
+    /if \(reportButton\.disabled\) \{[\s\S]*?quiesceRoomForReport\(\);[\s\S]*?endRoomLifecycle\(true\)/);
   assert.match(source, /if \(url\.pathname === "\/api\/reports"\) reportControlControllers\.add\(controller\)/);
 });
