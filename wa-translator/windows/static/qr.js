@@ -12,6 +12,7 @@
     "/api/room",
     "/api/reports",
   ]);
+  const ROOM_CONTROL_JSON_PATHS = new Set(["/api/capabilities", "/api/turn"]);
   const PEER_NETWORK_NOTE_KEYS = new Set(["note.videoSlow", "note.videoFailed"]);
   const browserRoomSupported = native || !roomRoute || (
     typeof window.fetch === "function"
@@ -146,6 +147,8 @@
     let capabilityRetryAttempts = [];
     let browserAudioStartPromise = null;
     let browserAudioStartGeneration = -1;
+    let browserTurnRefreshPromise = null;
+    let browserTurnRefreshGeneration = -1;
 
     function lifecycleAbortError() {
       return new DOMException("Room lifecycle ended", "AbortError");
@@ -165,10 +168,22 @@
       return error;
     }
 
-    function browserRoomWorkActive() {
-      if (roomSuspended || roomLifecycleEnded) return false;
+    function connectLifecycleAbortError() {
+      const error = new Error("Connect work superseded by room lifecycle");
+      error.name = "AbortError";
+      error.linguaConnectLifecycle = true;
+      return error;
+    }
+
+    function browserRoomGenerationActive(generation) {
+      if (generation !== browserRoomGeneration || roomSuspended || roomLifecycleEnded) return false;
       if (typeof leaving !== "undefined" && leaving) return false;
       if (typeof explicitLeave !== "undefined" && explicitLeave) return false;
+      return true;
+    }
+
+    function browserRoomWorkActive() {
+      if (!browserRoomGenerationActive(browserRoomGeneration)) return false;
       if (typeof terminalRoom !== "undefined" && terminalRoom) return false;
       return true;
     }
@@ -192,6 +207,64 @@
           || pc.iceConnectionState === "completed"
           || pc.connectionState === "connected");
       });
+    }
+
+    if (typeof preflightRoom === "function") {
+      const roomPreflightRoom = preflightRoom;
+      preflightRoom = async function lifecycleAwarePreflightRoom(...args) {
+        const generation = browserRoomGeneration;
+        if (!browserRoomGenerationActive(generation)) return false;
+        const result = await roomPreflightRoom(...args);
+        if (!browserRoomGenerationActive(generation)) return false;
+        return result;
+      };
+    }
+
+    if (typeof refreshIceServers === "function") {
+      const roomRefreshIceServers = refreshIceServers;
+      refreshIceServers = function lifecycleAwareRefreshIceServers(...args) {
+        const generation = browserRoomGeneration;
+        if (!browserRoomGenerationActive(generation)) {
+          return Promise.reject(connectLifecycleAbortError());
+        }
+        if (browserTurnRefreshPromise && browserTurnRefreshGeneration === generation) {
+          return browserTurnRefreshPromise;
+        }
+        const previousTask = browserTurnRefreshPromise;
+        const previousGeneration = browserTurnRefreshGeneration;
+        const task = (async () => {
+          if (previousTask && previousGeneration !== generation) {
+            try {
+              await previousTask;
+            } catch (error) {
+              if (error?.linguaConnectLifecycle !== true) throw error;
+            }
+            if (!browserRoomGenerationActive(generation)) throw connectLifecycleAbortError();
+          }
+          await roomRefreshIceServers(...args);
+          if (!browserRoomGenerationActive(generation)) throw connectLifecycleAbortError();
+        })();
+        browserTurnRefreshPromise = task;
+        browserTurnRefreshGeneration = generation;
+        task.finally(() => {
+          if (browserTurnRefreshPromise === task) browserTurnRefreshPromise = null;
+        }).catch(() => {});
+        return task;
+      };
+    }
+
+    if (typeof connect === "function") {
+      const roomConnect = connect;
+      connect = async function lifecycleAwareConnect(...args) {
+        const generation = browserRoomGeneration;
+        if (!browserRoomGenerationActive(generation)) return;
+        try {
+          return await roomConnect(...args);
+        } catch (error) {
+          if (error?.linguaConnectLifecycle === true || generation !== browserRoomGeneration) return;
+          throw error;
+        }
+      };
     }
 
     if (typeof handle === "function") {
@@ -530,6 +603,7 @@
       }
       if (roomSuspended || roomLifecycleEnded) throw lifecycleAbortError();
 
+      const requestGeneration = browserRoomGeneration;
       const callerSignal = init.signal
         || (typeof Request !== "undefined" && input instanceof Request ? input.signal : null);
       const controller = new AbortController();
@@ -537,14 +611,48 @@
       const abortFromCaller = () => controller.abort();
       if (callerSignal?.aborted) abortFromCaller();
       else callerSignal?.addEventListener("abort", abortFromCaller, {once: true});
-      const timer = setTimeout(() => controller.abort(), ROOM_CONTROL_FETCH_TIMEOUT_MS);
-
-      try {
-        return await boundedFetch(input, {...init, signal: controller.signal});
-      } finally {
-        clearTimeout(timer);
+      let timer = null;
+      let released = false;
+      const release = () => {
+        if (released) return;
+        released = true;
+        if (timer !== null) clearTimeout(timer);
         activeControlControllers.delete(controller);
         callerSignal?.removeEventListener("abort", abortFromCaller);
+      };
+      timer = setTimeout(() => {
+        controller.abort();
+        release();
+      }, ROOM_CONTROL_FETCH_TIMEOUT_MS);
+
+      try {
+        const response = await boundedFetch(input, {...init, signal: controller.signal});
+        if (!response?.ok || !ROOM_CONTROL_JSON_PATHS.has(url.pathname)
+            || typeof response.json !== "function") {
+          release();
+          return response;
+        }
+        const readJson = response.json.bind(response);
+        return new Proxy(response, {
+          get(target, property) {
+            if (property === "json") {
+              return async (...args) => {
+                try {
+                  const value = await readJson(...args);
+                  if (!browserRoomGenerationActive(requestGeneration)) throw lifecycleAbortError();
+                  return value;
+                } finally {
+                  release();
+                }
+              };
+            }
+            const value = Reflect.get(target, property, target);
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+      } catch (error) {
+        release();
+        throw error;
       }
     };
 
