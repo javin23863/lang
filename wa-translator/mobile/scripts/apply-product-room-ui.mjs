@@ -6,12 +6,17 @@ const MOBILE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const roomPath = path.join(MOBILE, "www", "room.html");
 let html = await readFile(roomPath, "utf8");
 
-const styleTag = '<link rel="stylesheet" href="/room-product-ui.css">';
+const styleTags = [
+  '<link rel="stylesheet" href="/room-product-ui.css">',
+  '<link rel="stylesheet" href="/room-product-states.css">',
+];
 const scriptTag = '<script src="/room-product-ui.js"></script>';
 
-if (!html.includes(styleTag)) {
-  if (!html.includes("</head>")) throw new Error("generated room is missing </head>");
-  html = html.replace("</head>", `${styleTag}\n</head>`);
+for (const styleTag of styleTags) {
+  if (!html.includes(styleTag)) {
+    if (!html.includes("</head>")) throw new Error("generated room is missing </head>");
+    html = html.replace("</head>", `${styleTag}\n</head>`);
+  }
 }
 if (!html.includes(scriptTag)) {
   if (!html.includes("</body>")) throw new Error("generated room is missing </body>");
