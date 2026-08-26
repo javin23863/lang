@@ -152,7 +152,7 @@ test("source installs the browser-room deadline before optional transport recove
   assert.match(source, /function installBrowserCapabilityBootstrapDeadline\(\)/);
   assert.match(source, /let bootstrapCapabilitiesPending = true/);
   assert.match(source,
-    /bootstrapCapabilitiesPending[\s\S]*url\.origin === location\.origin[\s\S]*url\.pathname === "\/api\/capabilities"/);
+    /!bootstrapCapabilitiesPending[\s\S]*url\.origin !== location\.origin[\s\S]*url\.pathname !== "\/api\/capabilities"/);
   assert.match(source, /bootstrapCapabilitiesPending = false/);
   assert.match(source, /const callerSignal = init\.signal/);
   assert.match(source, /input instanceof Request \? input\.signal : null/);
