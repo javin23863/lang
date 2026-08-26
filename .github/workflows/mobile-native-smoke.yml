@@ -64,6 +64,21 @@ jobs:
       - name: Launch Android app on API 36 emulator
         shell: bash
         run: bash scripts/smoke-android-emulator.sh
+      - name: Write Android native smoke receipt
+        shell: bash
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          mkdir -p build/native-smoke
+          completed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          printf '{"schema":1,"platform":"android","head":"%s","runtime":"android-api-36-emulator","result":"passed","completed_at":"%s"}\n' \
+            "$RELEASE_SHA" "$completed_at" > build/native-smoke/android.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        with:
+          name: lingua-relay-native-smoke-android
+          path: wa-translator/mobile/build/native-smoke/android.json
+          if-no-files-found: error
+          retention-days: 30
 
   ios-simulator:
     runs-on: macos-26
@@ -113,3 +128,18 @@ jobs:
       - name: Launch iOS app in Simulator
         shell: bash
         run: bash scripts/smoke-ios-simulator.sh
+      - name: Write iOS native smoke receipt
+        shell: bash
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          mkdir -p build/native-smoke
+          completed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          printf '{"schema":1,"platform":"ios","head":"%s","runtime":"ios-simulator-sdk-26-plus","result":"passed","completed_at":"%s"}\n' \
+            "$RELEASE_SHA" "$completed_at" > build/native-smoke/ios.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        with:
+          name: lingua-relay-native-smoke-ios
+          path: wa-translator/mobile/build/native-smoke/ios.json
+          if-no-files-found: error
+          retention-days: 30
