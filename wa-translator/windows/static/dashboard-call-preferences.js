@@ -95,6 +95,13 @@
   translatedVoice.checked = read(VOICE_KEY, "0") === "1";
   captions.addEventListener("change", () => write(CAPTIONS_KEY, captions.checked ? "1" : "0"));
   translatedVoice.addEventListener("change", () => write(VOICE_KEY, translatedVoice.checked ? "1" : "0"));
+  window.addEventListener("lingua-preferences-change", event => {
+    const next = event.detail?.defaultMode || read(MODE_KEY, defaultMode);
+    if (!modes.some(([value]) => value === next)) return;
+    defaultMode = next;
+    renderModes();
+    paintHomeDefault();
+  });
 
   renderModes();
   paintHomeDefault();
