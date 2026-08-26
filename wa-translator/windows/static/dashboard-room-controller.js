@@ -247,9 +247,13 @@
     }
 
     async function restore() {
+      // A live in-memory capability is authoritative for this process. Foreground
+      // recovery must not replace it with an empty or externally-cleared storage
+      // slot and accidentally orphan a still-live backend room.
+      if (busy) return null;
+      if (room) return room;
       // `custodyUnavailable` deliberately does not block restore: foreground or
       // online recovery must be able to retry the storage read that created it.
-      if (busy) return null;
       const targetGeneration = invalidationGeneration;
       let refreshAfterRestore = false;
       setBusy(true);
