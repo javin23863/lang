@@ -3,13 +3,17 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const workflowUrl = new URL("../../../.github/workflows/mobile-build.yml", import.meta.url);
+const checklistUrl = new URL("../LAUNCH-CHECKLIST.md", import.meta.url);
 
-async function workflowSource() {
-  return readFile(workflowUrl, "utf8");
+async function source(url) {
+  return readFile(url, "utf8");
 }
 
 test("prelaunch pushes run the credential-free matrix on the literal pushed SHA", async () => {
-  const workflow = await workflowSource();
+  const [workflow, checklist] = await Promise.all([
+    source(workflowUrl),
+    source(checklistUrl),
+  ]);
 
   assert.match(
     workflow,
@@ -28,5 +32,16 @@ test("prelaunch pushes run the credential-free matrix on the literal pushed SHA"
     workflow,
     /workflow_dispatch:[\s\S]*release_sha:[\s\S]*Exact 40-character commit SHA approved for release verification/,
     "manual frozen-SHA verification must remain available for final release acceptance",
+  );
+
+  assert.match(
+    checklist,
+    /PR GitHub Actions[\s\S]*do \*\*not\*\* satisfy release acceptance[\s\S]*synthetic merge ref/,
+    "the launch source of truth must keep PR merge-ref checks diagnostic-only",
+  );
+  assert.match(
+    checklist,
+    /Prelaunch branch push runs execute the same[\s\S]*literal pushed SHA[\s\S]*intermediate\s+exact-head source acceptance/,
+    "the launch source of truth must identify the push-event lane as exact-head evidence",
   );
 });
