@@ -41,28 +41,47 @@ before a later submission.
   provider, and usage counts (call minutes, chat messages, translated-voice
   phrases). These are linked to the account and used for App Functionality only
   — never for tracking, advertising, or third-party sharing. Usage rows carry an
-  opaque room reference, never a room link, and no message, caption, audio, or
-  video content.
+  opaque room reference, never a room link, participant-safety ID, and no message,
+  caption, audio, or video content.
+- Participant-safety identifiers: each app/browser installation keeps a random
+  128-bit pseudonymous safety ID and a bounded device-local list of up to 128
+  blocked safety IDs. They are not account IDs, credentials, contacts, advertising
+  IDs, or public/searchable profiles. On room join, the installation sends its
+  safety ID and local block list to the room service. The room service keeps them
+  only in live/hibernated WebSocket attachment state for admission enforcement;
+  it does not write them to the account, report inbox, usage rows, analytics, or a
+  block-history database. A participant receives only the peer's safety ID needed
+  to block that peer; the peer never receives the local blocked-ID list. Clearing
+  app/site data or reinstalling rotates the installation safety ID and removes
+  the local block list.
 - Apple App Privacy classification: retained account name, email, user ID, and
   usage data are linked and used for App Functionality. The retained fixed-choice
   abuse-report category is unlinked `Other User Content`. The SHA-256-derived
   network-source identity used only to route a bounded abuse-quota counter is
-  conservatively declared as unlinked `Other Data Types`. Live microphone audio
-  and typed chat that are discarded after servicing the real-time request are not
-  labeled as Apple collection merely because they cross the network.
+  conservatively declared as unlinked `Other Data Types`. Live microphone audio,
+  typed chat, and participant-safety identifiers that are discarded by the
+  service after the real-time room request/lifetime are not labeled as Apple
+  collection merely because they cross the network; re-check the exact live
+  App Store Connect wording and implementation before submission.
 - Google Play Data Safety classification: account name, email, and user ID are
   collected for Account management/App functionality; usage counts are collected
   as App interactions for App functionality; the fixed-choice abuse-report
   category is collected as Other user-generated content for safety functionality.
   `Voice or sound recordings` sent for speech recognition/translation and `Other in-app messages`
   sent through room chat are included in the form response and marked as processed ephemerally
-  for App functionality. The SHA-256-derived source-IP quota identity is conservatively
-  `Device or other IDs`: collected, not shared, required for abuse prevention, not ephemeral,
-  and used for `Fraud prevention, security, and compliance`. Natural WebRTC camera/video and
-  natural call audio remain end-to-end encrypted between participants, including through TURN
-  relay, and are not readable by the developer or relay intermediary. Treat Cloudflare/Modal
-  transfers as service-provider processing only if the actual production contractual role still
-  satisfies Google's service-provider exception when the console form is completed.
+  for App functionality. The random installation participant-safety ID and bounded blocked-ID
+  list are included under `Device or other IDs`: collected, required for the room safety
+  function, processed ephemerally off-device, and used for `Fraud prevention, security, and
+  compliance` plus App functionality where the console permits both. The local blocked-ID list
+  is never relayed to another participant. The SHA-256-derived source-IP quota identity is also
+  conservatively `Device or other IDs`: collected, not shared, required for abuse prevention,
+  not ephemeral, and used for `Fraud prevention, security, and compliance`. Natural WebRTC
+  camera/video and natural call audio remain end-to-end encrypted between participants,
+  including through TURN relay, and are not readable by the developer or relay intermediary.
+  Treat Cloudflare/Modal transfers as service-provider processing only if the actual production
+  contractual role still satisfies Google's service-provider exception when the console form is
+  completed, and re-check whether the peer-visible safety ID changes the then-current sharing
+  answer before submission.
 - Authentication/security metadata: when a user logs out, the service stores
   only a one-way SHA-256 digest of that specific session token plus its original
   expiry so replay of a copied credential is rejected. The raw token is not
@@ -77,7 +96,8 @@ before a later submission.
 - Account deletion: available in the app (Delete account, on the main screen)
   and on the web at the same signed-in screen. Deletion removes the account
   profile, aggregate usage totals, usage rows, and logout-revocation markers
-  immediately.
+  immediately. Device-local participant blocks are deliberately separate from
+  the account and remain until app/site data is cleared.
 - Google Play external deletion URL: use the production URL ending in
   `/delete-account.html`. That page is publicly reachable without the mobile
   app, identifies Lingua Relay, explains deletion/retention, and directs the
@@ -100,28 +120,32 @@ before a later submission.
 - Retention: the account profile (email, derived user ID, display name, provider)
   and aggregate usage totals last until the account is deleted; usage rows keep
   90 days or 200 rows, whichever is smaller. The product does not intentionally
-  persist media, captions, chat content, or translated voice as conversation
-  history. A private abuse report keeps category, platform, time, and an opaque
-  public room reference for up to 30 days. Its internal non-invite room routing
-  ID and room-expiry value exist only while moderator closure can still work and
-  are deleted when that room expires, no later than 24 hours after creation.
-  Abuse-quota counters keep only a window start/count in an object selected by a
-  SHA-256-derived source-IP identity and are deleted at the quota-window end,
-  never later than 24 hours. Infrastructure security and error logs may be
-  retained by the providers.
+  persist media, captions, chat content, translated voice, participant-safety IDs,
+  or block relationships in server-side conversation/account history. A private
+  abuse report keeps category, platform, time, and an opaque public room reference
+  for up to 30 days. Its internal non-invite room routing ID and room-expiry value
+  exist only while moderator closure can still work and are deleted when that room
+  expires, no later than 24 hours after creation. Abuse-quota counters keep only a
+  window start/count in an object selected by a SHA-256-derived source-IP identity
+  and are deleted at the quota-window end, never later than 24 hours. Infrastructure
+  security and error logs may be retained by the providers.
 - Room control: the host can close a room; otherwise its bearer link expires
   after 24 hours.
-- Safety/reporting: a live participant can submit a private category-only report.
-  No report accepts names, free text, room links, transcripts, audio, video,
-  captions, chat text, or screenshots. In the installed app, once the report is
-  durably accepted, the backend immediately invalidates that private room so the
-  invitation cannot continue or be re-entered; the reporting client also leaves
-  and locally blocks the room. If immediate server closure is temporarily
-  unavailable after the durable report write, the report remains in the private
-  moderator queue and the reporting client still leaves/blocks locally. Because
-  version 1.0 has no persistent guest identity, cross-room messaging graph,
-  discovery, or matching, that private room is the complete service relationship
-  between the two participants.
+- Safety/reporting: a live participant can independently block the current peer
+  on that device. The peer's pseudonymous safety ID is added to the bounded local
+  block list and the client leaves; on a future room, the server rejects admission
+  before media/signalling proceeds if either participant presents a block
+  relationship involving the same safety ID. A live participant can also submit a
+  private category-only report. No report accepts names, free text, room links,
+  participant-safety IDs, transcripts, audio, video, captions, chat text, or
+  screenshots. Reporting adds the current peer to the device-local block list. In
+  the installed app, once the report is durably accepted, the backend immediately
+  invalidates that current private room so the invitation cannot continue or be
+  re-entered. If immediate server closure is temporarily unavailable after the
+  durable report write, the report remains in the private moderator queue and the
+  reporting client still leaves/blocks locally. Version 1.0 still has no guest
+  account, public profile, user directory, discovery, or matching graph; the
+  installation safety ID exists solely for participant blocking.
 - App category: Social Networking (iOS) / Communication (Android).
 - Rating questionnaire facts: Apple `Messaging and Chat` is Yes; Social Media,
   Unrestricted Web Access, and Advertising are No for version 1.0. Google's
