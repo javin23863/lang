@@ -41,7 +41,7 @@
     const stateKey = state.dataset.state || "idle";
     let label = "Ready";
     let tone = "ready";
-    if (stateKey === "open" && /2 participant|2 people/i.test(text)) {
+    if (stateKey === "open" && /(?:^|\D)2(?:\D|$)/u.test(text)) {
       label = "Connected";
       tone = "connected";
     } else if (stateKey === "open") {
