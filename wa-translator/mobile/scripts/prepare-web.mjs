@@ -47,6 +47,14 @@ const TERMS_BINDING_SEAM = "$('termsLink').href = runtime.contentUrl('terms');\n
 const TERMS_BINDING_CURRENT = "$('termsLink').href = runtime.contentUrl('terms');\n// Consent is affirmative for this exact Terms version. First-time users see an\n// empty box; only a prior acceptance of the current version restores it.\n$('termsAgree').checked = localStorage.getItem(termsKey) === '1';\n$('termsAgree').onchange = updateRoleGate;\nupdateRoleGate();";
 const ROOM_FETCH_HELPER_SEAM = "const blockedRoomKey = 'lingua-relay.blocked-room.' + roomId;";
 const ROOM_FETCH_HELPER_CURRENT = "const blockedRoomKey = 'lingua-relay.blocked-room.' + roomId;\nconst ROOM_CONTROL_FETCH_TIMEOUT_MS = 12000;\nasync function roomFetch(input, init = {}) {\n  const controller = new AbortController();\n  const timer = setTimeout(() => controller.abort(), ROOM_CONTROL_FETCH_TIMEOUT_MS);\n  try {\n    return await fetch(input, {...init, signal: controller.signal});\n  } finally {\n    clearTimeout(timer);\n  }\n}";
+const PEERS_SEAM = "const peers = new Map();   // id -> {pc, lang, polite, makingOffer, ignoreOffer}";
+const PEERS_WITH_ICE_RECOVERY = `${PEERS_SEAM}\nconst ICE_RESTART_WINDOW_MS = 60 * 1000;\nconst ICE_RESTART_MAX_PER_WINDOW = 3;`;
+const TURN_FAILURE_SEAM = "if (!response.ok) {\n        scheduleTurnRefresh(30000);\n        return;\n      }";
+const TURN_FAILURE_RATE_LIMIT_SAFE = "if (!response.ok) {\n        const retryAfterSeconds = response.status === 429\n          ? Number(response.headers.get('Retry-After') || 0) : 0;\n        const retryAfterMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0\n          ? retryAfterSeconds * 1000 : 30000;\n        scheduleTurnRefresh(Math.max(30000, retryAfterMs));\n        return;\n      }";
+const START_PEER_SEAM = "function startPeer(peer) {";
+const START_PEER_WITH_ICE_RECOVERY = `function restartFailedIce(state) {\n  if (leaving || terminalRoom || !ws || ws.readyState !== WebSocket.OPEN) return false;\n  const now = Date.now();\n  state.iceRestartAttempts = (state.iceRestartAttempts || [])\n    .filter(attemptedAt => now - attemptedAt < ICE_RESTART_WINDOW_MS);\n  if (state.iceRestartAttempts.length >= ICE_RESTART_MAX_PER_WINDOW) return false;\n  state.iceRestartAttempts.push(now);\n  try {\n    state.pc.restartIce();\n    return true;\n  } catch (_) {\n    return false;\n  }\n}\n\nfunction startPeer(peer) {`;
+const ICE_FAILURE_SEAM = "pc.oniceconnectionstatechange = () => {\n    if (pc.iceConnectionState === 'failed') {\n      failVoice('voice.naturalAudioRestored');\n      showVideoNote('note.videoFailed');\n    }\n  };";
+const ICE_FAILURE_RECOVERY = "pc.oniceconnectionstatechange = () => {\n    if (pc.iceConnectionState === 'failed') {\n      restartFailedIce(state);\n      failVoice('voice.naturalAudioRestored');\n      showVideoNote('note.videoFailed');\n    }\n  };";
 const CONTROL_FETCH_SEAMS = ["/api/capabilities", "/api/turn", "/api/room", "/api/reports"];
 const ROOM_RUNTIME_MARKER = '<script src="/app-runtime.js"></script>';
 const ROOM_CLIENT_SCRIPTS = `${ROOM_RUNTIME_MARKER}\n<script src="/product-events.js"></script>\n<script src="/room-product-events.js"></script>\n<script src="/room-blocking.js"></script>`;
@@ -61,7 +69,8 @@ function normalizeRoomScript(source) {
     AUDIO_ENDED_SEAM, VIDEO_ENDED_SEAM, SOCKET_TEARDOWN_SEAM, CONNECTION_STATE_SEAM,
     CONNECT_SEAM, DISCONNECT_SEAM, CALL_GATE_SEAM, CALL_GATE_BUTTON_SEAM,
     CALL_WAIT_SEAM, CALL_RINGBACK_SEAM, WELCOME_CALL_SEAM, PEER_JOIN_CALL_SEAM,
-    TERMS_KEY_SEAM, TERMS_BINDING_SEAM, ROOM_FETCH_HELPER_SEAM,
+    TERMS_KEY_SEAM, TERMS_BINDING_SEAM, ROOM_FETCH_HELPER_SEAM, PEERS_SEAM,
+    TURN_FAILURE_SEAM, START_PEER_SEAM, ICE_FAILURE_SEAM,
   ]) {
     if (!source.includes(seam)) throw new Error(`room normalization seam is missing: ${seam.slice(0, 32)}`);
   }
@@ -89,7 +98,11 @@ function normalizeRoomScript(source) {
     .replace(PEER_JOIN_CALL_SEAM, PEER_JOIN_CALL_NEUTRAL)
     .replace(TERMS_KEY_SEAM, TERMS_KEY_CURRENT)
     .replace(TERMS_BINDING_SEAM, TERMS_BINDING_CURRENT)
-    .replace(ROOM_FETCH_HELPER_SEAM, ROOM_FETCH_HELPER_CURRENT);
+    .replace(ROOM_FETCH_HELPER_SEAM, ROOM_FETCH_HELPER_CURRENT)
+    .replace(PEERS_SEAM, PEERS_WITH_ICE_RECOVERY)
+    .replace(TURN_FAILURE_SEAM, TURN_FAILURE_RATE_LIMIT_SAFE)
+    .replace(START_PEER_SEAM, START_PEER_WITH_ICE_RECOVERY)
+    .replace(ICE_FAILURE_SEAM, ICE_FAILURE_RECOVERY);
   for (const path of CONTROL_FETCH_SEAMS) {
     normalized = normalized.replace(`fetch(runtime.apiUrl('${path}')`, `roomFetch(runtime.apiUrl('${path}')`);
   }
