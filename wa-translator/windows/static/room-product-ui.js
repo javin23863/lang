@@ -27,6 +27,19 @@
   if (roleGate) roleGate.after(header);
   else document.body.prepend(header);
 
+  const alert = document.createElement("section");
+  alert.id = "productRoomAlert";
+  alert.className = "productRoomAlert";
+  alert.hidden = true;
+  alert.setAttribute("role", "status");
+  alert.innerHTML = `
+    <span id="productRoomAlertIcon" class="productRoomAlertIcon" aria-hidden="true">!</span>
+    <div class="productRoomAlertCopy"><strong id="productRoomAlertTitle"></strong><p id="productRoomAlertText"></p></div>
+    <button id="productRoomAlertAction" type="button" hidden></button>
+    <button id="productRoomAlertDismiss" type="button" aria-label="Dismiss">×</button>
+  `;
+  document.body.append(alert);
+
   const endScreen = document.createElement("section");
   endScreen.id = "productEndScreen";
   endScreen.hidden = true;
@@ -100,7 +113,7 @@
     const meta = byId("productRoomMeta");
     const live = byId("productRoomLive");
     if (meta) meta.textContent = language ? `${language} · Private room` : "Private two-person room";
-    if (live) live.textContent = state;
+    if (live && live.dataset.override !== "true") live.textContent = state;
 
     const voicePair = byId("voiceLanguagePair");
     if (voicePair) {
@@ -111,8 +124,58 @@
     if (chatStatus) chatStatus.textContent = state === "Connected" ? "Live translation active" : "Waiting for the other person";
   }
 
+  function terminalReason(text) {
+    return /you left|call ended|declined|room (?:has )?expired|room.*closed|private room.*(?:expired|closed|unavailable)/i.test(text);
+  }
+
+  function recoveryFor(text) {
+    if (/reconnecting|rejoining|background.*paused/i.test(text)) {
+      return {icon: "↻", title: "Reconnecting", copy: "Keeping your private room ready while the connection comes back.", live: "Reconnecting"};
+    }
+    if (/microphone unavailable/i.test(text)) {
+      return {icon: "◉", title: "Microphone unavailable", copy: "Check microphone permission, then try turning the microphone on again.", action: "Try microphone", target: "micBtn"};
+    }
+    if (/camera unavailable/i.test(text)) {
+      return {icon: "▣", title: "Camera unavailable", copy: "You can keep talking without video or try the camera again.", action: "Try camera", target: "camBtn"};
+    }
+    if (/captions are busy/i.test(text)) {
+      return {icon: "≋", title: "Translation is busy", copy: "The call can continue while captions recover. Try speaking again shortly."};
+    }
+    if (/room is full/i.test(text)) {
+      return {icon: "2", title: "Room is full", copy: "This private room already has two people. Try again after someone leaves."};
+    }
+    return null;
+  }
+
+  function hideRecovery() {
+    alert.hidden = true;
+    const live = byId("productRoomLive");
+    if (live) {
+      live.dataset.override = "false";
+      syncProductChrome();
+    }
+  }
+
+  function showRecovery(config) {
+    if (!config || !endScreen.hidden) return;
+    byId("productRoomAlertIcon").textContent = config.icon;
+    byId("productRoomAlertTitle").textContent = config.title;
+    byId("productRoomAlertText").textContent = config.copy;
+    const action = byId("productRoomAlertAction");
+    action.hidden = !config.action;
+    action.textContent = config.action || "";
+    action.dataset.target = config.target || "";
+    alert.hidden = false;
+    const live = byId("productRoomLive");
+    if (live && config.live) {
+      live.dataset.override = "true";
+      live.textContent = config.live;
+    }
+  }
+
   function showEndScreen(reason) {
-    if (!reason || !/left|closed|expired|ended|declined|unavailable/i.test(reason)) return;
+    if (!reason || !terminalReason(reason)) return;
+    hideRecovery();
     document.body.dataset.productRoomState = "ended";
     byId("endConversationReason").textContent = reason;
     byId("endConversationLanguage").textContent = selectedLanguage() || "Not selected";
@@ -122,6 +185,12 @@
     endScreen.querySelector("button")?.focus?.();
   }
 
+  byId("productRoomAlertDismiss")?.addEventListener("click", hideRecovery);
+  byId("productRoomAlertAction")?.addEventListener("click", () => {
+    const target = byId(byId("productRoomAlertAction")?.dataset.target || "");
+    hideRecovery();
+    target?.click?.();
+  });
   byId("endConversationHome")?.addEventListener("click", () => {
     try { sessionStorage.setItem("lingua-relay.dashboard-tab", "home"); } catch (_) {}
     location.href = window.LinguaRuntime?.isNative ? "index.html" : "/";
@@ -137,8 +206,13 @@
     if (typeof MutationObserver !== "function") continue;
     new MutationObserver(() => {
       const text = stateNode.textContent?.trim() || "";
-      if (/left|closed|expired|ended|declined|unavailable/i.test(text)) showEndScreen(text);
-      else if (text) document.body.dataset.productRoomState = "live";
+      if (terminalReason(text)) showEndScreen(text);
+      else {
+        if (text) document.body.dataset.productRoomState = "live";
+        const recovery = recoveryFor(text);
+        if (recovery) showRecovery(recovery);
+        else if (!/unavailable|busy|reconnect|rejoin|paused|full/i.test(text)) hideRecovery();
+      }
     }).observe(stateNode, {childList: true, characterData: true, subtree: true});
   }
 
