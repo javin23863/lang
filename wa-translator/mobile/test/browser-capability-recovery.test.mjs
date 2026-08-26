@@ -8,6 +8,13 @@ const source = await readFile(
   "utf8",
 );
 
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+  return {promise, resolve, reject};
+}
+
 class MockTarget {
   constructor() { this.listeners = new Map(); }
   addEventListener(type, listener) {
@@ -51,7 +58,7 @@ function element() {
   return target;
 }
 
-function harness({partial = false, failLoads = 0} = {}) {
+function harness({partial = false, failLoads = 0, deferredLoads = false} = {}) {
   MockWebSocket.created = 0;
   const windowTarget = new MockTarget();
   const timers = [];
@@ -66,6 +73,13 @@ function harness({partial = false, failLoads = 0} = {}) {
   windowTarget.WebSocket = MockWebSocket;
   windowTarget.RTCPeerConnection = MockPeerConnection;
   windowTarget.LinguaNative = undefined;
+
+  const loadGates = [];
+  windowTarget.nextCapabilityLoad = () => {
+    const gate = deferred();
+    loadGates.push(gate);
+    return gate.promise;
+  };
 
   const elements = new Map([
     ["roleLocaleSel", element()],
@@ -88,6 +102,7 @@ function harness({partial = false, failLoads = 0} = {}) {
   const context = vm.createContext({
     window: windowTarget,
     document,
+    navigator: {mediaDevices: null},
     location: {
       pathname: "/room/example",
       origin: "https://room.test",
@@ -121,8 +136,17 @@ function harness({partial = false, failLoads = 0} = {}) {
     function t(key) { return key; }
     function setStatus(key) { statusKey = key; }
     function updateRoleGate() { roleUpdateCount++; }
+    function disconnectRoom() {}
+    window.addEventListener('pagehide', () => disconnectRoom());
     async function loadCapabilities() {
       loadCount++;
+      if (${Boolean(deferredLoads)}) {
+        const result = await window.nextCapabilityLoad();
+        if (result === 'fail') {
+          gateFailureKey = 'gate.languagesUnavailable';
+          return;
+        }
+      }
       if (loadCount <= ${Number(failLoads)}) {
         gateFailureKey = 'gate.languagesUnavailable';
         return;
@@ -150,6 +174,7 @@ function harness({partial = false, failLoads = 0} = {}) {
     document,
     elements,
     timers,
+    loadGates,
     state: () => context.capabilityRecoveryState(),
   };
 }
@@ -224,14 +249,50 @@ test("failed recovery backs off and stays within the three-attempt rolling bound
   assert.equal(h.state().loadCount, 3, "events cannot bypass the rolling retry cap");
 });
 
-test("source keeps capability recovery pre-join, lifecycle-aware, and bounded", () => {
+test("BFCache restore waits for stale capability work and then starts its own generation", async () => {
+  const h = harness({deferredLoads: true});
+  h.windowTarget.dispatch("online", {type: "online"});
+  await settle();
+  assert.equal(h.state().loadCount, 1);
+  assert.equal(h.loadGates.length, 1);
+
+  h.windowTarget.dispatch("pagehide", {persisted: true});
+  h.windowTarget.dispatch("pageshow", {persisted: true});
+  await settle();
+  assert.equal(h.state().loadCount, 1,
+    "restored generation waits for stale capability work instead of coalescing onto it");
+
+  h.loadGates[0].resolve("fail");
+  await settle();
+  await settle();
+  assert.equal(h.state().loadCount, 2,
+    "fresh generation automatically starts after the stale retry retires");
+  assert.equal(h.loadGates.length, 2);
+
+  h.loadGates[1].resolve("success");
+  await settle();
+  await settle();
+  const state = h.state();
+  assert.equal(state.catalogReady, true);
+  assert.equal(state.gateFailureKey, "");
+  assert.equal(state.statusKey, "gate.title");
+  assert.equal(state.roleUpdateCount, 1);
+});
+
+test("source keeps capability recovery pre-join, lifecycle-aware, generation-bound, and bounded", () => {
   assert.match(source, /const CAPABILITY_RETRY_WINDOW_MS = 60 \* 1000/);
   assert.match(source, /const CAPABILITY_RETRY_MAX_PER_WINDOW = 3/);
   assert.match(source, /catalog === null && locales\.size === 0 && voices\.size === 0/);
   assert.match(source, /!roleChosen && !explicitLeave && !terminalRoom/);
   assert.match(source, /!roomSuspended && !roomLifecycleEnded/);
+  assert.match(source, /let capabilityRetryGeneration = -1/);
+  assert.match(source, /capabilityRetryGeneration === generation/);
+  assert.match(source, /previousTask && previousGeneration !== generation/);
+  assert.match(source, /await previousTask/);
+  assert.match(source, /browserRoomGenerationActive\(generation\)[\s\S]*?canRetryCapabilities\(\)/);
   assert.match(source, /gateFailureKey = ""/);
-  assert.match(source, /Promise\.resolve\(loadCapabilities\(\)\)/);
+  assert.match(source, /await Promise\.resolve\(loadCapabilities\(\)\)/);
+  assert.match(source, /capabilityRetryPromise === task/);
   assert.match(source, /window\.addEventListener\("online", retryCapabilities\)/);
   assert.match(source, /event\.detail\?\.isActive\) retryCapabilities\(\)/);
   assert.match(source, /document\.visibilityState === "visible"\) retryCapabilities\(\)/);
