@@ -10,7 +10,10 @@ const styleTags = [
   '<link rel="stylesheet" href="/room-product-ui.css">',
   '<link rel="stylesheet" href="/room-product-states.css">',
 ];
-const scriptTag = '<script src="/room-product-ui.js"></script>';
+const scriptTags = [
+  '<script src="/room-product-ui.js"></script>',
+  '<script src="/room-product-defaults.js"></script>',
+];
 
 for (const styleTag of styleTags) {
   if (!html.includes(styleTag)) {
@@ -18,9 +21,11 @@ for (const styleTag of styleTags) {
     html = html.replace("</head>", `${styleTag}\n</head>`);
   }
 }
-if (!html.includes(scriptTag)) {
-  if (!html.includes("</body>")) throw new Error("generated room is missing </body>");
-  html = html.replace("</body>", `${scriptTag}\n</body>`);
+for (const scriptTag of scriptTags) {
+  if (!html.includes(scriptTag)) {
+    if (!html.includes("</body>")) throw new Error("generated room is missing </body>");
+    html = html.replace("</body>", `${scriptTag}\n</body>`);
+  }
 }
 
 await writeFile(roomPath, html);
