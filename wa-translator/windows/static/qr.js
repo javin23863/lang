@@ -12,6 +12,59 @@
     "/api/room",
     "/api/reports",
   ]);
+  const browserRoomSupported = native || !roomRoute || (
+    typeof window.fetch === "function"
+    && typeof window.WebSocket === "function"
+    && typeof window.RTCPeerConnection === "function"
+  );
+
+  function renderUnsupportedRoomGate() {
+    if (browserRoomSupported || native || !roomRoute
+        || typeof gateFailureKey === "undefined") return false;
+    gateFailureKey = "gate.updateRequired";
+    const roleSelect = document.getElementById("roleLocaleSel");
+    const joinButton = document.getElementById("joinBtn");
+    const roleCapability = document.getElementById("roleCapability");
+    if (roleSelect) roleSelect.disabled = true;
+    if (joinButton) joinButton.disabled = true;
+    if (roleCapability && typeof t === "function") {
+      roleCapability.textContent = t(gateFailureKey);
+      roleCapability.classList?.add("warning");
+    }
+    if (typeof setStatus === "function") setStatus(gateFailureKey, null, true);
+    return true;
+  }
+
+  if (!browserRoomSupported && !native && roomRoute) {
+    // loadCapabilities() can already be in flight before this deferred script
+    // executes. Its success path calls updateRoleGate(), so wrap that shared
+    // classic-script binding and re-apply transport support after every gate
+    // repaint. The capture listener is the hard safety boundary if any other
+    // code ever flips the button between paints.
+    if (typeof updateRoleGate === "function") {
+      const roomUpdateRoleGate = updateRoleGate;
+      updateRoleGate = function transportAwareRoleGate(...args) {
+        const result = roomUpdateRoleGate(...args);
+        renderUnsupportedRoomGate();
+        return result;
+      };
+    }
+    const joinButton = document.getElementById("joinBtn");
+    joinButton?.addEventListener("click", event => {
+      event.preventDefault?.();
+      event.stopImmediatePropagation?.();
+      renderUnsupportedRoomGate();
+    }, {capture: true});
+    renderUnsupportedRoomGate();
+    window.addEventListener("online", renderUnsupportedRoomGate);
+    window.addEventListener("pageshow", renderUnsupportedRoomGate);
+    window.addEventListener("lingua-app-state", event => {
+      if (event.detail?.isActive) renderUnsupportedRoomGate();
+    });
+    document.addEventListener?.("visibilitychange", () => {
+      if (document.visibilityState === "visible") renderUnsupportedRoomGate();
+    });
+  }
 
   // app-runtime.js installs browser ICE/TURN recovery before this deferred
   // bootstrap runs. The shared room document has no connect-generation token,
@@ -53,7 +106,8 @@
       // These bindings are declared by the room's classic inline script before
       // this deferred classic script executes. Guard every access anyway so the
       // shared QR loader remains safe on the dashboard and in isolated tests.
-      if (typeof loadCapabilities !== "function"
+      if (!browserRoomSupported
+          || typeof loadCapabilities !== "function"
           || typeof gateFailureKey === "undefined"
           || typeof catalog === "undefined"
           || typeof locales === "undefined"
@@ -241,7 +295,10 @@
     // state is visible by the time this slightly later fallback fires. The
     // guard above prevents a concurrent second load while the first is healthy.
     if (typeof window.setTimeout === "function") {
-      window.setTimeout(() => retryCapabilities(), ROOM_CONTROL_FETCH_TIMEOUT_MS + 1000);
+      window.setTimeout(() => {
+        if (browserRoomSupported) retryCapabilities();
+        else renderUnsupportedRoomGate();
+      }, ROOM_CONTROL_FETCH_TIMEOUT_MS + 1000);
     }
   }
 
