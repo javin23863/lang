@@ -25,10 +25,10 @@ test("public legal pages share current Lingua chrome and deletion remains discov
                         `${page} does not advertise the retired purchase preview`);
   }
 
-  // Policy text changed with the version 1.0 account/storage contract. Keep the
-  // public effective date tied to the source that actually ships those terms.
+  // Policy text changed with the participant-safety blocking/data contract on
+  // August 26. Keep the public effective date tied to the source that ships it.
   for (const page of ["privacy.html", "terms.html"]) {
-    assert.match(await read(page), /Effective August 25, 2026/,
+    assert.match(await read(page), /Effective August 26, 2026/,
                  `${page} carries the current policy effective date`);
   }
 
