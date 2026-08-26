@@ -27,6 +27,24 @@
   if (roleGate) roleGate.after(header);
   else document.body.prepend(header);
 
+  const endScreen = document.createElement("section");
+  endScreen.id = "productEndScreen";
+  endScreen.hidden = true;
+  endScreen.setAttribute("aria-live", "polite");
+  endScreen.innerHTML = `
+    <div class="endConversationMark" aria-hidden="true">${current.mark}</div>
+    <p class="endConversationEyebrow">${current.title}</p>
+    <h1>Conversation ended</h1>
+    <p id="endConversationReason" class="endConversationReason">This private room is no longer active.</p>
+    <div class="endConversationSummary">
+      <div><span>Language</span><strong id="endConversationLanguage">—</strong></div>
+      <div><span>Duration</span><strong id="endConversationDuration">—</strong></div>
+    </div>
+    <p class="endConversationPrivacy">Conversation content is not shown on this screen. Your room link stops being useful when the room is closed or expired.</p>
+    <button id="endConversationHome" type="button">Back to Home</button>
+  `;
+  document.body.append(endScreen);
+
   const roleCard = document.querySelector(".roleCard");
   if (roleCard) {
     const intro = document.createElement("div");
@@ -93,18 +111,35 @@
     if (chatStatus) chatStatus.textContent = state === "Connected" ? "Live translation active" : "Waiting for the other person";
   }
 
+  function showEndScreen(reason) {
+    if (!reason || !/left|closed|expired|ended|declined|unavailable/i.test(reason)) return;
+    document.body.dataset.productRoomState = "ended";
+    byId("endConversationReason").textContent = reason;
+    byId("endConversationLanguage").textContent = selectedLanguage() || "Not selected";
+    const timer = byId("callTimer")?.textContent?.trim();
+    byId("endConversationDuration").textContent = timer && timer !== "0:00" ? timer : "—";
+    endScreen.hidden = false;
+    endScreen.querySelector("button")?.focus?.();
+  }
+
+  byId("endConversationHome")?.addEventListener("click", () => {
+    try { sessionStorage.setItem("lingua-relay.dashboard-tab", "home"); } catch (_) {}
+    location.href = window.LinguaRuntime?.isNative ? "index.html" : "/";
+  });
+
   byId("localeSel")?.addEventListener("change", syncProductChrome);
   byId("roleLocaleSel")?.addEventListener("change", () => setTimeout(syncProductChrome, 0));
   const participant = byId("participantCount");
   if (participant && typeof MutationObserver === "function") {
     new MutationObserver(syncProductChrome).observe(participant, {childList: true, characterData: true, subtree: true});
   }
-  const status = byId("status");
-  if (status && typeof MutationObserver === "function") {
+  for (const stateNode of [byId("status"), byId("callState")].filter(Boolean)) {
+    if (typeof MutationObserver !== "function") continue;
     new MutationObserver(() => {
-      const text = status.textContent?.trim() || "";
-      document.body.dataset.productRoomState = /left|closed|expired|ended/i.test(text) ? "ended" : "live";
-    }).observe(status, {childList: true, characterData: true, subtree: true});
+      const text = stateNode.textContent?.trim() || "";
+      if (/left|closed|expired|ended|declined|unavailable/i.test(text)) showEndScreen(text);
+      else if (text) document.body.dataset.productRoomState = "live";
+    }).observe(stateNode, {childList: true, characterData: true, subtree: true});
   }
 
   const preferred = (() => {
