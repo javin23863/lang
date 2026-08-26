@@ -38,7 +38,7 @@ test("store and reviewer sources describe participant blocking instead of the re
 });
 
 test("Google Data Safety source treats off-device installation safety identifiers conservatively", () => {
-  assert.match(declarations, /random installation participant-safety ID and bounded blocked-ID/);
+  assert.match(declarations, /random installation participant-safety ID and bounded\s+blocked-ID/);
   assert.match(declarations, /Device or other IDs/);
   assert.match(declarations, /processed ephemerally off-device/);
   assert.match(declarations, /local blocked-ID list\s+is never relayed to another participant/);
