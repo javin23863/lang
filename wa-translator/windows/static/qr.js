@@ -143,6 +143,7 @@
     let roomLifecycleEnded = false;
     let activeRoomSocket = null;
     let capabilityRetryPromise = null;
+    let capabilityRetryGeneration = -1;
     let capabilityRetryTimer = null;
     let capabilityRetryAttempts = [];
     let browserAudioStartPromise = null;
@@ -497,33 +498,45 @@
       }, Math.max(0, Number(delay) || 0));
     }
 
-    async function retryCapabilities() {
-      if (!canRetryCapabilities()) return;
-      if (capabilityRetryPromise) return capabilityRetryPromise;
-
-      const now = Date.now();
-      capabilityRetryAttempts = capabilityRetryAttempts
-        .filter(attemptedAt => now - attemptedAt < CAPABILITY_RETRY_WINDOW_MS);
-      if (capabilityRetryAttempts.length >= CAPABILITY_RETRY_MAX_PER_WINDOW) return;
-      capabilityRetryAttempts.push(now);
-      clearCapabilityRetryTimer();
-
-      // loadCapabilities() owns the catalog validation and the failure state.
-      // Clearing the old key before retry lets a successful call restore the
-      // normal gate, while any failed retry writes the warning back itself.
-      gateFailureKey = "";
-      const roleSelect = document.getElementById("roleLocaleSel");
-      const joinButton = document.getElementById("joinBtn");
-      const roleCapability = document.getElementById("roleCapability");
-      if (roleSelect) roleSelect.disabled = true;
-      if (joinButton) joinButton.disabled = true;
-      if (roleCapability && typeof t === "function") {
-        roleCapability.textContent = t("gate.loading");
-        roleCapability.classList.remove("warning");
+    function retryCapabilities() {
+      const generation = browserRoomGeneration;
+      if (capabilityRetryPromise && capabilityRetryGeneration === generation) {
+        return capabilityRetryPromise;
       }
-      if (typeof setStatus === "function") setStatus("gate.loading", null, true);
+      const previousTask = capabilityRetryPromise;
+      const previousGeneration = capabilityRetryGeneration;
+      if (!previousTask && !canRetryCapabilities()) return;
 
-      capabilityRetryPromise = Promise.resolve(loadCapabilities()).then(() => {
+      const task = (async () => {
+        if (previousTask && previousGeneration !== generation) {
+          try { await previousTask; } catch (_) {}
+        }
+        if (!browserRoomGenerationActive(generation) || !canRetryCapabilities()) return;
+
+        const now = Date.now();
+        capabilityRetryAttempts = capabilityRetryAttempts
+          .filter(attemptedAt => now - attemptedAt < CAPABILITY_RETRY_WINDOW_MS);
+        if (capabilityRetryAttempts.length >= CAPABILITY_RETRY_MAX_PER_WINDOW) return;
+        capabilityRetryAttempts.push(now);
+        clearCapabilityRetryTimer();
+
+        // loadCapabilities() owns the catalog validation and the failure state.
+        // Clearing the old key before retry lets a successful call restore the
+        // normal gate, while any failed retry writes the warning back itself.
+        gateFailureKey = "";
+        const roleSelect = document.getElementById("roleLocaleSel");
+        const joinButton = document.getElementById("joinBtn");
+        const roleCapability = document.getElementById("roleCapability");
+        if (roleSelect) roleSelect.disabled = true;
+        if (joinButton) joinButton.disabled = true;
+        if (roleCapability && typeof t === "function") {
+          roleCapability.textContent = t("gate.loading");
+          roleCapability.classList.remove("warning");
+        }
+        if (typeof setStatus === "function") setStatus("gate.loading", null, true);
+
+        await Promise.resolve(loadCapabilities());
+        if (!browserRoomGenerationActive(generation)) return;
         if (!gateFailureKey && catalog !== null) {
           capabilityRetryAttempts = [];
           if (typeof setStatus === "function") setStatus("gate.title", null, true);
@@ -538,10 +551,16 @@
           const backoff = Math.min(8000, 1000 * 2 ** capabilityRetryAttempts.length);
           scheduleCapabilityRetry(backoff);
         }
-      }).finally(() => {
-        capabilityRetryPromise = null;
-      });
-      return capabilityRetryPromise;
+      })();
+      capabilityRetryPromise = task;
+      capabilityRetryGeneration = generation;
+      task.finally(() => {
+        if (capabilityRetryPromise === task) {
+          capabilityRetryPromise = null;
+          capabilityRetryGeneration = -1;
+        }
+      }).catch(() => {});
+      return task;
     }
 
     window.addEventListener("pagehide", () => {
