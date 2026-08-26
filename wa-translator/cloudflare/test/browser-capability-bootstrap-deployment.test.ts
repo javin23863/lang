@@ -12,8 +12,8 @@ describe("browser capability bootstrap deployment", () => {
     expect(source).toContain("const BROWSER_BOOTSTRAP_FETCH_TIMEOUT_MS = 12000");
     expect(source).toContain("function installBrowserCapabilityBootstrapDeadline()");
     expect(source).toContain("let bootstrapCapabilitiesPending = true");
-    expect(source).toContain('url.origin === location.origin');
-    expect(source).toContain('url.pathname === "/api/capabilities"');
+    expect(source).toContain('url.origin !== location.origin');
+    expect(source).toContain('url.pathname !== "/api/capabilities"');
     expect(source).toContain("bootstrapCapabilitiesPending = false");
     expect(source).toContain("const controller = new AbortController()");
     expect(source).toContain("callerSignal?.addEventListener(\"abort\", abortFromCaller, {once: true})");
