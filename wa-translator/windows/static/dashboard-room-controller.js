@@ -163,10 +163,15 @@
         const response = await dashboardFetch(runtime.apiUrl("/api/rooms"), {
           method: "POST", headers: {Accept: "application/json"},
         });
-        if (invalidationGeneration !== targetGeneration) return false;
-        if (!response.ok) throw new Error("creation failed");
+        if (!response.ok) {
+          if (invalidationGeneration !== targetGeneration) return false;
+          throw new Error("creation failed");
+        }
         const created = await response.json();
-        if (invalidationGeneration !== targetGeneration) return false;
+        if (invalidationGeneration !== targetGeneration) {
+          await retireCreatedRoom(created);
+          return false;
+        }
         if (!model.valid(created)) {
           await retireCreatedRoom(created);
           throw new Error("storage unavailable");
@@ -178,6 +183,7 @@
         }
         if (invalidationGeneration !== targetGeneration) {
           await model.forget();
+          await retireCreatedRoom(created);
           return false;
         }
         room = created;
