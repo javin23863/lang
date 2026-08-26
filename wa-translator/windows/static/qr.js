@@ -57,6 +57,18 @@
       });
     }, {capture: true});
 
+    // disconnectRoom() clears the current TURN timer, but a fetch that rejects
+    // after teardown can otherwise re-arm one from refreshIceServers()' catch.
+    // Keep the room's existing scheduler semantics while the page is live and
+    // make stale retries a no-op during suspension or after explicit teardown.
+    const scheduleTurnRefresh = window.scheduleTurnRefresh;
+    if (typeof scheduleTurnRefresh === "function") {
+      window.scheduleTurnRefresh = function lifecycleTurnRefresh(delay) {
+        if (roomSuspended || roomLifecycleEnded) return;
+        return scheduleTurnRefresh(delay);
+      };
+    }
+
     window.fetch = async (input, init = {}) => {
       let url;
       try {
