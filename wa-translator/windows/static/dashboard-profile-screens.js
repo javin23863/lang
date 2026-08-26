@@ -3,11 +3,38 @@
   const profile = document.getElementById("screenProfile");
   if (!profile || document.getElementById("profileDetailLayer")) return;
 
+  const settingsList = profile.querySelector(".settingsList");
+  if (settingsList && !settingsList.querySelector('[data-profile-target="permissions"]')) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "settingsListRow";
+    button.dataset.profileTarget = "permissions";
+    button.innerHTML = '<span>Microphone & camera</span><span aria-hidden="true">›</span>';
+    settingsList.insertBefore(button, settingsList.firstChild);
+  }
+
   const layer = document.createElement("div");
   layer.id = "profileDetailLayer";
   layer.className = "profileDetailLayer";
   layer.hidden = true;
   layer.innerHTML = `
+    <section class="profileDetail" data-profile-detail="permissions" hidden>
+      <header class="profileDetailHeader"><button type="button" data-profile-back aria-label="Back">‹</button><div><p class="screenEyebrow">Profile</p><h2>Microphone & camera</h2></div></header>
+      <div class="profileDetailHero"><div aria-hidden="true">◉</div><h3>Check before a conversation</h3><p>Test the features you plan to use. A test opens the selected device only after you tap the button and releases it immediately.</p></div>
+      <section class="deviceCheckList">
+        <article class="deviceCheckRow">
+          <div class="deviceCheckIcon" aria-hidden="true">◉</div>
+          <div class="deviceCheckCopy"><strong>Microphone</strong><span id="microphoneCheckState">Not tested</span></div>
+          <button type="button" data-device-test="microphone">Test</button>
+        </article>
+        <article class="deviceCheckRow">
+          <div class="deviceCheckIcon" aria-hidden="true">▣</div>
+          <div class="deviceCheckCopy"><strong>Camera</strong><span id="cameraCheckState">Not tested</span></div>
+          <button type="button" data-device-test="camera">Test</button>
+        </article>
+      </section>
+      <div class="profileDeviceNote"><span aria-hidden="true">✓</span><p>No test audio or video is uploaded or saved. Chat does not require either permission.</p></div>
+    </section>
     <section class="profileDetail" data-profile-detail="privacy" hidden>
       <header class="profileDetailHeader"><button type="button" data-profile-back aria-label="Back">‹</button><div><p class="screenEyebrow">Profile</p><h2>Privacy & safety</h2></div></header>
       <div class="profileDetailHero"><div aria-hidden="true">✓</div><h3>Private conversation first</h3><p>Lingua Relay is built around temporary two-person rooms instead of public profiles or open channels.</p></div>
@@ -49,7 +76,35 @@
     setTimeout(() => { layer.hidden = true; }, 150);
   }
 
-  for (const name of ["privacy", "support"]) {
+  async function testDevice(kind, button) {
+    const state = document.getElementById(kind === "camera" ? "cameraCheckState" : "microphoneCheckState");
+    if (!state || !button) return;
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = "Checking…";
+    state.textContent = "Requesting access";
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error("unsupported");
+      const stream = await navigator.mediaDevices.getUserMedia(
+        kind === "camera" ? {video: {facingMode: "user"}, audio: false} : {audio: true, video: false},
+      );
+      for (const track of stream.getTracks()) track.stop();
+      state.textContent = "Ready";
+      state.dataset.state = "ready";
+      button.textContent = "Test again";
+    } catch (error) {
+      state.dataset.state = "error";
+      state.textContent = error?.name === "NotAllowedError" ? "Permission denied"
+        : error?.name === "NotFoundError" ? "No device found"
+        : "Unavailable";
+      button.textContent = "Try again";
+    } finally {
+      button.disabled = false;
+      if (!button.textContent) button.textContent = original;
+    }
+  }
+
+  for (const name of ["permissions", "privacy", "support"]) {
     const button = profile.querySelector(`[data-profile-target="${name}"]`);
     button?.addEventListener("click", event => {
       event.preventDefault();
@@ -64,6 +119,9 @@
       const page = button.dataset.openContent;
       location.href = window.LinguaRuntime?.contentUrl?.(page) || `/${page}.html`;
     });
+  }
+  for (const button of layer.querySelectorAll("[data-device-test]")) {
+    button.addEventListener("click", () => testDevice(button.dataset.deviceTest, button));
   }
   document.addEventListener("keydown", event => {
     if (event.key === "Escape" && !layer.hidden) closeDetail();
