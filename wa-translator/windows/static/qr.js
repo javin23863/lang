@@ -57,6 +57,10 @@
         const generation = browserMediaGeneration;
         const stream = await originalGetUserMedia(constraints);
         if (generation !== browserMediaGeneration || !browserMediaRequestActive()) {
+          // A browser permission prompt can resolve after pagehide, Leave, a
+          // host close, or report-and-leave has already torn the room down.
+          // Never hand that late stream back to room.html: doing so would let
+          // its continuation recreate mediaStream/AudioContext after teardown.
           stopCapturedBrowserStream(stream);
           throw new DOMException("Media request superseded by room teardown", "AbortError");
         }
@@ -95,6 +99,11 @@
   }
 
   if (!browserRoomSupported && !native && roomRoute) {
+    // loadCapabilities() can already be in flight before this deferred script
+    // executes. Its success path calls updateRoleGate(), so wrap that shared
+    // classic-script binding and re-apply transport support after every gate
+    // repaint. The capture listener is the hard safety boundary if any other
+    // code ever flips the button between paints.
     if (typeof updateRoleGate === "function") {
       const roomUpdateRoleGate = updateRoleGate;
       updateRoleGate = function transportAwareRoleGate(...args) {
@@ -120,6 +129,10 @@
     });
   }
 
+  // app-runtime.js installs browser ICE/TURN recovery before this deferred
+  // bootstrap runs. The shared room document has no connect-generation token,
+  // so this browser-only seam also prevents stale async join work from opening
+  // signalling again after page suspension or an explicit Leave/End action.
   if (!native && roomRoute && typeof window.fetch === "function") {
     const boundedFetch = window.fetch.bind(window);
     const RoomWebSocket = window.WebSocket;
@@ -304,6 +317,7 @@
         const pc = new RoomPeerConnection(...args);
         const generation = browserRoomGeneration;
         peerGenerations.set(pc, generation);
+
         for (const type of guardedPeerEvents) {
           pc.addEventListener(type, event => {
             if (!peerConnectionActive(pc, generation)) event.stopImmediatePropagation?.();
@@ -324,6 +338,7 @@
       LifecycleRTCPeerConnection.prototype = RoomPeerConnection.prototype;
       Object.setPrototypeOf(LifecycleRTCPeerConnection, RoomPeerConnection);
       window.RTCPeerConnection = LifecycleRTCPeerConnection;
+
       window.addEventListener("unhandledrejection", event => {
         if (event.reason?.linguaPeerLifecycle === true) event.preventDefault?.();
       });
@@ -342,7 +357,10 @@
         browserAudioStartGeneration = generation;
         const task = (async () => {
           const stream = await getAudioMedia();
-          if (generation !== browserRoomGeneration || !browserRoomWorkActive()) throw audioLifecycleAbortError();
+          if (generation !== browserRoomGeneration || !browserRoomWorkActive()) {
+            throw audioLifecycleAbortError();
+          }
+
           let context = audioCtx;
           if (!context) {
             context = new RoomAudioContext();
@@ -351,7 +369,9 @@
           if (!workletNode) {
             await context.audioWorklet.addModule("/static/pcm-worklet.js");
             if (generation !== browserRoomGeneration
-                || !browserRoomWorkActive() || audioCtx !== context) throw audioLifecycleAbortError();
+                || !browserRoomWorkActive() || audioCtx !== context) {
+              throw audioLifecycleAbortError();
+            }
             const node = new RoomAudioWorkletNode(context, "pcm-worklet");
             node.port.onmessage = event => {
               if (generation !== browserRoomGeneration || !browserRoomWorkActive()
@@ -361,7 +381,9 @@
             workletNode = node;
           }
           if (generation !== browserRoomGeneration
-              || !browserRoomWorkActive() || audioCtx !== context) throw audioLifecycleAbortError();
+              || !browserRoomWorkActive() || audioCtx !== context) {
+            throw audioLifecycleAbortError();
+          }
           if (audioInputNode) audioInputNode.disconnect();
           const input = context.createMediaStreamSource(stream);
           audioInputNode = input;
@@ -369,7 +391,9 @@
           if (context.state === "suspended") {
             await context.resume();
             if (generation !== browserRoomGeneration
-                || !browserRoomWorkActive() || audioCtx !== context) throw audioLifecycleAbortError();
+                || !browserRoomWorkActive() || audioCtx !== context) {
+              throw audioLifecycleAbortError();
+            }
           }
         })();
         browserAudioStartPromise = task;
@@ -410,11 +434,15 @@
         const generation = browserRoomGeneration;
         return Promise.resolve(roomFallbackPlay(...args)).then(
           result => {
-            if (generation !== browserRoomGeneration || !browserRoomWorkActive()) throw audioLifecycleAbortError();
+            if (generation !== browserRoomGeneration || !browserRoomWorkActive()) {
+              throw audioLifecycleAbortError();
+            }
             return result;
           },
           error => {
-            if (generation !== browserRoomGeneration || !browserRoomWorkActive()) throw audioLifecycleAbortError();
+            if (generation !== browserRoomGeneration || !browserRoomWorkActive()) {
+              throw audioLifecycleAbortError();
+            }
             throw error;
           },
         );
@@ -442,6 +470,9 @@
     }
 
     function canRetryCapabilities() {
+      // These bindings are declared by the room's classic inline script before
+      // this deferred classic script executes. Guard every access anyway so the
+      // shared QR loader remains safe on the dashboard and in isolated tests.
       if (!browserRoomSupported
           || typeof loadCapabilities !== "function"
           || typeof gateFailureKey === "undefined"
@@ -469,12 +500,17 @@
     async function retryCapabilities() {
       if (!canRetryCapabilities()) return;
       if (capabilityRetryPromise) return capabilityRetryPromise;
+
       const now = Date.now();
       capabilityRetryAttempts = capabilityRetryAttempts
         .filter(attemptedAt => now - attemptedAt < CAPABILITY_RETRY_WINDOW_MS);
       if (capabilityRetryAttempts.length >= CAPABILITY_RETRY_MAX_PER_WINDOW) return;
       capabilityRetryAttempts.push(now);
       clearCapabilityRetryTimer();
+
+      // loadCapabilities() owns the catalog validation and the failure state.
+      // Clearing the old key before retry lets a successful call restore the
+      // normal gate, while any failed retry writes the warning back itself.
       gateFailureKey = "";
       const roleSelect = document.getElementById("roleLocaleSel");
       const joinButton = document.getElementById("joinBtn");
@@ -486,6 +522,7 @@
         roleCapability.classList.remove("warning");
       }
       if (typeof setStatus === "function") setStatus("gate.loading", null, true);
+
       capabilityRetryPromise = Promise.resolve(loadCapabilities()).then(() => {
         if (!gateFailureKey && catalog !== null) {
           capabilityRetryAttempts = [];
@@ -493,6 +530,9 @@
           if (typeof updateRoleGate === "function") updateRoleGate();
           return;
         }
+        // A top-level/network/server failure leaves all live catalog containers
+        // empty and is safe to retry. A partially validated catalog does not:
+        // stop there rather than replaying against half-mutated locale state.
         if (canRetryCapabilities()
             && capabilityRetryAttempts.length < CAPABILITY_RETRY_MAX_PER_WINDOW) {
           const backoff = Math.min(8000, 1000 * 2 ** capabilityRetryAttempts.length);
@@ -527,11 +567,19 @@
     leaveButton?.addEventListener("click", endRoomLifecycle, {capture: true});
     const reportButton = document.getElementById("reportBtn");
     reportButton?.addEventListener("click", () => {
+      // reportAndBlockRoom() disables the button synchronously only after its
+      // confirmation succeeds, before its first await. Read that result after
+      // the click dispatch so cancelling the confirmation does not end a room
+      // or invalidate a permission request the user still intends to finish.
       queueMicrotask(() => {
         if (reportButton.disabled) endRoomLifecycle();
       });
     }, {capture: true});
 
+    // disconnectRoom() clears the current TURN timer, but a fetch that rejects
+    // after teardown can otherwise re-arm one from refreshIceServers()' catch.
+    // Keep the room's existing scheduler semantics while the page is live and
+    // make stale retries a no-op during suspension or after explicit teardown.
     const scheduleTurnRefresh = window.scheduleTurnRefresh;
     if (typeof scheduleTurnRefresh === "function") {
       window.scheduleTurnRefresh = function lifecycleTurnRefresh(delay) {
@@ -543,11 +591,13 @@
     window.fetch = async (input, init = {}) => {
       let url;
       try {
-        const target = typeof Request !== "undefined" && input instanceof Request ? input.url : input;
+        const target = typeof Request !== "undefined" && input instanceof Request
+          ? input.url : input;
         url = new URL(target, location.href);
       } catch {
         return boundedFetch(input, init);
       }
+
       if (url.origin !== location.origin || !ROOM_CONTROL_PATHS.has(url.pathname)) {
         return boundedFetch(input, init);
       }
@@ -623,15 +673,22 @@
         socket.send = () => { throw lifecycleAbortError(); };
         return socket;
       }
+
       function LifecycleWebSocket(url, protocols) {
         if (roomSuspended || roomLifecycleEnded) return closedLifecycleSocket(url);
-        if (activeRoomSocket && activeRoomSocket.readyState < RoomWebSocket.CLOSING) return activeRoomSocket;
-        const socket = protocols === undefined ? new RoomWebSocket(url) : new RoomWebSocket(url, protocols);
+        if (activeRoomSocket && activeRoomSocket.readyState < RoomWebSocket.CLOSING) {
+          return activeRoomSocket;
+        }
+        const socket = protocols === undefined
+          ? new RoomWebSocket(url)
+          : new RoomWebSocket(url, protocols);
         const socketGeneration = browserRoomGeneration;
         activeRoomSocket = socket;
         socket.addEventListener("message", event => {
           if (socketGeneration !== browserRoomGeneration
-              || activeRoomSocket !== socket || !browserRoomWorkActive()) event.stopImmediatePropagation?.();
+              || activeRoomSocket !== socket || !browserRoomWorkActive()) {
+            event.stopImmediatePropagation?.();
+          }
         });
         socket.addEventListener("close", event => {
           const stale = socketGeneration !== browserRoomGeneration
@@ -646,6 +703,10 @@
       window.WebSocket = LifecycleWebSocket;
     }
 
+    // The synchronous bootstrap has a 12-second deadline. If it failed before
+    // this deferred script could observe the request, the room's own failure
+    // state is visible by the time this slightly later fallback fires. The
+    // guard above prevents a concurrent second load while the first is healthy.
     if (typeof window.setTimeout === "function") {
       window.setTimeout(() => {
         if (browserRoomSupported) retryCapabilities();
@@ -654,6 +715,9 @@
     }
   }
 
+  // Keep /qr.js as the public loader used by existing dashboard/room markup.
+  // Disable the user-facing QR control until the unchanged encoder is ready so
+  // a slow first fetch cannot turn an early click into a LinguaQR reference error.
   const qrButton = document.getElementById("qrBtn");
   if (qrButton) qrButton.disabled = true;
   const qrCore = document.createElement("script");
