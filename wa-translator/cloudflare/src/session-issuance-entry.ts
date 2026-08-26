@@ -16,11 +16,13 @@ export { AbuseGate, ReportInbox, Room, UserDirectory };
 const NATIVE_HANDOFF_PATH = "/api/v1/auth/handoff";
 const MOBILE_BOOTSTRAP_PATH = "/api/v1/mobile/bootstrap";
 const NATIVE_REPORT_PATH = "/api/v1/reports";
+const ROOM_CREATE_PATHS = new Set(["/api/rooms", "/api/v1/rooms"]);
 const BROWSER_OAUTH_START_PATTERN = /^\/auth\/(google|apple|facebook)\/start$/;
 const BROWSER_OAUTH_CALLBACK_PATTERN = /^\/auth\/(google|apple|facebook)\/callback$/;
 const SESSION_COOKIE = "lr_s";
 const NATIVE_ORIGINS = new Set(["https://localhost", "capacitor://localhost"]);
 const ROOM_TOKEN_PATTERN = /^([A-Za-z0-9_-]{24})\.(\d{10})\.[A-Za-z0-9_-]{43}$/;
+const ROOM_PATH_PATTERN = /^\/room\/([A-Za-z0-9_-]{24})\.(\d{10})\.[A-Za-z0-9_-]{43}$/;
 const MOBILE_PROTOCOL = 2;
 const ROOM_RUNTIME_MARKER = '<script src="/app-runtime.js"></script>';
 const ROOM_CLIENT_SCRIPTS = `${ROOM_RUNTIME_MARKER}\n<script src="/product-events.js"></script>\n<script src="/room-product-events.js"></script>\n<script src="/room-blocking.js"></script>`;
@@ -30,8 +32,44 @@ function setCookieValues(headers: Headers): string[] {
     ? headers.getSetCookie() : [headers.get("Set-Cookie") || ""].filter(Boolean);
 }
 
+function readCookie(request: Request, name: string): string | null {
+  for (const pair of (request.headers.get("Cookie") || "").split(";")) {
+    const separator = pair.indexOf("=");
+    if (separator > 0 && pair.slice(0, separator).trim() === name) {
+      return pair.slice(separator + 1).trim();
+    }
+  }
+  return null;
+}
+
+function requestSessionToken(request: Request): string | null {
+  if (new URL(request.url).pathname.startsWith("/api/v1/")) {
+    const authorization = request.headers.get("Authorization") || "";
+    if (!authorization.startsWith("Bearer ")) return null;
+    const token = authorization.slice(7);
+    return token && !token.includes(" ") ? token : null;
+  }
+  return readCookie(request, SESSION_COOKIE);
+}
+
 function clearSessionCookie(): string {
   return `${SESSION_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`;
+}
+
+function roomCreateFailure(request: Request, status: number, message: string): Response {
+  const headers = new Headers({
+    "Cache-Control": "no-store",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+  });
+  const origin = request.headers.get("Origin") || "";
+  if (NATIVE_ORIGINS.has(origin)) {
+    headers.set("Access-Control-Allow-Origin", origin);
+    headers.set("Vary", "Origin");
+  } else if (status === 401) {
+    headers.append("Set-Cookie", clearSessionCookie());
+  }
+  return new Response(message, {status, headers});
 }
 
 async function registerSessionIssuance(identity: SessionIdentity, env: Env): Promise<boolean> {
@@ -45,6 +83,20 @@ async function registerSessionIssuance(identity: SessionIdentity, env: Env): Pro
   const status = response.status;
   await response.body?.cancel().catch(() => {});
   return status === 204;
+}
+
+async function closeUnregisteredRoom(env: Env, roomId: string, expiresAt: number): Promise<void> {
+  try {
+    const response = await env.ROOMS.get(env.ROOMS.idFromName(roomId)).fetch(
+      new Request("https://room.internal/close", {
+        method: "POST", headers: {"X-Room-Expires": String(expiresAt)}
+      })
+    );
+    await response.body?.cancel().catch(() => {});
+  } catch {
+    // The room bearer is never returned after registration failure, so a close
+    // transport failure cannot expose the unregistered room to either client.
+  }
 }
 
 async function browserOAuthAccountSwitchGuard(
@@ -196,6 +248,54 @@ async function upgradedNativeHandoff(
   }
 }
 
+async function registeredRoomCreation(
+  request: Request, env: Env, ctx: ExecutionContext
+): Promise<Response | null> {
+  const url = new URL(request.url);
+  if (request.method !== "POST" || !ROOM_CREATE_PATHS.has(url.pathname)) return null;
+
+  const response = await accountGuardEntry.fetch(request, env, ctx);
+  if (response.status !== 201) return response;
+
+  let roomId = "";
+  let expiresAt = 0;
+  try {
+    const body = await response.clone().json<Record<string, unknown>>();
+    const path = typeof body.path === "string" ? body.path : "";
+    const match = ROOM_PATH_PATTERN.exec(path);
+    if (!match || typeof body.expires_at !== "number" || !Number.isSafeInteger(body.expires_at)
+        || Number(match[2]) !== body.expires_at) throw new Error("invalid room creation response");
+    roomId = match[1];
+    expiresAt = body.expires_at;
+
+    const token = requestSessionToken(request);
+    const identity = token ? await inspectSessionToken(token, env.ROOM_SIGNING_KEY) : null;
+    if (!identity) throw new Error("room owner session unavailable");
+
+    const registration = await env.USERS.get(env.USERS.idFromName(identity.userId)).fetch(
+      new Request("https://users.internal/owned-rooms", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({room_id: roomId, expires_at: expiresAt}),
+      })
+    );
+    const status = registration.status;
+    await registration.body?.cancel().catch(() => {});
+    if (status === 204) return response;
+
+    await response.body?.cancel().catch(() => {});
+    await closeUnregisteredRoom(env, roomId, expiresAt);
+    if (status === 404) return roomCreateFailure(request, 401, "Session unavailable");
+    if (status === 409) return roomCreateFailure(request, 409, "Account deletion in progress");
+    if (status === 429) return roomCreateFailure(request, 429, "Active room limit reached");
+    return roomCreateFailure(request, 503, "Room registration unavailable");
+  } catch {
+    await response.body?.cancel().catch(() => {});
+    if (roomId && expiresAt) await closeUnregisteredRoom(env, roomId, expiresAt);
+    return roomCreateFailure(request, 503, "Room registration unavailable");
+  }
+}
+
 async function acceptedReportWithPendingBlock(response: Response): Promise<Response> {
   await response.body?.cancel().catch(() => {});
   const headers = new Headers(response.headers);
@@ -248,6 +348,8 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext): 
   if (bootstrap) return bootstrap;
   const handoff = await upgradedNativeHandoff(request, env, ctx);
   if (handoff) return handoff;
+  const created = await registeredRoomCreation(request, env, ctx);
+  if (created) return created;
   const report = await nativeReportAndBlock(request, env, ctx);
   return report || accountGuardEntry.fetch(request, env, ctx);
 }
