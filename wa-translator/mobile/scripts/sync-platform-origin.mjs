@@ -2,11 +2,11 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { MOBILE_AUTH_SCHEME } from "../src/runtime-core.mjs";
-import { resolvePublicOrigin } from "./build-bridge.mjs";
+import { MOBILE_AUTH_SCHEME, PUBLIC_ORIGIN } from "../src/runtime-core.mjs";
+import { resolvePublicOrigin } from "../src/runtime-core.mjs";
 
 const MOBILE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const publicOrigin = resolvePublicOrigin(process.env.LINGUA_PUBLIC_ORIGIN);
+const publicOrigin = resolvePublicOrigin(process.env.LINGUA_PUBLIC_ORIGIN || PUBLIC_ORIGIN);
 const origin = new URL(publicOrigin);
 if (origin.protocol !== "https:" || origin.pathname !== "/" || origin.search || origin.hash) {
   throw new Error(`PUBLIC_ORIGIN must be a bare https origin: ${publicOrigin}`);
