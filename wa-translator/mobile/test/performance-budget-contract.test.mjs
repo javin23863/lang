@@ -4,10 +4,13 @@ import test from "node:test";
 
 const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
 const budgetSource = await readFile(new URL("../scripts/check-web-budgets.mjs", import.meta.url), "utf8");
+const bridgeBuildSource = await readFile(new URL("../scripts/build-bridge.mjs", import.meta.url), "utf8");
 
 test("mobile checks enforce deterministic web performance budgets", () => {
   assert.equal(packageJson.scripts["check:web-budgets"], "node scripts/check-web-budgets.mjs");
-  assert.match(packageJson.scripts["build:bridge"], /--bundle --minify /);
+  assert.equal(packageJson.scripts["build:bridge"], "node scripts/build-bridge.mjs");
+  assert.match(bridgeBuildSource, /bundle:\s*true/);
+  assert.match(bridgeBuildSource, /minify:\s*true/);
   assert.match(packageJson.scripts.check, /npm run build:web && npm run check:web-budgets/);
 
   for (const marker of [
