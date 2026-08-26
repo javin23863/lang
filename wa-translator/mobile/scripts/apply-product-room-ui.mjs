@@ -10,11 +10,13 @@ const styleTags = [
   '<link rel="stylesheet" href="/room-product-ui.css">',
   '<link rel="stylesheet" href="/room-product-states.css">',
   '<link rel="stylesheet" href="/room-product-prejoin.css">',
+  '<link rel="stylesheet" href="/room-product-end-actions.css">',
 ];
 const scriptTags = [
   '<script src="/room-product-ui.js"></script>',
   '<script src="/room-product-prejoin.js"></script>',
   '<script src="/room-product-defaults.js"></script>',
+  '<script src="/room-product-end-actions.js"></script>',
 ];
 
 for (const styleTag of styleTags) {
