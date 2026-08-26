@@ -4,6 +4,8 @@
   const native = window.LinguaNative?.isNative === true;
   const roomRoute = /^\/room\/[^/]+$/.test(location.pathname);
   const ROOM_CONTROL_FETCH_TIMEOUT_MS = 12000;
+  const CAPABILITY_RETRY_WINDOW_MS = 60 * 1000;
+  const CAPABILITY_RETRY_MAX_PER_WINDOW = 3;
   const ROOM_CONTROL_PATHS = new Set([
     "/api/capabilities",
     "/api/turn",
@@ -22,6 +24,9 @@
     let roomSuspended = false;
     let roomLifecycleEnded = false;
     let activeRoomSocket = null;
+    let capabilityRetryPromise = null;
+    let capabilityRetryTimer = null;
+    let capabilityRetryAttempts = [];
 
     function lifecycleAbortError() {
       return new DOMException("Room lifecycle ended", "AbortError");
@@ -32,17 +37,109 @@
       activeControlControllers.clear();
     }
 
+    function clearCapabilityRetryTimer() {
+      if (capabilityRetryTimer === null) return;
+      if (typeof window.clearTimeout === "function") window.clearTimeout(capabilityRetryTimer);
+      capabilityRetryTimer = null;
+    }
+
     function endRoomLifecycle() {
       roomLifecycleEnded = true;
+      clearCapabilityRetryTimer();
       abortControlRequests();
+    }
+
+    function canRetryCapabilities() {
+      // These bindings are declared by the room's classic inline script before
+      // this deferred classic script executes. Guard every access anyway so the
+      // shared QR loader remains safe on the dashboard and in isolated tests.
+      if (typeof loadCapabilities !== "function"
+          || typeof gateFailureKey === "undefined"
+          || typeof catalog === "undefined"
+          || typeof locales === "undefined"
+          || typeof voices === "undefined"
+          || typeof roleChosen === "undefined"
+          || typeof explicitLeave === "undefined"
+          || typeof terminalRoom === "undefined") return false;
+      return gateFailureKey === "gate.languagesUnavailable"
+        && catalog === null && locales.size === 0 && voices.size === 0
+        && !roleChosen && !explicitLeave && !terminalRoom
+        && !roomSuspended && !roomLifecycleEnded;
+    }
+
+    function scheduleCapabilityRetry(delay) {
+      if (!canRetryCapabilities() || capabilityRetryTimer !== null
+          || typeof window.setTimeout !== "function") return;
+      capabilityRetryTimer = window.setTimeout(() => {
+        capabilityRetryTimer = null;
+        retryCapabilities();
+      }, Math.max(0, Number(delay) || 0));
+    }
+
+    async function retryCapabilities() {
+      if (!canRetryCapabilities()) return;
+      if (capabilityRetryPromise) return capabilityRetryPromise;
+
+      const now = Date.now();
+      capabilityRetryAttempts = capabilityRetryAttempts
+        .filter(attemptedAt => now - attemptedAt < CAPABILITY_RETRY_WINDOW_MS);
+      if (capabilityRetryAttempts.length >= CAPABILITY_RETRY_MAX_PER_WINDOW) return;
+      capabilityRetryAttempts.push(now);
+      clearCapabilityRetryTimer();
+
+      // loadCapabilities() owns the catalog validation and the failure state.
+      // Clearing the old key before retry lets a successful call restore the
+      // normal gate, while any failed retry writes the warning back itself.
+      gateFailureKey = "";
+      const roleSelect = document.getElementById("roleLocaleSel");
+      const joinButton = document.getElementById("joinBtn");
+      const roleCapability = document.getElementById("roleCapability");
+      if (roleSelect) roleSelect.disabled = true;
+      if (joinButton) joinButton.disabled = true;
+      if (roleCapability && typeof t === "function") {
+        roleCapability.textContent = t("gate.loading");
+        roleCapability.classList.remove("warning");
+      }
+      if (typeof setStatus === "function") setStatus("gate.loading", null, true);
+
+      capabilityRetryPromise = Promise.resolve(loadCapabilities()).then(() => {
+        if (!gateFailureKey && catalog !== null) {
+          capabilityRetryAttempts = [];
+          if (typeof setStatus === "function") setStatus("gate.title", null, true);
+          if (typeof updateRoleGate === "function") updateRoleGate();
+          return;
+        }
+        // A top-level/network/server failure leaves all live catalog containers
+        // empty and is safe to retry. A partially validated catalog does not:
+        // stop there rather than replaying against half-mutated locale state.
+        if (canRetryCapabilities()
+            && capabilityRetryAttempts.length < CAPABILITY_RETRY_MAX_PER_WINDOW) {
+          const backoff = Math.min(8000, 1000 * 2 ** capabilityRetryAttempts.length);
+          scheduleCapabilityRetry(backoff);
+        }
+      }).finally(() => {
+        capabilityRetryPromise = null;
+      });
+      return capabilityRetryPromise;
     }
 
     window.addEventListener("pagehide", () => {
       roomSuspended = true;
+      clearCapabilityRetryTimer();
       abortControlRequests();
     });
     window.addEventListener("pageshow", event => {
-      if (event.persisted && !roomLifecycleEnded) roomSuspended = false;
+      if (event.persisted && !roomLifecycleEnded) {
+        roomSuspended = false;
+        retryCapabilities();
+      }
+    });
+    window.addEventListener("online", retryCapabilities);
+    window.addEventListener("lingua-app-state", event => {
+      if (event.detail?.isActive) retryCapabilities();
+    });
+    document.addEventListener?.("visibilitychange", () => {
+      if (document.visibilityState === "visible") retryCapabilities();
     });
 
     const leaveButton = document.getElementById("leaveBtn");
@@ -137,6 +234,14 @@
       LifecycleWebSocket.prototype = RoomWebSocket.prototype;
       Object.setPrototypeOf(LifecycleWebSocket, RoomWebSocket);
       window.WebSocket = LifecycleWebSocket;
+    }
+
+    // The synchronous bootstrap has a 12-second deadline. If it failed before
+    // this deferred script could observe the request, the room's own failure
+    // state is visible by the time this slightly later fallback fires. The
+    // guard above prevents a concurrent second load while the first is healthy.
+    if (typeof window.setTimeout === "function") {
+      window.setTimeout(() => retryCapabilities(), ROOM_CONTROL_FETCH_TIMEOUT_MS + 1000);
     }
   }
 
