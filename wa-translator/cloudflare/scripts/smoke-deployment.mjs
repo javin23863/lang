@@ -1,6 +1,7 @@
 import { pathToFileURL } from "node:url";
 
 const REQUEST_TIMEOUT_MS = 12_000;
+const RELEASE_SHA_PATTERN = /^[0-9a-f]{40}$/;
 const REQUIRED_LEGAL = Object.freeze([
   "/privacy",
   "/terms",
@@ -26,12 +27,16 @@ async function request(fetchImpl, origin, pathname) {
   }
 }
 
-export async function smokeDeployment(originInput, fetchImpl = fetch) {
+export async function smokeDeployment(originInput, fetchImpl = fetch, expectedReleaseSha = "") {
   const origin = new URL(originInput);
   assert(origin.protocol === "https:", "smoke origin must use https");
   assert(origin.pathname === "/", "smoke origin must not contain a path");
   assert(!origin.username && !origin.password && !origin.search && !origin.hash,
     "smoke origin must not contain credentials, query, or fragment");
+  if (expectedReleaseSha) {
+    assert(RELEASE_SHA_PATTERN.test(expectedReleaseSha),
+      "expected release SHA must be an exact lowercase 40-character commit SHA");
+  }
 
   const health = await request(fetchImpl, origin, "/health");
   assert(health.status === 200, `health returned ${health.status}`);
@@ -46,6 +51,10 @@ export async function smokeDeployment(originInput, fetchImpl = fetch) {
   assert(contract?.account_mode === "session", "bootstrap account_mode is not session");
   assert(contract?.call_lifecycle === "foreground", "bootstrap call_lifecycle is not foreground");
   assert(contract?.max_room_participants === 2, "bootstrap participant limit is not 2");
+  if (expectedReleaseSha) {
+    assert(contract?.release_sha === expectedReleaseSha,
+      `live release SHA ${String(contract?.release_sha || "missing")} does not match ${expectedReleaseSha}`);
+  }
 
   const dashboard = await request(fetchImpl, origin, "/");
   assert(dashboard.status === 200, `dashboard returned ${dashboard.status}`);
@@ -69,14 +78,16 @@ export async function smokeDeployment(originInput, fetchImpl = fetch) {
     }
   }
 
-  return Object.freeze({origin: origin.origin, status: "ok"});
+  return Object.freeze({origin: origin.origin, status: "ok", release_sha: expectedReleaseSha || null});
 }
 
 const invokedDirectly = process.argv[1]
   && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (invokedDirectly) {
   const origin = process.argv[2] || process.env.LINGUA_SMOKE_ORIGIN;
+  const expectedReleaseSha = process.env.LINGUA_EXPECTED_RELEASE_SHA || "";
   if (!origin) throw new Error("usage: node scripts/smoke-deployment.mjs https://deployment.example");
-  const result = await smokeDeployment(origin);
-  console.log(`deployment smoke passed: ${result.origin}`);
+  const result = await smokeDeployment(origin, fetch, expectedReleaseSha);
+  console.log(`deployment smoke passed: ${result.origin}`
+    + (result.release_sha ? ` @ ${result.release_sha}` : ""));
 }
