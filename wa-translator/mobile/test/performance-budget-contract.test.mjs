@@ -7,6 +7,7 @@ const budgetSource = await readFile(new URL("../scripts/check-web-budgets.mjs", 
 
 test("mobile checks enforce deterministic web performance budgets", () => {
   assert.equal(packageJson.scripts["check:web-budgets"], "node scripts/check-web-budgets.mjs");
+  assert.match(packageJson.scripts["build:bridge"], /--bundle --minify /);
   assert.match(packageJson.scripts.check, /npm run build:web && npm run check:web-budgets/);
 
   for (const marker of [

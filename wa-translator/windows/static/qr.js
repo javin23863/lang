@@ -51,6 +51,12 @@
     if (qrBox) qrBox.hidden = true;
   }
 
+  function retireInvitationsIfTerminal() {
+    if (typeof terminalRoom === "undefined" || !terminalRoom) return;
+    browserMediaLifecycleEnded = true;
+    retireInvitationControls();
+  }
+
   function browserMediaRequestActive() {
     if (browserMediaLifecycleEnded || !/^\/room\/[^/]+$/.test(location.pathname)) return false;
     if (typeof leaving !== "undefined" && leaving) return false;
@@ -95,7 +101,6 @@
         if ((typeof explicitLeave !== "undefined" && explicitLeave)
             || (typeof terminalRoom !== "undefined" && terminalRoom)) {
           browserMediaLifecycleEnded = true;
-          retireInvitationControls();
         }
         return roomDisconnectRoom(...args);
       };
@@ -238,10 +243,7 @@
         const generation = browserRoomGeneration;
         if (!browserRoomGenerationActive(generation)) return false;
         const result = await roomPreflightRoom(...args);
-        if (typeof terminalRoom !== "undefined" && terminalRoom) {
-          browserMediaLifecycleEnded = true;
-          retireInvitationControls();
-        }
+        retireInvitationsIfTerminal();
         if (!browserRoomGenerationActive(generation)) return false;
         return result;
       };
@@ -301,10 +303,7 @@
         const generation = browserRoomGeneration;
         try {
           const result = await roomHandle(message);
-          if (typeof terminalRoom !== "undefined" && terminalRoom) {
-            browserMediaLifecycleEnded = true;
-            retireInvitationControls();
-          }
+          retireInvitationsIfTerminal();
           return result;
         } catch (error) {
           if (error?.linguaPeerLifecycle === true || generation !== browserRoomGeneration) return;
@@ -673,51 +672,37 @@
     });
 
     const shareButton = document.getElementById("shareBtn");
-    const whatsappButton = document.getElementById("waBtn");
-    const lineButton = document.getElementById("lineBtn");
-    const roomQrButton = document.getElementById("qrBtn");
-    for (const button of [whatsappButton, lineButton, roomQrButton]) {
-      button?.addEventListener("click", event => {
-        if (browserRoomWorkActive()) return;
-        event.preventDefault?.();
-        event.stopImmediatePropagation?.();
-      }, {capture: true});
-    }
-
-    if (shareButton && typeof runtime !== "undefined" && typeof runtime.share === "function") {
+    if (shareButton) {
       shareButton.onclick = async () => {
         const generation = browserRoomGeneration;
         if (!browserRoomWorkActive()) return;
-        const invite = {
-          title: t("share.title"),
-          text: t(SHARE_TEXT[roomMode]),
-          url: inviteLink(),
-        };
+        const invite = {title: t("share.title"), text: t(SHARE_TEXT[roomMode]), url: inviteLink()};
         const shared = await runtime.share(invite);
-        if (generation !== browserRoomGeneration || !browserRoomWorkActive()) return;
+        if (staleShare()) return;
         if (shared) {
           setStatus("status.invitationShared");
           return;
         }
-        const message = invite.text + "\n" + invite.url;
         const opened = window.open(
-          "https://wa.me/?text=" + encodeURIComponent(message),
-          "_blank",
-        );
-        if (opened) opened.opener = null;
-        if (!opened) {
-          try {
-            if (navigator.clipboard) {
-              await navigator.clipboard.writeText(invite.url);
-              if (generation !== browserRoomGeneration || !browserRoomWorkActive()) return;
-              setStatus("status.linkCopied");
-              return;
-            }
-          } catch (_) {
-            if (generation !== browserRoomGeneration || !browserRoomWorkActive()) return;
+          "https://wa.me/?text=" + encodeURIComponent(invite.text + "\n" + invite.url), "_blank");
+        if (opened) {
+          opened.opener = null;
+          return;
+        }
+        try {
+          if (navigator.clipboard) {
+            await navigator.clipboard.writeText(invite.url);
+            if (staleShare()) return;
+            setStatus("status.linkCopied");
+            return;
           }
-          if (generation !== browserRoomGeneration || !browserRoomWorkActive()) return;
-          setStatus("status.shareFailed", null, true);
+        } catch (_) {
+          if (staleShare()) return;
+        }
+        setStatus("status.shareFailed", null, true);
+
+        function staleShare() {
+          return generation !== browserRoomGeneration || !browserRoomWorkActive();
         }
       };
     }
