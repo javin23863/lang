@@ -9,6 +9,8 @@ const roomModel = window.LinguaDashboardRoomModel.create(runtime);
 const startupAuthFailed = new URLSearchParams(location.search).get("auth") === "failed";
 let account = null;
 let accountRefreshing = false;
+let roomBusy = false;
+let accountActionBusy = false;
 // Every visible line is stored as its key, never as finished text, so a
 // language switch can re-render the screen the person is already looking at.
 let stateKey = "home.noRoom", stateParams = null, noticeKey = "", noticeParams = null;
@@ -52,12 +54,24 @@ function handleRoomClear(state, key, options = {}) {
   setState(state, key);
 }
 
-function setBusy(value) {
+function syncBusyControls() {
+  const blocked = roomBusy || accountActionBusy;
   for (const id of ["createVoiceBtn", "createChatBtn", "createBtn",
                     "copyBtn", "shareBtn", "openBtn", "closeBtn",
-                    "waBtn", "lineBtn", "qrBtn"]) {
-    $(id).disabled = value;
+                    "waBtn", "lineBtn", "qrBtn",
+                    "signOutBtn", "deleteAccountBtn"]) {
+    $(id).disabled = blocked;
   }
+}
+
+function setBusy(value) {
+  roomBusy = Boolean(value);
+  syncBusyControls();
+}
+
+function setAccountBusy(value) {
+  accountActionBusy = Boolean(value);
+  syncBusyControls();
 }
 
 function setAuthStatus(key) {
@@ -138,7 +152,9 @@ const lifecycle = window.LinguaDashboardLifecycle.create({
 });
 
 async function deleteAccount() {
+  if (accountActionBusy || roomController.isBusy()) return;
   if (!window.confirm(t("auth.deleteConfirm"))) return;
+  setAccountBusy(true);
   let serverDeleted = false;
   try {
     const response = await dashboardFetch(runtime.apiUrl("/api/account/delete"),
@@ -157,6 +173,8 @@ async function deleteAccount() {
       return;
     }
     setNotice("auth.deleteFailed");
+  } finally {
+    if (!serverDeleted) setAccountBusy(false);
   }
 }
 
@@ -164,8 +182,14 @@ $("createVoiceBtn").onclick = () => roomController.create("voice");
 $("createChatBtn").onclick = () => roomController.create("chat");
 $("createBtn").onclick = () => roomController.create("video");
 $("signOutBtn").onclick = async () => {
+  if (accountActionBusy || roomController.isBusy()) return;
+  setAccountBusy(true);
   let serverSignedOut = false;
   try {
+    // Signing out retires room administration from this device. Close the
+    // active room first so its invitation cannot outlive the only host control
+    // capable of closing it.
+    if (roomController.current() && !await roomController.close(false)) return;
     const response = await dashboardFetch(runtime.apiUrl("/auth/logout"), {
       method: "POST", headers: {Accept: "application/json"}
     });
@@ -181,6 +205,8 @@ $("signOutBtn").onclick = async () => {
       return;
     }
     setAuthStatus("auth.signOutFailed");
+  } finally {
+    if (!serverSignedOut) setAccountBusy(false);
   }
 };
 $("deleteAccountBtn").onclick = deleteAccount;

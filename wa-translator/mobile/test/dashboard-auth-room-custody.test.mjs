@@ -26,3 +26,25 @@ test("completed server account transitions reload even when persistent room clea
     /signOutBtn[\s\S]*?let serverSignedOut = false;[\s\S]*?if \(!response\.ok\) throw new Error\("logout failed"\);[\s\S]*?serverSignedOut = true;[\s\S]*?await roomController\.discard\(\);\s*location\.reload\(\);[\s\S]*?catch \(_\) \{\s*if \(serverSignedOut\) \{[\s\S]*?location\.reload\(\);\s*return;[\s\S]*?setAuthStatus\("auth\.signOutFailed"\);/,
     "a revoked server session always reloads into the signed-out custody gate even if secure-storage cleanup throws");
 });
+
+test("sign-out closes active room custody before session revocation and shares the async action lock", () => {
+  assert.match(source,
+    /function syncBusyControls\(\) \{[\s\S]*?const blocked = roomBusy \|\| accountActionBusy;[\s\S]*?"signOutBtn", "deleteAccountBtn"[\s\S]*?\.disabled = blocked;/,
+    "room and account operations must disable both account-transition controls while either async boundary is active");
+
+  const start = source.indexOf('$("signOutBtn").onclick = async () => {');
+  const end = source.indexOf('$("deleteAccountBtn").onclick = deleteAccount;', start);
+  assert.ok(start >= 0 && end > start, "sign-out handler must remain explicit in the dashboard source");
+  const signOut = source.slice(start, end);
+  assert.match(signOut, /if \(accountActionBusy \|\| roomController\.isBusy\(\)\) return;/,
+    "sign-out cannot start while another room/account transition is already active");
+  assert.match(signOut, /setAccountBusy\(true\);/,
+    "sign-out must hold the shared account-transition lock for its full async path");
+
+  const closeIndex = signOut.indexOf("await roomController.close(false)");
+  const logoutIndex = signOut.indexOf('runtime.apiUrl("/auth/logout")');
+  assert.ok(closeIndex >= 0 && logoutIndex > closeIndex,
+    "an active room must be confirmed closed before the logout request revokes account custody");
+  assert.match(signOut, /finally \{\s*if \(!serverSignedOut\) setAccountBusy\(false\);\s*\}/,
+    "failed or cancelled sign-out must release the account-transition lock for retry");
+});
