@@ -167,12 +167,21 @@ test("pagehide preserves pending confirmed report delivery and registration tear
     "normal suspension teardown resumes immediately after report delivery settles");
 });
 
-test("source preserves only tracked report delivery during confirmed-report teardown", () => {
-  assert.match(source, /const reportControlControllers = new WeakSet\(\)/);
+test("source preserves only tracked confirmed report delivery through teardown and pagehide", () => {
+  assert.match(source, /let browserReportDeliveryCount = 0/);
+  assert.match(source, /let browserConfirmedReportPending = false/);
+  assert.match(source, /function browserConfirmedReportActive\(\)/);
   assert.match(source, /function abortControlRequests\(preserveReportRequest = false\)/);
   assert.match(source, /preserveReportRequest && reportControlControllers\.has\(controller\)/);
   assert.match(source, /function endRoomLifecycle\(preserveReportRequest = false\)/);
   assert.match(source,
-    /if \(reportButton\.disabled\) \{[\s\S]*?quiesceRoomForReport\(\);[\s\S]*?endRoomLifecycle\(true\)/);
-  assert.match(source, /if \(url\.pathname === "\/api\/reports"\) reportControlControllers\.add\(controller\)/);
+    /browserConfirmedReportActive\(\)[\s\S]*?notifyServer === false && preserveServerClose !== true/);
+  assert.match(source,
+    /const preserveReportRequest = browserConfirmedReportActive\(\);[\s\S]*?abortControlRequests\(preserveReportRequest\)/);
+  assert.match(source,
+    /if \(reportButton\.disabled\) \{[\s\S]*?browserConfirmedReportPending = true;[\s\S]*?quiesceRoomForReport\(\);[\s\S]*?endRoomLifecycle\(true\)/);
+  assert.match(source,
+    /const reportRequest = url\.pathname === "\/api\/reports";[\s\S]*?reportControlControllers\.add\(controller\);[\s\S]*?browserReportDeliveryCount\+\+/);
+  assert.match(source,
+    /browserReportDeliveryCount = Math\.max\(0, browserReportDeliveryCount - 1\);[\s\S]*?browserConfirmedReportPending = false/);
 });
