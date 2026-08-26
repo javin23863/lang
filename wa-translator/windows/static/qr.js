@@ -22,6 +22,8 @@
   let browserMediaGeneration = 0;
   let browserMediaLifecycleEnded = false;
   let browserRoomGeneration = 0;
+  let browserReportDeliveryCount = 0;
+  let browserConfirmedReportPending = false;
 
   function invalidatePendingBrowserMedia() {
     browserMediaGeneration++;
@@ -44,6 +46,10 @@
     if (typeof explicitLeave !== "undefined" && explicitLeave) return false;
     if (typeof terminalRoom !== "undefined" && terminalRoom) return false;
     return true;
+  }
+
+  function browserConfirmedReportActive() {
+    return browserConfirmedReportPending && browserReportDeliveryCount > 0;
   }
 
   if (!native && roomRoute && typeof navigator !== "undefined") {
@@ -70,6 +76,9 @@
     if (typeof disconnectRoom === "function") {
       const roomDisconnectRoom = disconnectRoom;
       disconnectRoom = function mediaAwareDisconnectRoom(...args) {
+        const [notifyServer, preserveServerClose] = args;
+        if (browserConfirmedReportActive()
+            && notifyServer === false && preserveServerClose !== true) return;
         invalidateBrowserRoomGeneration();
         invalidatePendingBrowserMedia();
         if ((typeof explicitLeave !== "undefined" && explicitLeave)
@@ -622,9 +631,10 @@
     }
 
     window.addEventListener("pagehide", () => {
+      const preserveReportRequest = browserConfirmedReportActive();
       roomSuspended = true;
       clearCapabilityRetryTimer();
-      abortControlRequests();
+      abortControlRequests(preserveReportRequest);
     }, {capture: true});
     window.addEventListener("pageshow", event => {
       if (event.persisted && !roomLifecycleEnded) {
@@ -650,6 +660,7 @@
       // or invalidate a permission request the user still intends to finish.
       queueMicrotask(() => {
         if (reportButton.disabled) {
+          browserConfirmedReportPending = true;
           quiesceRoomForReport();
           endRoomLifecycle(true);
         }
@@ -687,8 +698,12 @@
       const callerSignal = init.signal
         || (typeof Request !== "undefined" && input instanceof Request ? input.signal : null);
       const controller = new AbortController();
+      const reportRequest = url.pathname === "/api/reports";
       activeControlControllers.add(controller);
-      if (url.pathname === "/api/reports") reportControlControllers.add(controller);
+      if (reportRequest) {
+        reportControlControllers.add(controller);
+        browserReportDeliveryCount++;
+      }
       const abortFromCaller = () => controller.abort();
       if (callerSignal?.aborted) abortFromCaller();
       else callerSignal?.addEventListener("abort", abortFromCaller, {once: true});
@@ -699,6 +714,10 @@
         released = true;
         if (timer !== null) clearTimeout(timer);
         activeControlControllers.delete(controller);
+        if (reportRequest) {
+          browserReportDeliveryCount = Math.max(0, browserReportDeliveryCount - 1);
+          if (browserReportDeliveryCount === 0) browserConfirmedReportPending = false;
+        }
         callerSignal?.removeEventListener("abort", abortFromCaller);
       };
       timer = setTimeout(() => {

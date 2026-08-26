@@ -58,6 +58,7 @@ function harness() {
   document.head = {appendChild() {}};
 
   const fetchCalls = [];
+  const disconnectCalls = [];
   windowTarget.fetch = (input, init = {}) => new Promise((resolve, reject) => {
     const call = {input: String(input), init, resolve, reject};
     fetchCalls.push(call);
@@ -77,6 +78,7 @@ function harness() {
     window: windowTarget,
     document,
     navigator: {mediaDevices: null},
+    disconnectRoom(...args) { disconnectCalls.push(args); },
     location: {
       pathname: "/room/example",
       origin: "https://room.test",
@@ -94,7 +96,13 @@ function harness() {
     clearTimeout,
   });
   vm.runInContext(source, context, {filename: "qr.js"});
-  return {windowTarget, reportButton, fetchCalls};
+  return {
+    windowTarget,
+    reportButton,
+    fetchCalls,
+    disconnectCalls,
+    disconnect: (...args) => context.disconnectRoom(...args),
+  };
 }
 
 test("confirmed report teardown preserves its report request while aborting other room control work", async () => {
@@ -131,12 +139,49 @@ test("confirmed report teardown preserves its report request while aborting othe
   assert.equal(h.fetchCalls.length, 2, "post-report room work is rejected before network I/O");
 });
 
-test("source preserves only tracked report delivery during confirmed-report teardown", () => {
-  assert.match(source, /const reportControlControllers = new WeakSet\(\)/);
+test("pagehide preserves pending confirmed report delivery and registration teardown until authorization settles", async () => {
+  const h = harness();
+  let reportRequest;
+  h.reportButton.addEventListener("click", () => {
+    h.reportButton.disabled = true;
+    reportRequest = h.windowTarget.fetch("https://room.test/api/reports", {method: "POST"});
+  });
+
+  h.reportButton.dispatch("click", {type: "click"});
+  await Promise.resolve();
+  await Promise.resolve();
+
+  h.windowTarget.dispatch("pagehide", {type: "pagehide"});
+  h.disconnect(false);
+
+  assert.equal(h.fetchCalls[0].init.signal.aborted, false,
+    "pagehide must not abort a confirmed report still awaiting backend authorization");
+  assert.equal(h.disconnectCalls.length, 0,
+    "suspension must not close participant registration while report authorization is pending");
+
+  h.fetchCalls[0].resolve({ok: true, status: 204});
+  assert.equal((await reportRequest).ok, true);
+
+  h.disconnect(false);
+  assert.deepEqual(h.disconnectCalls, [[false]],
+    "normal suspension teardown resumes immediately after report delivery settles");
+});
+
+test("source preserves only tracked confirmed report delivery through teardown and pagehide", () => {
+  assert.match(source, /let browserReportDeliveryCount = 0/);
+  assert.match(source, /let browserConfirmedReportPending = false/);
+  assert.match(source, /function browserConfirmedReportActive\(\)/);
   assert.match(source, /function abortControlRequests\(preserveReportRequest = false\)/);
   assert.match(source, /preserveReportRequest && reportControlControllers\.has\(controller\)/);
   assert.match(source, /function endRoomLifecycle\(preserveReportRequest = false\)/);
   assert.match(source,
-    /if \(reportButton\.disabled\) \{[\s\S]*?quiesceRoomForReport\(\);[\s\S]*?endRoomLifecycle\(true\)/);
-  assert.match(source, /if \(url\.pathname === "\/api\/reports"\) reportControlControllers\.add\(controller\)/);
+    /browserConfirmedReportActive\(\)[\s\S]*?notifyServer === false && preserveServerClose !== true/);
+  assert.match(source,
+    /const preserveReportRequest = browserConfirmedReportActive\(\);[\s\S]*?abortControlRequests\(preserveReportRequest\)/);
+  assert.match(source,
+    /if \(reportButton\.disabled\) \{[\s\S]*?browserConfirmedReportPending = true;[\s\S]*?quiesceRoomForReport\(\);[\s\S]*?endRoomLifecycle\(true\)/);
+  assert.match(source,
+    /const reportRequest = url\.pathname === "\/api\/reports";[\s\S]*?reportControlControllers\.add\(controller\);[\s\S]*?browserReportDeliveryCount\+\+/);
+  assert.match(source,
+    /browserReportDeliveryCount = Math\.max\(0, browserReportDeliveryCount - 1\);[\s\S]*?browserConfirmedReportPending = false/);
 });
