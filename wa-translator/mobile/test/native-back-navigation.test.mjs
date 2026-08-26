@@ -5,15 +5,17 @@ import test from "node:test";
 const read = path => readFile(new URL(path, import.meta.url), "utf8");
 
 test("Android system Back preserves room cleanup and normal navigation", async () => {
-  const [pkgSource, entry, back, bridge] = await Promise.all([
+  const [pkgSource, buildSource, entry, back, bridge] = await Promise.all([
     read("../package.json"),
+    read("../scripts/build-bridge.mjs"),
     read("../src/mobile-entry.ts"),
     read("../src/native-back.ts"),
     read("../src/mobile-bridge.ts"),
   ]);
   const pkg = JSON.parse(pkgSource);
 
-  assert.match(pkg.scripts["build:bridge"], /^esbuild src\/mobile-entry\.ts\b/,
+  assert.equal(pkg.scripts["build:bridge"], "node scripts/build-bridge.mjs");
+  assert.match(buildSource, /entryPoints:\s*\[path\.join\(mobile, "src", "mobile-entry\.ts"\)\]/,
                "the native navigation listener must ship in the same bridge bundle");
   assert.match(entry, /import "\.\/mobile-bridge";\s*import "\.\/native-back";/,
                "the established bridge initializes before Android navigation handling");
