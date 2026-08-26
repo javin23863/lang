@@ -13,7 +13,7 @@ describe("browser report lifecycle deployment", () => {
     expect(source).toContain("function abortControlRequests(preserveReportRequest = false)");
     expect(source).toContain("preserveReportRequest && reportControlControllers.has(controller)");
     expect(source).toContain("function endRoomLifecycle(preserveReportRequest = false)");
-    expect(source).toContain("if (reportButton.disabled) endRoomLifecycle(true)");
+    expect(source).toMatch(/if \(reportButton\.disabled\) \{[\s\S]*?quiesceRoomForReport\(\);[\s\S]*?endRoomLifecycle\(true\)/);
     expect(source).toContain('if (url.pathname === "/api/reports") reportControlControllers.add(controller)');
   });
 });
