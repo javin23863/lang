@@ -4,7 +4,7 @@ import test from "node:test";
 import vm from "node:vm";
 
 const staticRoot = new URL("../../windows/static/", import.meta.url);
-const qrSource = await readFile(new URL("qr.js", staticRoot), "utf8");
+const qrSource = await readFile(new URL("qr-encoder.js", staticRoot), "utf8");
 
 // The library is a browser script, so it is run as one. The only DOM it may
 // touch is createElementNS, and only from inside svg() — a stub that records
