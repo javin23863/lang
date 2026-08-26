@@ -1,5 +1,13 @@
-export const PUBLIC_ORIGIN =
+const PRODUCTION_ORIGIN =
   "https://spoken-translation-room.spoken-translation-cloudflare.workers.dev";
+const STAGING_ORIGIN =
+  "https://spoken-translation-room-staging.spoken-translation-cloudflare.workers.dev";
+const BUILD_PUBLIC_ORIGIN = typeof __LINGUA_PUBLIC_ORIGIN__ === "string"
+  ? __LINGUA_PUBLIC_ORIGIN__ : PRODUCTION_ORIGIN;
+if (BUILD_PUBLIC_ORIGIN !== PRODUCTION_ORIGIN && BUILD_PUBLIC_ORIGIN !== STAGING_ORIGIN) {
+  throw new Error("Unsupported Lingua Relay public origin");
+}
+export const PUBLIC_ORIGIN = BUILD_PUBLIC_ORIGIN;
 export const MOBILE_PROTOCOL = 2;
 export const MOBILE_BUILD = 1;
 export const PARTICIPANT_LIMIT = 2;
