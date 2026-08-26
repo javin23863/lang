@@ -36,6 +36,8 @@ class MockWebSocket extends MockTarget {
   }
 }
 
+class MockPeerConnection {}
+
 function element() {
   const target = new MockTarget();
   target.disabled = false;
@@ -62,6 +64,7 @@ function harness({partial = false, failLoads = 0} = {}) {
   };
   windowTarget.fetch = async () => ({ok: true, status: 200});
   windowTarget.WebSocket = MockWebSocket;
+  windowTarget.RTCPeerConnection = MockPeerConnection;
   windowTarget.LinguaNative = undefined;
 
   const elements = new Map([
