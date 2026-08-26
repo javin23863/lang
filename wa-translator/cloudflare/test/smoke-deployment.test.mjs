@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { smokeDeployment } from "../scripts/smoke-deployment.mjs";
 
 const ORIGIN = "https://staging.example";
+const RELEASE_SHA = "0123456789abcdef0123456789abcdef01234567";
 
 function fakeFetch(overrides = {}) {
   return async input => {
@@ -18,6 +19,7 @@ function fakeFetch(overrides = {}) {
         account_mode: "session",
         call_lifecycle: "foreground",
         max_room_participants: 2,
+        release_sha: RELEASE_SHA,
       });
     }
     if (pathname === "/") {
@@ -41,9 +43,10 @@ function fakeFetch(overrides = {}) {
 
 describe("credential-free deployment smoke contract", () => {
   it("accepts the two-person protocol and public launch surfaces", async () => {
-    await expect(smokeDeployment(ORIGIN, fakeFetch())).resolves.toEqual({
+    await expect(smokeDeployment(ORIGIN, fakeFetch(), RELEASE_SHA)).resolves.toEqual({
       origin: ORIGIN,
       status: "ok",
+      release_sha: RELEASE_SHA,
     });
   });
 
@@ -54,22 +57,23 @@ describe("credential-free deployment smoke contract", () => {
       account_mode: "session",
       call_lifecycle: "foreground",
       max_room_participants: 4,
+      release_sha: RELEASE_SHA,
     });
     await expect(smokeDeployment(ORIGIN, fakeFetch({
       "/api/v1/mobile/bootstrap": badBootstrap,
-    }))).rejects.toThrow("bootstrap participant limit is not 2");
+    }), RELEASE_SHA)).rejects.toThrow("bootstrap participant limit is not 2");
   });
 
   it("fails closed when public legal surfaces contain placeholders", async () => {
     await expect(smokeDeployment(ORIGIN, fakeFetch({
       "/support": new Response("Lingua Relay TODO", {status: 200}),
-    }))).rejects.toThrow("/support contains a launch placeholder");
+    }), RELEASE_SHA)).rejects.toThrow("/support contains a launch placeholder");
   });
 
   it("refuses non-HTTPS and path-bearing deployment origins", async () => {
-    await expect(smokeDeployment("http://staging.example", fakeFetch()))
+    await expect(smokeDeployment("http://staging.example", fakeFetch(), RELEASE_SHA))
       .rejects.toThrow("smoke origin must use https");
-    await expect(smokeDeployment("https://staging.example/room/test", fakeFetch()))
+    await expect(smokeDeployment("https://staging.example/room/test", fakeFetch(), RELEASE_SHA))
       .rejects.toThrow("smoke origin must not contain a path");
   });
 });
