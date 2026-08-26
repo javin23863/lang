@@ -138,6 +138,7 @@
     const RoomWebSocket = window.WebSocket;
     const RoomPeerConnection = window.RTCPeerConnection;
     const activeControlControllers = new Set();
+    const reportControlControllers = new WeakSet();
     const peerGenerations = new WeakMap();
     let roomSuspended = false;
     let roomLifecycleEnded = false;
@@ -450,9 +451,12 @@
       };
     }
 
-    function abortControlRequests() {
-      for (const controller of activeControlControllers) controller.abort();
-      activeControlControllers.clear();
+    function abortControlRequests(preserveReportRequest = false) {
+      for (const controller of activeControlControllers) {
+        if (preserveReportRequest && reportControlControllers.has(controller)) continue;
+        controller.abort();
+        activeControlControllers.delete(controller);
+      }
     }
 
     function clearCapabilityRetryTimer() {
@@ -461,13 +465,13 @@
       capabilityRetryTimer = null;
     }
 
-    function endRoomLifecycle() {
+    function endRoomLifecycle(preserveReportRequest = false) {
       invalidateBrowserRoomGeneration();
       browserMediaLifecycleEnded = true;
       invalidatePendingBrowserMedia();
       roomLifecycleEnded = true;
       clearCapabilityRetryTimer();
-      abortControlRequests();
+      abortControlRequests(preserveReportRequest);
     }
 
     function canRetryCapabilities() {
@@ -591,7 +595,7 @@
       // the click dispatch so cancelling the confirmation does not end a room
       // or invalidate a permission request the user still intends to finish.
       queueMicrotask(() => {
-        if (reportButton.disabled) endRoomLifecycle();
+        if (reportButton.disabled) endRoomLifecycle(true);
       });
     }, {capture: true});
 
@@ -627,6 +631,7 @@
         || (typeof Request !== "undefined" && input instanceof Request ? input.signal : null);
       const controller = new AbortController();
       activeControlControllers.add(controller);
+      if (url.pathname === "/api/reports") reportControlControllers.add(controller);
       const abortFromCaller = () => controller.abort();
       if (callerSignal?.aborted) abortFromCaller();
       else callerSignal?.addEventListener("abort", abortFromCaller, {once: true});
