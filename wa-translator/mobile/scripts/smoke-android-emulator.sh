@@ -5,11 +5,14 @@ APP_ID="com.javin23863.linguarelay"
 AVD_NAME="lingua-relay-api36"
 SYSTEM_IMAGE="system-images;android-36;google_apis;x86_64"
 SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+ANDROID_AVD_HOME="${ANDROID_AVD_HOME:-${RUNNER_TEMP:-/tmp}/lingua-android-avd}"
+export ANDROID_AVD_HOME
 
 if [[ -z "$SDK_ROOT" || ! -d "$SDK_ROOT" ]]; then
   echo "ANDROID_SDK_ROOT/ANDROID_HOME does not point to an Android SDK" >&2
   exit 1
 fi
+mkdir -p "$ANDROID_AVD_HOME"
 
 SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager 2>/dev/null | sort | tail -n 1)"
 AVDMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name avdmanager 2>/dev/null | sort | tail -n 1)"
@@ -46,6 +49,7 @@ for tool in "$EMULATOR" "$ADB"; do
 done
 
 "$AVDMANAGER" delete avd --name "$AVD_NAME" >/dev/null 2>&1 || true
+rm -rf "$ANDROID_AVD_HOME/$AVD_NAME.avd" "$ANDROID_AVD_HOME/$AVD_NAME.ini"
 set +o pipefail
 echo no | "$AVDMANAGER" create avd --force --name "$AVD_NAME" --package "$SYSTEM_IMAGE" >/dev/null
 avd_status="${PIPESTATUS[1]}"
@@ -53,6 +57,11 @@ set -o pipefail
 if [[ "$avd_status" -ne 0 ]]; then
   echo "Could not create Android smoke AVD" >&2
   exit "$avd_status"
+fi
+if [[ ! -f "$ANDROID_AVD_HOME/$AVD_NAME.ini" ]]; then
+  echo "Android smoke AVD was not created in $ANDROID_AVD_HOME" >&2
+  find "$ANDROID_AVD_HOME" -maxdepth 2 -type f -print >&2 || true
+  exit 1
 fi
 
 if [[ -e /dev/kvm && ! -w /dev/kvm ]]; then
