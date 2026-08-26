@@ -18,6 +18,7 @@
     && typeof window.RTCPeerConnection === "function"
   );
   let browserMediaGeneration = 0;
+  let browserMediaLifecycleEnded = false;
 
   function invalidatePendingBrowserMedia() {
     browserMediaGeneration++;
@@ -30,15 +31,25 @@
     }
   }
 
+  function browserMediaRequestActive() {
+    if (browserMediaLifecycleEnded || !/^\/room\/[^/]+$/.test(location.pathname)) return false;
+    if (typeof leaving !== "undefined" && leaving) return false;
+    if (typeof explicitLeave !== "undefined" && explicitLeave) return false;
+    if (typeof terminalRoom !== "undefined" && terminalRoom) return false;
+    return true;
+  }
+
   if (!native && roomRoute && typeof navigator !== "undefined") {
     const mediaDevices = navigator.mediaDevices;
     if (mediaDevices && typeof mediaDevices.getUserMedia === "function") {
       const originalGetUserMedia = mediaDevices.getUserMedia.bind(mediaDevices);
       mediaDevices.getUserMedia = async constraints => {
+        if (!browserMediaRequestActive()) {
+          throw new DOMException("Media request superseded by room teardown", "AbortError");
+        }
         const generation = browserMediaGeneration;
         const stream = await originalGetUserMedia(constraints);
-        if (generation !== browserMediaGeneration
-            || !/^\/room\/[^/]+$/.test(location.pathname)) {
+        if (generation !== browserMediaGeneration || !browserMediaRequestActive()) {
           // A browser permission prompt can resolve after pagehide, Leave, a
           // host close, or report-and-leave has already torn the room down.
           // Never hand that late stream back to room.html: doing so would let
@@ -53,6 +64,10 @@
       const roomDisconnectRoom = disconnectRoom;
       disconnectRoom = function mediaAwareDisconnectRoom(...args) {
         invalidatePendingBrowserMedia();
+        if ((typeof explicitLeave !== "undefined" && explicitLeave)
+            || (typeof terminalRoom !== "undefined" && terminalRoom)) {
+          browserMediaLifecycleEnded = true;
+        }
         return roomDisconnectRoom(...args);
       };
     }
@@ -137,6 +152,7 @@
     }
 
     function endRoomLifecycle() {
+      browserMediaLifecycleEnded = true;
       invalidatePendingBrowserMedia();
       roomLifecycleEnded = true;
       clearCapabilityRetryTimer();
