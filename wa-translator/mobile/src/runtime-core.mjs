@@ -73,6 +73,8 @@ export function parseRoomLink(value) {
     if (url.origin !== ACTIVE_PUBLIC_ORIGIN || url.hash) return null;
     const match = url.pathname.match(/^\/room\/([^/]+)$/);
     if (!match || !ROOM_TOKEN_PATTERN.test(match[1])) return null;
+    // `n` is accepted only for backwards compatibility with already-issued
+    // voice invitations. Current clients never generate or propagate it.
     const entries = [...url.searchParams.entries()];
     if (entries.some(([key]) => key !== "m" && key !== "n")
         || entries.filter(([key]) => key === "m").length > 1
@@ -92,13 +94,17 @@ export function parseNativeAuthLink(value) {
   if (!boundedLink(value)) return null;
   try {
     const url = new URL(value);
-    if (url.protocol !== `${MOBILE_AUTH_SCHEME}:` || url.hostname !== "auth" || url.search) return null;
+    if (url.protocol !== `${MOBILE_AUTH_SCHEME}:` || url.hostname !== "auth" || url.search) {
+      return null;
+    }
     const provider = url.pathname.match(/^\/(google|apple|facebook)$/)?.[1];
     if (!provider || !NATIVE_AUTH_PROVIDERS.has(provider)) return null;
     const params = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash);
     const entries = [...params.entries()];
     if (entries.length !== 1) return null;
-    if (entries[0][0] === "auth" && entries[0][1] === "failed") return {error: "failed", provider};
+    if (entries[0][0] === "auth" && entries[0][1] === "failed") {
+      return {error: "failed", provider};
+    }
     if (entries[0][0] !== "handoff" || !NATIVE_HANDOFF_PATTERN.test(entries[0][1])) return null;
     const parts = entries[0][1].split(".");
     if (parts[1] !== provider) return null;
@@ -148,20 +154,29 @@ export function roomPageUrl(token, mode) {
   return `room.html?${params.toString()}`;
 }
 
+/**
+ * Keep the host-control bearer behind the native secure-storage plug-in while
+ * leaving the bridge small enough to test without a device runtime.
+ * @param {{get(key: string): Promise<unknown>, set(key: string, value: string): Promise<unknown>, remove(key: string): Promise<unknown>}} adapter
+ */
 export function createSecureHostStorage(adapter) {
   return {
+    /** @param {string} key */
     async getItem(key) {
       const value = await adapter.get(key);
       return typeof value === "string" ? value : null;
     },
+    /** @param {string} key @param {string} value */
     async setItem(key, value) { await adapter.set(key, value); },
+    /** @param {string} key */
     async removeItem(key) { await adapter.remove(key); },
   };
 }
 
+/** @param {unknown} value @param {number} build */
 export function validateBootstrap(value, build) {
   if (!value || typeof value !== "object") return false;
-  const bootstrap = value;
+  const bootstrap = /** @type {Record<string, unknown>} */ (value);
   return bootstrap.protocol === MOBILE_PROTOCOL
     && Number.isSafeInteger(bootstrap.minimum_client_build)
     && Number(bootstrap.minimum_client_build) <= build
