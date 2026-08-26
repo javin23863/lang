@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const root = new URL("../www/", import.meta.url);
+const browserRuntime = new URL("../../windows/static/app-runtime.js", import.meta.url);
 
 test("prepared room has bounded reconnect and foreground recovery behavior", async () => {
   const source = await readFile(new URL("room.js", root), "utf8");
@@ -63,4 +64,45 @@ test("prepared room bounds ICE failure recovery without consuming TURN quota per
   assert.match(source, /response\.headers\.get\('Retry-After'\)/);
   assert.match(source, /scheduleTurnRefresh\(Math\.max\(30000, retryAfterMs\)\)/,
     "TURN rate limiting respects the server retry window");
+});
+
+test("browser and PWA rooms have bounded ICE recovery and TURN retry floors", async () => {
+  const source = await readFile(browserRuntime, "utf8");
+
+  assert.match(source, /const BROWSER_ICE_RESTART_WINDOW_MS = 60 \* 1000/);
+  assert.match(source, /const BROWSER_ICE_RESTART_MAX_PER_WINDOW = 3/);
+  assert.match(source, /function installBrowserRoomNetworkRecovery\(\) \{/);
+  assert.ok(source.includes('if (native || !/^\\/room\\/[^/]+$/.test(location.pathname)) return;'),
+    "recovery is limited to browser/PWA room routes and does not double-install in native");
+  assert.match(source, /window\.WebSocket = TrackingWebSocket/,
+    "browser room signalling is tracked without changing the room protocol");
+  assert.match(source, /window\.RTCPeerConnection = RecoveringRTCPeerConnection/);
+  assert.match(source, /const restartAttempts = new WeakMap\(\)/);
+  assert.match(source,
+    /!roomSocket \|\| roomSocket\.readyState !== NativeWebSocket\.OPEN/,
+    "ICE restart requires a live room signalling socket");
+  assert.match(source,
+    /\.filter\(attemptedAt => now - attemptedAt < BROWSER_ICE_RESTART_WINDOW_MS\)/,
+    "browser ICE restart attempts use a rolling window");
+  assert.match(source,
+    /attempts\.length >= BROWSER_ICE_RESTART_MAX_PER_WINDOW/,
+    "browser ICE restart is bounded per peer");
+  assert.match(source, /pc\.restartIce\(\)/,
+    "failed browser ICE immediately requests renegotiation");
+
+  const iceHandler = source.slice(
+    source.indexOf('pc.addEventListener("iceconnectionstatechange"'),
+    source.indexOf("return pc;", source.indexOf('pc.addEventListener("iceconnectionstatechange"')),
+  );
+  assert.doesNotMatch(iceHandler, /fetch|scheduleTurnRefresh|\/api\/turn/,
+    "a browser ICE failure must not consume a TURN credential request");
+
+  assert.match(source, /url\.pathname !== "\/api\/turn"/);
+  assert.match(source, /response\.status === 429/);
+  assert.match(source, /response\.headers\.get\("Retry-After"\)/);
+  assert.match(source,
+    /turnRetryNotBefore = Date\.now\(\) \+ Math\.max\(30000, retryAfterMs\)/);
+  assert.match(source,
+    /original\(Math\.max\(Number\(delay\) \|\| 0, retryFloor\)\)/,
+    "browser TURN retries cannot run before the server retry window");
 });

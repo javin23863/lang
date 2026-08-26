@@ -1,7 +1,7 @@
 // Cache only the credential-free dashboard shell. Room bearer URLs, APIs,
 // authentication, captions and any request carrying user state are always
 // network-only and must never enter persistent browser Cache Storage.
-const CACHE_NAME = 'lingua-relay-shell-v4';
+const CACHE_NAME = 'lingua-relay-shell-v5';
 const CACHE_PREFIX = 'lingua-relay-shell-';
 const SHELL_PATHS = new Set([
   '/',
@@ -24,6 +24,10 @@ const SHELL_PATHS = new Set([
   '/manifest.webmanifest',
 ]);
 const DASHBOARD_PATHS = new Set(['/', '/index.html']);
+// app-runtime.js also runs inside browser/PWA room pages. It carries transport
+// recovery policy, so online clients must prefer the deployed copy while still
+// retaining the credential-free shell copy as an offline dashboard fallback.
+const NETWORK_FIRST_SHELL_PATHS = new Set(['/app-runtime.js']);
 
 function requestUrl(request) {
   try { return new URL(request.url); }
@@ -75,6 +79,18 @@ async function cachedShell(path) {
   return caches.match(canonicalShellRequest(path));
 }
 
+async function networkFirstShell(url) {
+  try {
+    // Fetch the canonical credential-free URL, not the intercepted browser
+    // request, so account cookies/headers never become part of shell delivery.
+    return await fetch(canonicalShellRequest(url.pathname));
+  } catch (error) {
+    const cached = await cachedShell(url.pathname);
+    if (cached) return cached;
+    throw error;
+  }
+}
+
 async function dashboardNavigation(request, url) {
   try {
     const cache = await refreshShell();
@@ -115,6 +131,12 @@ self.addEventListener('fetch', event => {
 
   if (url && sameOriginGet(request, url) && DASHBOARD_PATHS.has(url.pathname)) {
     event.respondWith(dashboardNavigation(request, url));
+    return;
+  }
+
+  if (url && cacheableShellRequest(request, url)
+      && NETWORK_FIRST_SHELL_PATHS.has(url.pathname)) {
+    event.respondWith(networkFirstShell(url));
     return;
   }
 

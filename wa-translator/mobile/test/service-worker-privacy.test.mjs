@@ -8,9 +8,9 @@ const root = new URL("../www/", import.meta.url);
 test("service worker caches only coherent credential-free dashboard shell generations", async () => {
   const source = await readFile(new URL("sw.js", root), "utf8");
 
-  assert.match(source, /const CACHE_NAME = 'lingua-relay-shell-v4'/);
+  assert.match(source, /const CACHE_NAME = 'lingua-relay-shell-v5'/);
   for (const safe of [
-    "'/index.html'", "'/design-tokens.css'", "'/dashboard.css'",
+    "'/index.html'", "'/design-tokens.css'", "'/dashboard.css'", "'/app-runtime.js'",
     "'/dashboard-api.js'", "'/dashboard-room-controller.js'", "'/product-events.js'",
     "'/icon.svg'", "'/manifest.webmanifest'",
   ]) assert.ok(source.includes(safe), `safe shell includes ${safe}`);
@@ -55,6 +55,24 @@ test("service worker caches only coherent credential-free dashboard shell genera
   ]) assert.ok(!shellBlock.toLowerCase().includes(forbidden), `shell allowlist excludes ${forbidden}`);
 });
 
+test("shared runtime is network-first online with credential-free cached fallback", async () => {
+  const source = await readFile(new URL("sw.js", root), "utf8");
+
+  assert.match(source,
+    /const NETWORK_FIRST_SHELL_PATHS = new Set\(\['\/app-runtime\.js'\]\)/,
+    "the shared room runtime cannot remain cache-first after transport fixes deploy");
+  assert.match(source, /async function networkFirstShell\(url\) \{/);
+  assert.match(source, /return await fetch\(canonicalShellRequest\(url\.pathname\)\)/,
+    "network-first runtime fetches use the credential-free canonical request");
+  assert.match(source, /const cached = await cachedShell\(url\.pathname\)/);
+  assert.match(source, /if \(cached\) return cached/,
+    "the previous credential-free runtime remains an offline fallback");
+  assert.match(source,
+    /cacheableShellRequest\(request, url\)\s+&& NETWORK_FIRST_SHELL_PATHS\.has\(url\.pathname\)/,
+    "only an admitted fixed shell URL can enter the network-first path");
+  assert.match(source, /event\.respondWith\(networkFirstShell\(url\)\)/);
+});
+
 test("service worker admission helpers reject query/cross-origin state and canonicalize cache requests", async () => {
   const source = await readFile(new URL("sw.js", root), "utf8");
   const definitions = source.slice(0, source.indexOf("self.addEventListener('install'"));
@@ -74,6 +92,8 @@ test("service worker admission helpers reject query/cross-origin state and canon
   }
 
   assert.equal(admitted("https://lingua.test/dashboard.css"), true);
+  assert.equal(admitted("https://lingua.test/app-runtime.js"), true);
+  assert.equal(admitted("https://lingua.test/app-runtime.js?v=stale-bypass"), false);
   assert.equal(admitted("https://lingua.test/dashboard.css?token=secret"), false);
   assert.equal(admitted("https://evil.test/dashboard.css"), false);
   assert.equal(admitted("https://lingua.test/api/me"), false);
