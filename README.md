@@ -9,6 +9,9 @@ The authoritative Version 1.0 product boundary is
 authentication, monetization, privacy, native-link behavior, or release gates.
 The implementation/gate status is tracked in
 [`wa-translator/mobile/LAUNCH-CHECKLIST.md`](wa-translator/mobile/LAUNCH-CHECKLIST.md).
+The current development/product-test checkpoint is
+[`PRODUCT-TEST-HANDOFF.md`](PRODUCT-TEST-HANDOFF.md); it states what can actually
+be exercised now and what remains unverified.
 
 ## Version 1.0 product contract
 
@@ -181,11 +184,13 @@ Use these in order:
 1. [`RELEASE-1.0.md`](RELEASE-1.0.md) — Version 1.0 product boundary.
 2. [`wa-translator/mobile/LAUNCH-CHECKLIST.md`](wa-translator/mobile/LAUNCH-CHECKLIST.md)
    — implemented vs remaining release gates.
-3. [`wa-translator/mobile/STORE-DECLARATIONS.md`](wa-translator/mobile/STORE-DECLARATIONS.md)
+3. [`PRODUCT-TEST-HANDOFF.md`](PRODUCT-TEST-HANDOFF.md) — current development
+   checkpoint, test paths, and explicit unverified boundaries.
+4. [`wa-translator/mobile/STORE-DECLARATIONS.md`](wa-translator/mobile/STORE-DECLARATIONS.md)
    — store/privacy answers.
-4. [`wa-translator/mobile/REVIEW-INPUTS.md`](wa-translator/mobile/REVIEW-INPUTS.md)
+5. [`wa-translator/mobile/REVIEW-INPUTS.md`](wa-translator/mobile/REVIEW-INPUTS.md)
    — owner-provided store-review inputs.
-5. Runtime code/tests and `CLOUD-ARCHITECTURE.md` — implementation detail.
+6. Runtime code/tests and `CLOUD-ARCHITECTURE.md` — implementation detail.
 
 The following are retained as dated history/research and may describe superseded
 beta behavior: `MOBILE-STORE-PLAN.md`, `MOBILE-STORE-HANDOFF.md`,
