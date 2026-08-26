@@ -23,4 +23,20 @@ describe("browser media lifecycle deployment", () => {
     expect(source).toContain("browserMediaLifecycleEnded = true");
     expect(source).toContain("invalidatePendingBrowserMedia()");
   });
+
+  it("serves generation-owned media promises and camera completion guards", async () => {
+    const response = await exports.default.fetch(`${ORIGIN}/qr.js`);
+    expect(response.status).toBe(200);
+
+    const source = await response.text();
+    expect(source).toContain("const browserMediaTasks = new Map()");
+    expect(source).toContain("function lifecycleMediaTask(kind, roomGetter)");
+    expect(source).toContain("current?.generation === generation");
+    expect(source).toContain("browserMediaTasks.get(kind)?.task === task");
+    expect(source).toContain("track.onended = event => {");
+    expect(source).toContain("getAudioMedia = function lifecycleAwareGetAudioMedia");
+    expect(source).toContain("getVideoMedia = function lifecycleAwareGetVideoMedia");
+    expect(source).toContain("camButton.onclick = async () => {");
+    expect(source).toContain('setStatus("status.cameraUnavailable", null, true)');
+  });
 });
