@@ -474,6 +474,60 @@
       abortControlRequests(preserveReportRequest);
     }
 
+    function quiesceRoomForReport() {
+      if (typeof setMicEnabled === "function") {
+        try { setMicEnabled(false); } catch (_) {}
+      } else if (typeof micOn !== "undefined") {
+        micOn = false;
+      }
+      if (typeof camOn !== "undefined") camOn = false;
+
+      const camButton = document.getElementById("camBtn");
+      const voiceButton = document.getElementById("voiceBtn");
+      const leaveButton = document.getElementById("leaveBtn");
+      if (micButton) micButton.disabled = true;
+      if (camButton) {
+        camButton.disabled = true;
+        camButton.classList?.add("off");
+      }
+      if (voiceButton) voiceButton.disabled = true;
+      if (leaveButton) leaveButton.disabled = true;
+      if (typeof setChatEnabled === "function") {
+        try { setChatEnabled(false); } catch (_) {}
+      }
+      if (typeof failVoice === "function") {
+        try { failVoice(); } catch (_) {}
+      } else if (typeof cancelSpeech === "function") {
+        try { cancelSpeech(); } catch (_) {}
+      }
+
+      if (typeof peers !== "undefined" && peers && typeof peers.values === "function") {
+        for (const state of peers.values()) {
+          try { state?.pc?.close?.(); } catch (_) {}
+        }
+        peers.clear?.();
+      }
+      if (typeof mediaStream !== "undefined" && mediaStream) {
+        stopCapturedBrowserStream(mediaStream);
+        mediaStream = null;
+      }
+      if (typeof audioMediaPromise !== "undefined") audioMediaPromise = null;
+      if (typeof videoMediaPromise !== "undefined") videoMediaPromise = null;
+      if (typeof audioInputNode !== "undefined" && audioInputNode) {
+        try { audioInputNode.disconnect(); } catch (_) {}
+        audioInputNode = null;
+      }
+      if (typeof workletNode !== "undefined") workletNode = null;
+      if (typeof audioCtx !== "undefined" && audioCtx) {
+        const context = audioCtx;
+        audioCtx = null;
+        try { Promise.resolve(context.close()).catch(() => {}); } catch (_) {}
+      }
+      if (typeof endCall === "function") {
+        try { endCall("call.ended"); } catch (_) {}
+      }
+    }
+
     function canRetryCapabilities() {
       // These bindings are declared by the room's classic inline script before
       // this deferred classic script executes. Guard every access anyway so the
@@ -595,7 +649,10 @@
       // the click dispatch so cancelling the confirmation does not end a room
       // or invalidate a permission request the user still intends to finish.
       queueMicrotask(() => {
-        if (reportButton.disabled) endRoomLifecycle(true);
+        if (reportButton.disabled) {
+          quiesceRoomForReport();
+          endRoomLifecycle(true);
+        }
       });
     }, {capture: true});
 
