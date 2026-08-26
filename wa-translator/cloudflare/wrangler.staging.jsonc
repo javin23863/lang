@@ -4,7 +4,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "spoken-translation-room-staging",
-  "main": "src/session-issuance-entry.ts",
+  "main": "src/staging-release-entry.ts",
   "compatibility_date": "2026-08-13",
   "upload_source_maps": true,
   "observability": {
@@ -37,6 +37,7 @@
   ],
   "vars": {
     "TURN_TTL_SECONDS": "3600",
-    "PUBLIC_ORIGIN": "https://spoken-translation-room-staging.spoken-translation-cloudflare.workers.dev"
+    "PUBLIC_ORIGIN": "https://spoken-translation-room-staging.spoken-translation-cloudflare.workers.dev",
+    "RELEASE_SHA": "__RELEASE_SHA__"
   }
 }
