@@ -6,7 +6,11 @@ export { AbuseGate, ReportInbox, Room, UserDirectory };
 type Env = WorkerEnv & { RELEASE_SHA?: string };
 
 const RELEASE_SHA_PATTERN = /^[0-9a-f]{40}$/;
-const CAPABILITY_PATHS = new Set(["/api/capabilities", "/api/v1/capabilities"]);
+const RELEASE_IDENTITY_PATHS = new Set([
+  "/api/capabilities",
+  "/api/v1/capabilities",
+  "/api/v1/mobile/bootstrap",
+]);
 
 function unavailable(response?: Response): Response {
   const headers = new Headers(response?.headers);
@@ -21,7 +25,7 @@ async function withReleaseIdentity(
   env: Env,
 ): Promise<Response> {
   const pathname = new URL(request.url).pathname;
-  if (request.method !== "GET" || !CAPABILITY_PATHS.has(pathname)) return response;
+  if (request.method !== "GET" || !RELEASE_IDENTITY_PATHS.has(pathname)) return response;
   if (!RELEASE_SHA_PATTERN.test(env.RELEASE_SHA || "")) {
     await response.body?.cancel().catch(() => {});
     return unavailable(response);
