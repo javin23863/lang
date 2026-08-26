@@ -1,6 +1,7 @@
 // A real user journey: open the room, pick a language, join, turn on the mic
 // and camera, open settings, and look at what is actually on the screen.
 import { open } from "./cdp.mjs";
+import { acceptRoomTerms } from "./room-consent.mjs";
 import { sessionToken } from "./session.mjs";
 
 const ORIGIN = process.env.LINGUA_ORIGIN || "http://127.0.0.1:8788";
@@ -10,15 +11,18 @@ const tag = process.argv[3] || locale.toLowerCase();
 const port = Number(process.argv[4] || 9333);
 const width = Number(process.argv[5] || 390);
 
-// Room creation is session-gated: mint (or take from LINGUA_SESSION) the same
-// cookie the dashboard check uses. The journey itself joins as a guest.
+// Room creation is session-gated. LINGUA_SESSION must belong to a live test
+// account on this Worker origin; the browser below still joins cookie-free as
+// an invited participant.
 const session = await sessionToken();
-if (!session) console.log("  set ROOM_SIGNING_KEY or LINGUA_SESSION — creation will 401 without it");
-const room = await fetch(`${ORIGIN}/api/rooms`, {
+const created = await fetch(`${ORIGIN}/api/rooms`, {
   method: "POST",
-  headers: { Origin: ORIGIN, Accept: "application/json",
-             ...(session ? { Cookie: `lr_s=${session}` } : {}) },
-}).then(r => r.json());
+  headers: {Origin: ORIGIN, Accept: "application/json", Cookie: `lr_s=${session}`},
+});
+if (created.status !== 201) {
+  throw new Error(`browser journey could not create room (HTTP ${created.status})`);
+}
+const room = await created.json();
 
 const { page, close } = await open({ origin: ORIGIN, port });
 const failures = [];
@@ -54,12 +58,15 @@ try {
   })`);
   console.log(JSON.stringify(gate, null, 2));
   check("gate is translated", gate.heading !== "Choose language" || locale.startsWith("en"), gate.heading);
-  check("terms pre-checked", gate.checked === true);
-  check("join enabled", gate.disabled === false);
+  check("terms start unchecked", gate.checked === false, String(gate.checked));
+  check("join locked until terms", gate.disabled === true, String(gate.disabled));
   check("document language set", gate.lang === locale, gate.lang);
   await page.shot(`${SHOTS}/gate-${tag}.png`);
 
   console.log("\n[join]");
+  const consent = await acceptRoomTerms(page);
+  check("terms acceptance recorded", consent.after.checked === true, String(consent.after.checked));
+  check("join enabled after terms", consent.after.disabled === false, String(consent.after.disabled));
   await page.tap("#joinBtn");
   await page.eval("new Promise(r => setTimeout(r, 1500))");
   const joined = await page.eval(`({

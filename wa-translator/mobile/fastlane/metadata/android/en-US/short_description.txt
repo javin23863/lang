@@ -1,1 +1,1 @@
-Private video calls with live translated captions and optional translated voice.
+Private video, voice & text chat with live translated captions.

@@ -3,6 +3,14 @@
   "name": "spoken-translation-room",
   "main": "src/session-issuance-entry.ts",
   "compatibility_date": "2026-08-13",
+  "upload_source_maps": true,
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": false
+    }
+  },
   "rules": [
     { "type": "Text", "globs": ["**/*.html"], "fallthrough": true }
   ],

@@ -7,6 +7,8 @@ const USAGE_PENDING_KEY = "usagePendingV1";
 const USAGE_RETRY_MS = 5 * 60 * 1000;
 const ALARM_FLOOR_MS = 1_000;
 const DELIVERY_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
+const BLOCK_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
+const BLOCK_LIST_LIMIT = 128;
 
 type RoomBaseShape = {
   ctx: DurableObjectState;
@@ -25,7 +27,13 @@ type RoomBaseShape = {
 // lifecycle.
 const RoomBase = WorkerRoom as unknown as new (...args: any[]) => RoomBaseShape;
 
-type SocketAttachment = { joined?: unknown; lastSeenAt?: unknown } | null;
+type SocketAttachment = {
+  id?: unknown;
+  joined?: unknown;
+  lastSeenAt?: unknown;
+  blockId?: unknown;
+  blockedIds?: unknown;
+} | null;
 type RoomUsage = { callMs: number; chat: number; tts: number };
 type PendingUsage = RoomUsage & { deliveryId: string };
 type UsageKind = "call" | "chat" | "tts";
@@ -33,7 +41,7 @@ type UsageSnapshot = { usage: PendingUsage; wasPending: boolean };
 
 const EMPTY_USAGE: RoomUsage = {callMs: 0, chat: 0, tts: 0};
 
-function withTwoPartyLimit(message: object): object {
+function withTwoPartyLimit(message: object): Record<string, unknown> {
   const value = {...message} as Record<string, unknown>;
   if ("participant_limit" in value) value.participant_limit = PARTICIPANT_LIMIT;
   if (value.type === "room_full") value.limit = PARTICIPANT_LIMIT;
@@ -55,6 +63,21 @@ function usageDeliveryId(): string {
   return base64url(crypto.getRandomValues(new Uint8Array(8)));
 }
 
+function fallbackBlockId(): string {
+  return base64url(crypto.getRandomValues(new Uint8Array(16)));
+}
+
+function blockList(value: unknown): string[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > BLOCK_LIST_LIMIT) return null;
+  const unique = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "string" || !BLOCK_ID_PATTERN.test(item)) return null;
+    unique.add(item);
+  }
+  return [...unique];
+}
+
 async function roomUsageRef(roomId: string): Promise<string> {
   return base64url(await crypto.subtle.digest(
     "SHA-256", new TextEncoder().encode(roomId)
@@ -64,17 +87,68 @@ async function roomUsageRef(roomId: string): Promise<string> {
 export class Room extends RoomBase {
   private usageFlush: Promise<void> | null = null;
 
-  private joinedCount(now = Date.now()): number {
-    return this.ctx.getWebSockets("browser").filter(socket => {
+  private joinedAttachments(now = Date.now()): SocketAttachment[] {
+    return this.ctx.getWebSockets("browser").flatMap(socket => {
       const value = socket.deserializeAttachment() as SocketAttachment;
-      // Match WorkerRoom's lease boundary. Expired joined sockets must reach the
-      // base join path so its sweep can evict them; counting them here would
-      // reject a legitimate replacement participant before that sweep runs.
       return value?.joined === true
         && typeof value.lastSeenAt === "number"
         && Number.isFinite(value.lastSeenAt)
-        && now - value.lastSeenAt < PRESENCE_LEASE_MS;
-    }).length;
+        && now - value.lastSeenAt < PRESENCE_LEASE_MS ? [value] : [];
+    });
+  }
+
+  private joinedCount(now = Date.now()): number {
+    return this.joinedAttachments(now).length;
+  }
+
+  private blockIdForParticipant(id: unknown): string | null {
+    if (typeof id !== "string") return null;
+    for (const value of this.joinedAttachments()) {
+      if (value?.id === id && typeof value.blockId === "string"
+          && BLOCK_ID_PATTERN.test(value.blockId)) return value.blockId;
+    }
+    return null;
+  }
+
+  private withParticipantBlockId(value: unknown): unknown {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+    const record = {...value as Record<string, unknown>};
+    const blockId = this.blockIdForParticipant(record.id);
+    if (blockId) record.block_id = blockId;
+    return record;
+  }
+
+  private withSafetyContract(message: object): Record<string, unknown> {
+    const value = withTwoPartyLimit(message);
+    if (value.type === "welcome" && Array.isArray(value.peers)) {
+      value.peers = value.peers.map(peer => this.withParticipantBlockId(peer));
+    } else if (value.type === "peer_join" || value.type === "peer_update") {
+      const enriched = this.withParticipantBlockId(value);
+      if (enriched && typeof enriched === "object" && !Array.isArray(enriched)) {
+        return enriched as Record<string, unknown>;
+      }
+    } else if (value.type === "signal") {
+      const blockId = this.blockIdForParticipant(value.from);
+      if (blockId) value.from_block_id = blockId;
+    } else if (value.type === "caption" || value.type === "chat") {
+      const blockId = this.blockIdForParticipant(value.speaker);
+      if (blockId) value.speaker_block_id = blockId;
+    }
+    return value;
+  }
+
+  private blockedRelationship(blockId: string, blockedIds: string[]): boolean {
+    for (const peer of this.joinedAttachments()) {
+      const peerBlockId = typeof peer?.blockId === "string" && BLOCK_ID_PATTERN.test(peer.blockId)
+        ? peer.blockId : null;
+      const peerBlockedIds = Array.isArray(peer?.blockedIds)
+        ? peer.blockedIds.filter((item): item is string =>
+          typeof item === "string" && BLOCK_ID_PATTERN.test(item)) : [];
+      if ((peerBlockId && blockedIds.includes(peerBlockId)) || peerBlockedIds.includes(blockId)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // WorkerRoom's private helper is ordinary prototype dispatch at runtime. All
@@ -82,7 +156,7 @@ export class Room extends RoomBase {
   // output therefore passes through this method without copying its protocol.
   private send(socket: WebSocket, message: object): void {
     try {
-      socket.send(JSON.stringify(withTwoPartyLimit(message)));
+      socket.send(JSON.stringify(this.withSafetyContract(message)));
     } catch {
       socket.close(1011, "send failed");
     }
@@ -253,18 +327,41 @@ export class Room extends RoomBase {
         const attachment = socket.deserializeAttachment() as SocketAttachment;
         if (value && typeof value === "object" && !Array.isArray(value)
             && (value as Record<string, unknown>).type === "join"
-            && attachment?.joined !== true && this.joinedCount() >= PARTICIPANT_LIMIT) {
-          this.send(socket, {
-            type: "room_full",
-            limit: PARTICIPANT_LIMIT,
-            participant_count: PARTICIPANT_LIMIT,
-          });
-          socket.close(1013, "room full");
-          return;
+            && attachment !== null && attachment.joined !== true) {
+          const join = value as Record<string, unknown>;
+          if (join.block_id !== undefined
+              && (typeof join.block_id !== "string" || !BLOCK_ID_PATTERN.test(join.block_id))) {
+            socket.close(1008, "invalid participant safety id");
+            return;
+          }
+          const blockedIds = blockList(join.blocked_ids);
+          if (!blockedIds) {
+            socket.close(1008, "invalid participant block list");
+            return;
+          }
+          const blockId = typeof join.block_id === "string" ? join.block_id : fallbackBlockId();
+          if (this.blockedRelationship(blockId, blockedIds)) {
+            this.send(socket, {type: "peer_blocked"});
+            socket.close(1008, "participant blocked");
+            return;
+          }
+          attachment.blockId = blockId;
+          attachment.blockedIds = blockedIds;
+          socket.serializeAttachment(attachment);
+
+          if (this.joinedCount() >= PARTICIPANT_LIMIT) {
+            this.send(socket, {
+              type: "room_full",
+              limit: PARTICIPANT_LIMIT,
+              participant_count: PARTICIPANT_LIMIT,
+            });
+            socket.close(1013, "room full");
+            return;
+          }
         }
       } catch {
         // WorkerRoom owns invalid-control-message handling. Only a valid join
-        // needs the early capacity check above.
+        // needs the early product-contract checks above.
       }
     }
     await super.webSocketMessage(socket, message);

@@ -20,158 +20,259 @@
   --bubble-other-sub:#9DB5B0;
   --focus:#73CFF2;
   --shadow:0 18px 48px rgba(0,0,0,.36);
+  --glass:rgba(8,24,20,.82);
+  --glass-strong:rgba(8,24,20,.94);
 }
 
 body{
   min-height:100dvh;
   background:
-    radial-gradient(circle at 50% -12%,rgba(7,94,84,.34),transparent 35%),
-    var(--bg);
+    radial-gradient(circle at 50% -12%,rgba(7,94,84,.38),transparent 35%),
+    linear-gradient(180deg,#071310 0%,var(--bg) 46%,#040B09 100%);
 }
 
+/* Video is the primary live-call surface. Keep the remote person visually
+   dominant while preserving the canonical media elements and audio path. */
 #stage{
+  height:min(42vh,430px);
+  min-height:220px;
   background:#020706;
-  border-bottom:1px solid var(--separator);
+  border-bottom:1px solid color-mix(in srgb,var(--accent) 12%,var(--separator));
+  box-shadow:0 18px 42px rgba(0,0,0,.28);
 }
 #remoteVideo{background:#020706}
 #selfWrap{
-  right:max(10px,env(safe-area-inset-right));
-  bottom:12px;
-  border-radius:16px;
-  border:1px solid rgba(100,212,195,.24);
+  right:max(12px,env(safe-area-inset-right));
+  bottom:14px;
+  width:min(30vw,152px);
+  max-width:152px;
+  border-radius:20px;
+  border:1px solid rgba(100,212,195,.32);
   background:var(--card);
-  box-shadow:0 10px 28px rgba(0,0,0,.46);
+  box-shadow:0 14px 36px rgba(0,0,0,.54),0 0 0 1px rgba(255,255,255,.04) inset;
 }
 #status{
-  top:calc(10px + env(safe-area-inset-top));
-  padding:7px 12px;
+  top:calc(12px + env(safe-area-inset-top));
+  padding:8px 13px;
   color:var(--label);
-  background:rgba(6,17,15,.82);
-  border:1px solid rgba(100,212,195,.18);
+  background:var(--glass);
+  border:1px solid rgba(100,212,195,.22);
+  box-shadow:0 6px 18px rgba(0,0,0,.2);
+  font-weight:650;
 }
 #participantCount{
-  top:calc(10px + env(safe-area-inset-top));
-  left:max(9px,env(safe-area-inset-left));
-  background:rgba(6,17,15,.82);
-  border:1px solid rgba(100,212,195,.18);
+  top:calc(12px + env(safe-area-inset-top));
+  left:max(11px,env(safe-area-inset-left));
+  padding:8px 11px;
+  background:var(--glass);
+  border:1px solid rgba(100,212,195,.22);
+  box-shadow:0 6px 18px rgba(0,0,0,.2);
+  font-weight:650;
 }
 html[dir=rtl] #participantCount{
-  right:max(9px,env(safe-area-inset-right));
+  right:max(11px,env(safe-area-inset-right));
   left:auto;
 }
 #videoNote{
   color:var(--label-2);
-  background:linear-gradient(180deg,#020706,#06110F);
+  background:
+    radial-gradient(circle at 50% 30%,rgba(100,212,195,.08),transparent 30%),
+    linear-gradient(180deg,#020706,#06110F);
 }
 
+/* Translated conversation is a first-class thread, not a debug transcript. */
 #captions{
   scrollbar-width:thin;
   scrollbar-color:var(--separator) transparent;
   padding-inline:max(clamp(12px,3vw,28px),env(safe-area-inset-left)) max(clamp(12px,3vw,28px),env(safe-area-inset-right));
+  padding-top:18px;
+  padding-bottom:14px;
+  gap:9px;
+  background:
+    linear-gradient(180deg,rgba(100,212,195,.025),transparent 24%),
+    var(--bg);
 }
-#captionEmpty{color:var(--label-2)}
+#captionEmpty{
+  color:var(--label-2);
+  padding:22px;
+  border:1px dashed color-mix(in srgb,var(--separator) 78%,transparent);
+  border-radius:18px;
+  background:rgba(13,28,25,.42);
+}
 .msg{
+  padding:11px 14px;
   border:1px solid transparent;
-  box-shadow:0 4px 16px rgba(0,0,0,.12);
+  border-radius:19px;
+  box-shadow:0 6px 22px rgba(0,0,0,.14);
 }
-.msg.mine{border-color:rgba(100,212,195,.18)}
-.msg.theirs{border-color:var(--separator)}
+.msg.mine{
+  border-color:rgba(100,212,195,.22);
+  box-shadow:0 7px 24px rgba(7,94,84,.18);
+}
+.msg.theirs{
+  border-color:var(--separator);
+  background:color-mix(in srgb,var(--bubble-other) 92%,#000);
+}
+.msg .who{font-weight:700;letter-spacing:.035em;text-transform:uppercase}
+.msg .lead{font-size:18px;line-height:1.38;font-weight:590;letter-spacing:-.012em}
+.msg .sub{margin-top:5px;font-size:13px;line-height:1.38;opacity:.9}
 
+/* One anchored control dock for video/chat. The microphone remains the strongest
+   reversible action; leave/report remain visually distinct from daily controls. */
 #bar{
-  background:rgba(13,28,25,.94);
-  border-top:1px solid var(--separator);
+  background:var(--glass-strong);
+  border-top:1px solid color-mix(in srgb,var(--accent) 12%,var(--separator));
+  padding-top:11px;
+  padding-bottom:calc(11px + env(safe-area-inset-bottom));
   padding-left:max(clamp(8px,2vw,20px),env(safe-area-inset-left));
   padding-right:max(clamp(8px,2vw,20px),env(safe-area-inset-right));
+  box-shadow:0 -14px 36px rgba(0,0,0,.24);
 }
-button,.icon,.setting select,#chatInput{
-  border:1px solid var(--separator);
-}
-button{transition:transform .12s ease,background-color .15s ease,border-color .15s ease,opacity .15s ease}
+button,.icon,.setting select,#chatInput{border:1px solid var(--separator)}
+button{transition:transform .12s ease,background-color .15s ease,border-color .15s ease,opacity .15s ease,box-shadow .15s ease}
 button:active:not(:disabled){transform:scale(.98)}
 #micBtn{
   background:var(--accent);
   color:#06231E;
   border-color:transparent;
-  font-weight:750;
+  font-weight:780;
+  box-shadow:0 8px 22px rgba(100,212,195,.16);
 }
-#micBtn.on{background:var(--destructive);color:#240907}
-.icon{background:var(--card-2);color:var(--label)}
+#micBtn.on{background:var(--destructive);color:#240907;box-shadow:0 8px 22px rgba(255,129,123,.15)}
+.icon{
+  background:color-mix(in srgb,var(--card-2) 94%,#000);
+  color:var(--label);
+  border-color:color-mix(in srgb,var(--separator) 86%,transparent);
+  box-shadow:inset 0 1px rgba(255,255,255,.035);
+}
 .icon.off{background:#10211E;color:var(--label-2)}
+.icon:hover:not(:disabled){border-color:color-mix(in srgb,var(--accent) 35%,var(--separator))}
 
 #settings,#roomMenu{border-top-color:var(--separator)}
+#settings{padding-top:12px}
 #roomMenu{
-  margin-top:2px;
-  padding:12px;
-  border:1px solid var(--separator);
-  border-radius:16px;
-  background:var(--card);
+  margin-top:4px;
+  padding:14px;
+  gap:10px;
+  border:1px solid color-mix(in srgb,var(--accent) 14%,var(--separator));
+  border-radius:18px;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--card-2) 55%,var(--card)),var(--card));
   box-shadow:var(--shadow);
 }
-.shareApp{color:var(--accent);border-color:transparent;background:transparent}
-.setting select{background:var(--card-2)}
-.capability{background:var(--card-2)}
-.capability.warning{background:#332614;color:#FFC66D}
-#reportBtn{color:var(--destructive)}
+.shareApp{color:var(--accent);border-color:transparent;background:transparent;font-weight:650}
+.setting select{background:var(--card-2);border-color:transparent}
+.capability{background:var(--card-2);border:1px solid var(--separator)}
+.capability.warning{background:#332614;color:#FFC66D;border-color:rgba(255,198,109,.18)}
+#reportBtn{color:var(--destructive);border-top:1px solid var(--separator);margin-top:2px;padding-top:12px}
 
+/* Join/terms is a deliberate entry screen. It remains affirmative and version-
+   bound in room.js; this layer only improves hierarchy and readability. */
 #roleGate{
   padding:
     calc(18px + env(safe-area-inset-top))
     max(18px,env(safe-area-inset-right))
     calc(18px + env(safe-area-inset-bottom))
     max(18px,env(safe-area-inset-left));
-  background:rgba(2,7,6,.78);
+  background:
+    radial-gradient(circle at 50% 12%,rgba(100,212,195,.16),transparent 34%),
+    rgba(2,7,6,.88);
 }
 .roleCard{
-  border:1px solid var(--separator);
-  border-radius:22px;
-  background:linear-gradient(180deg,#10231F,var(--card));
-  box-shadow:0 24px 72px rgba(0,0,0,.48);
+  width:min(100%,430px);
+  border:1px solid color-mix(in srgb,var(--accent) 22%,var(--separator));
+  border-radius:28px;
+  padding:clamp(24px,6vw,32px);
+  background:
+    linear-gradient(155deg,color-mix(in srgb,var(--accent) 8%,#10231F),var(--card) 46%);
+  box-shadow:0 30px 90px rgba(0,0,0,.58);
 }
-.roleCard .brand{color:var(--accent);font-weight:750;letter-spacing:.06em;text-transform:uppercase}
-.roleJoin{background:var(--accent);color:#06231E;font-weight:750;border-color:transparent}
+.roleCard .brand{
+  margin-bottom:10px;
+  color:var(--accent);
+  font-weight:800;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.roleCard h1{font-size:clamp(27px,7vw,34px);line-height:1.08;letter-spacing:-.035em;margin-bottom:22px}
+.roleLocale{gap:8px}
+.roleLocale select{min-height:50px;border:1px solid var(--separator);border-radius:14px;background:var(--card-2)}
+.roleCard .capability{margin:13px 0;padding:12px 13px;border-radius:13px}
+.termsAgree{
+  margin:18px 0;
+  padding:12px;
+  border-radius:14px;
+  background:rgba(100,212,195,.055);
+  border:1px solid rgba(100,212,195,.12);
+}
+.roleJoin{
+  min-height:56px;
+  border-radius:15px;
+  background:var(--accent);
+  color:#06231E;
+  font-weight:800;
+  border-color:transparent;
+  box-shadow:0 10px 28px rgba(100,212,195,.17);
+}
 .roleJoin.accept{background:var(--confirm);color:#06231E}
 #declineBtn{border-color:transparent}
 
-/* Voice calls use the Lingua visual system instead of reproducing a platform
-   Phone screen. The controls remain the exact same DOM/actions. */
+/* Voice calls use the same Lingua identity instead of imitating a platform
+   Phone screen. Controls keep their exact DOM/actions and three-column contract. */
 #callShell{
   padding:
-    calc(clamp(24px,7vh,64px) + env(safe-area-inset-top))
+    calc(clamp(30px,8vh,74px) + env(safe-area-inset-top))
     max(18px,env(safe-area-inset-right))
-    calc(18px + env(safe-area-inset-bottom))
+    calc(20px + env(safe-area-inset-bottom))
     max(18px,env(safe-area-inset-left));
   background:
-    radial-gradient(circle at 50% 8%,rgba(7,94,84,.42),transparent 38%),
+    radial-gradient(circle at 50% 16%,rgba(100,212,195,.2),transparent 28%),
+    radial-gradient(circle at 50% 18%,rgba(7,94,84,.46),transparent 44%),
     var(--bg);
 }
-.callWho{gap:8px}
-#callName{font-size:clamp(28px,8vw,38px);font-weight:760}
+.callWho{gap:9px;align-items:center;justify-items:center}
+.callWho::before{
+  content:"";
+  display:block;
+  width:92px;
+  height:92px;
+  margin-bottom:10px;
+  border-radius:50%;
+  background:
+    radial-gradient(circle at 40% 34%,rgba(255,255,255,.22),transparent 13%),
+    linear-gradient(145deg,var(--accent),#075E54);
+  border:4px solid rgba(100,212,195,.16);
+  box-shadow:0 18px 48px rgba(0,0,0,.3),0 0 0 1px rgba(255,255,255,.08) inset;
+}
+#callName{font-size:clamp(30px,8vw,40px);font-weight:790;letter-spacing:-.04em}
 #callState{
   justify-self:center;
   width:max-content;
   max-width:100%;
-  padding:6px 11px;
-  border:1px solid var(--separator);
+  padding:7px 12px;
+  border:1px solid color-mix(in srgb,var(--accent) 18%,var(--separator));
   border-radius:999px;
   background:rgba(13,28,25,.72);
   color:var(--label-2);
+  font-size:15px;
+  font-weight:650;
 }
-#callTimer{color:var(--accent);font-weight:650}
+#callTimer{color:var(--accent);font-weight:720;font-variant-numeric:tabular-nums}
 .callControls{
-  width:min(100%,360px);
+  width:min(100%,380px);
   grid-template-columns:repeat(3,minmax(0,1fr));
   gap:12px;
 }
 .callControls button{
   width:100%;
-  height:64px;
-  min-height:64px;
-  border-radius:18px;
-  border:1px solid var(--separator);
+  height:68px;
+  min-height:68px;
+  border-radius:20px;
+  border:1px solid color-mix(in srgb,var(--separator) 90%,transparent);
   background:var(--card-2);
   color:var(--label);
   font-size:14px;
-  font-weight:650;
+  font-weight:680;
+  box-shadow:inset 0 1px rgba(255,255,255,.035);
 }
 .callControls button.on{background:var(--accent);color:#06231E;border-color:transparent}
 #callEnd{
@@ -179,29 +280,57 @@ button:active:not(:disabled){transform:scale(.98)}
   background:var(--destructive);
   color:#240907;
   border-color:transparent;
+  box-shadow:0 10px 28px rgba(255,129,123,.14);
 }
 
+/* Chat composer is a lightweight input dock above the shared room controls. */
 #chatBar{
-  background:rgba(13,28,25,.94);
+  background:var(--glass-strong);
   border-top:1px solid var(--separator);
-  padding-left:max(clamp(8px,2vw,20px),env(safe-area-inset-left));
-  padding-right:max(clamp(8px,2vw,20px),env(safe-area-inset-right));
+  padding:9px max(clamp(9px,2vw,20px),env(safe-area-inset-right)) 9px max(clamp(9px,2vw,20px),env(safe-area-inset-left));
+  gap:9px;
+  box-shadow:0 -8px 24px rgba(0,0,0,.16);
 }
-#chatInput{background:var(--card-2)}
-#chatSend{background:var(--accent);color:#06231E;border-color:transparent}
+#chatInput{
+  min-height:48px;
+  border-radius:16px;
+  background:var(--card-2);
+  border-color:color-mix(in srgb,var(--separator) 90%,transparent);
+  padding-inline:14px;
+}
+#chatInput:focus{border-color:color-mix(in srgb,var(--accent) 48%,var(--separator))}
+#chatSend{
+  min-height:48px;
+  min-width:76px;
+  border-radius:16px;
+  background:var(--accent);
+  color:#06231E;
+  border-color:transparent;
+  font-weight:780;
+}
 
 @media(max-width:380px){
+  #stage{height:34vh;min-height:178px}
+  #selfWrap{width:min(31vw,122px);border-radius:17px}
   #bar{padding-left:max(7px,env(safe-area-inset-left));padding-right:max(7px,env(safe-area-inset-right))}
+  #captions{padding-top:12px;padding-bottom:10px;gap:7px}
+  .msg .lead{font-size:17px}
+  .roleCard{border-radius:24px;padding:22px 19px}
+  .callWho::before{width:80px;height:80px}
   .callControls{gap:8px}
-  .callControls button{height:58px;min-height:58px;border-radius:16px;font-size:13px}
+  .callControls button{height:60px;min-height:60px;border-radius:17px;font-size:13px}
+  #chatSend{min-width:68px;padding-inline:10px}
 }
 
 @media(orientation:landscape) and (max-height:560px){
-  #stage{height:42vh;min-height:120px}
+  #stage{height:48vh;min-height:120px}
+  #selfWrap{width:min(18vw,112px);bottom:8px;border-radius:14px}
   body[data-mode="voice"] #stage,body[data-mode="chat"] #stage{height:40px}
-  #callShell{padding-top:calc(12px + env(safe-area-inset-top));padding-bottom:calc(10px + env(safe-area-inset-bottom));gap:10px}
-  #callName{font-size:26px}
-  .callControls{max-width:460px;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+  #callShell{padding-top:calc(10px + env(safe-area-inset-top));padding-bottom:calc(9px + env(safe-area-inset-bottom));gap:8px}
+  .callWho::before{display:none}
+  #callName{font-size:27px}
+  #callState{padding-block:5px}
+  .callControls{max-width:520px;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
   .callControls button{height:52px;min-height:52px;border-radius:15px}
   #callEnd{grid-column:auto}
 }

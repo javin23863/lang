@@ -23,9 +23,12 @@ production origin. If the Worker origin is intentionally retained for launch, ma
 that an explicit release decision and verify it as the production origin.
 
 The deletion resource explains the authenticated browser deletion flow. A user who
-can sign in with the account's provider can delete immediately from the same web app.
-Do not route access-loss requests through the public GitHub issue tracker; a dedicated
-private support contact remains a pre-submission requirement below.
+can sign in with the account's provider can delete from the same web app. Successful
+deletion first closes every still-live room owned by the account; if all owned rooms
+cannot be confirmed closed, deletion fails and remains retryable instead of erasing
+the account while an invitation stays active. Do not route access-loss requests
+through the public GitHub issue tracker; a dedicated private support contact remains
+a pre-submission requirement below.
 
 ## Apple App Review
 
@@ -42,14 +45,27 @@ Before submitting version 1.0, the account owner must provide:
       graph, random matching, stranger pairing, or open room browsing**. A user
       can communicate with another participant only by possessing that private
       room invitation.
+- [ ] Review notes explain account deletion: room ownership is registered before
+      a newly created room bearer is returned. Delete account closes every still-
+      live room owned by the account before erasing account data, so its invite
+      stops working. A concurrent create cannot escape deletion; if room closure
+      cannot be confirmed, deletion fails closed and remains retryable.
 - [ ] Review notes explain the safety flow: first-time entry requires an
-      unchecked affirmative Terms checkbox for the current Terms version; a live
-      participant can submit a category-only **Report & block this room** action;
-      in the installed app, once the report is durably accepted, the backend
-      invalidates that private room so its invitation cannot continue or be
-      re-entered. The local client also leaves/blocks the room. Because guests
-      have no persistent cross-room identity or messaging graph, the room is the
-      complete service relationship between those two participants in v1.0.
+      unchecked affirmative Terms checkbox for the current Terms version. A live
+      participant has an independent **Block participant** action. Each install
+      carries a random pseudonymous safety ID plus a bounded device-local block
+      list; if either participant has blocked the other's safety ID, a later room
+      join is refused before that participant is admitted. The peer receives only
+      the safety ID needed for this safety function, never the local block list.
+      The category-only report action also adds the current participant to the
+      local block list; in the installed app, once the report is durably accepted,
+      the backend invalidates that current private room so its invitation cannot
+      continue or be re-entered. This creates no guest account, public profile,
+      searchable identity, discovery graph, or server-side block-history database.
+- [ ] Review notes explain that the safety ID is installation-scoped rather than
+      an account identity: clearing app/site data or reinstalling resets the ID
+      and local block list. Reviewers should demonstrate a future-room refusal
+      without expecting an account-level global block across independent installs.
 - [ ] Review notes explain that microphone/camera permission is requested only
       from explicit Call/Accept, microphone, or camera actions and never merely
       by opening the invitation.
@@ -72,9 +88,16 @@ Before submitting to review, the account owner must provide:
 - [ ] Confirmation that invited participants do not need an account and can join
       only using the private room link created by the reviewer; there is no
       public discovery, search, random matching, or stranger-chat surface.
-- [ ] Instructions for exercising Terms acceptance plus **Report & block this
-      room**, including confirmation that a successfully accepted installed-app
-      report invalidates the reported private room on the backend.
+- [ ] Instructions for verifying account deletion: create a room, delete the host
+      account, then confirm that the previously issued invitation is closed. If
+      owned-room shutdown cannot be confirmed, the deletion operation must fail
+      rather than claim success.
+- [ ] Instructions for exercising the independent **Block participant** action:
+      block the current peer on one install, then show that a later private-room
+      join presenting the same pseudonymous safety ID is refused before admission.
+      Also exercise the category-only report action; it adds that participant to
+      the local block list and a successfully accepted installed-app report
+      invalidates the reported current room on the backend.
 - [ ] Current Data safety, target audience/content rating, ads, and other App
       content declarations in Play Console based on `STORE-DECLARATIONS.md`.
 - [ ] Enter the final production external account-deletion URL ending in

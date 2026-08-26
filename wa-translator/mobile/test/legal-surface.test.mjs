@@ -25,10 +25,10 @@ test("public legal pages share current Lingua chrome and deletion remains discov
                         `${page} does not advertise the retired purchase preview`);
   }
 
-  // Policy text changed with the version 1.0 account/storage contract. Keep the
-  // public effective date tied to the source that actually ships those terms.
+  // Policy text changed with the participant-safety blocking/data contract on
+  // August 26. Keep the public effective date tied to the source that ships it.
   for (const page of ["privacy.html", "terms.html"]) {
-    assert.match(await read(page), /Effective August 25, 2026/,
+    assert.match(await read(page), /Effective August 26, 2026/,
                  `${page} carries the current policy effective date`);
   }
 
@@ -55,11 +55,15 @@ test("public legal pages share current Lingua chrome and deletion remains discov
                "account deletion explicitly removes logout-security metadata too");
   assert.match(privacy, /saved host-control token is removed from that device after a successful sign-out or account deletion/i,
                "device-local room administration cannot transfer to the next account on a shared device");
-  assert.match(privacy, /already-issued participant room remains independent and can continue until its normal expiry/i,
-               "clearing local administration does not falsely claim that account exit revokes an issued room bearer");
+  assert.match(privacy, /closes every still-live room owned by that account/i,
+               "successful account deletion revokes already-issued owned room invitations");
+  assert.match(privacy, /cannot confirm closure of all owned rooms, deletion does not report success/i,
+               "account deletion fails closed rather than orphaning a live invitation");
+  assert.doesNotMatch(privacy, /Rooms you created keep running until their links expire/i);
 
   const terms = await read("terms.html");
   assert.match(terms, /Version 1\.0 does not sell credits or accept in-app payments/);
+  assert.match(terms, /closes every still-live room owned by that account/i);
   assert.doesNotMatch(terms, /disabled/i,
                       "terms no longer describe an intentionally dead purchase control");
 
@@ -81,11 +85,14 @@ test("public legal pages share current Lingua chrome and deletion remains discov
                "account deletion remains available after uninstall");
   assert.match(deletion, /href="index\.html">Open Lingua Relay account controls<\/a>/,
                "the external resource leads to the browser account-deletion pathway");
-  assert.match(deletion, /Deletion is immediate/);
-  assert.match(deletion, /aggregate usage totals, and retained usage rows/);
-  assert.match(deletion, /expire no later than 24 hours/,
-               "the page accurately distinguishes account deletion from room-link expiry");
+  assert.match(deletion, /Deletion does not report success/i,
+               "the external deletion page documents fail-closed owned-room shutdown");
+  assert.match(deletion, /aggregate usage totals, retained usage rows/);
+  assert.match(deletion, /successful account deletion closes rooms owned by that account sooner/i,
+               "the page distinguishes normal room expiry from deletion-triggered closure");
   assert.match(deletion, /dedicated private product-support contact is required before store submission/i);
+  assert.doesNotMatch(deletion, /independent of the account after creation/i,
+                      "the retired orphan-room deletion contract cannot return");
   assert.doesNotMatch(deletion, /spoken-translation-cloudflare\.workers\.dev/,
                       "the Play deletion resource survives the eventual production-domain cutover");
 });

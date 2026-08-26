@@ -6,10 +6,11 @@ four-person experiments. Version 1.0 is a **two-person product**: one local
 participant and one remote participant.
 
 Automatic PR GitHub Actions may run during development and are useful diagnostic
-evidence, but they do **not** satisfy final release acceptance because pull-request
-runs check GitHub's synthetic merge ref. Checked build/automation items below mean
-the source/config for that gate exists; the exact frozen release commit must run
-the full credential-free matrix deliberately before signed beta/device gates.
+evidence, but they do **not** satisfy release acceptance because pull-request runs
+check GitHub's synthetic merge ref. Prelaunch branch push runs execute the same
+credential-free matrix on the literal pushed SHA and may be used as intermediate
+exact-head source acceptance. The final frozen release commit must still run the
+full credential-free matrix deliberately before signed beta/device gates.
 
 ## Product contract
 
@@ -26,13 +27,18 @@ the full credential-free matrix deliberately before signed beta/device gates.
 - [x] A room-creation session is accepted only while its `UserDirectory` account
   still exists. Account deletion immediately blocks old browser/native sessions
   from creating another room.
+- [x] Account deletion synchronously terminates every still-live room owned by
+  that account before returning success. Room ownership is registered before a
+  new bearer is returned; a short deletion fence closes the create/delete race,
+  and any unconfirmed room shutdown keeps deletion retryable rather than erasing
+  the account while an invitation remains active.
 - [x] The retired `POST /rooms` HTML-form creator is disabled; `/api/rooms` and
   its native versioned adapter are the only host room-creation contract.
 - [x] Account deletion is available in the app and removes account-held data.
-- [x] Successful logout/account deletion also removes the device-local saved
-  host-control bearer so a later account on a shared device cannot inherit room
-  administration. Already-issued participant rooms remain independent until
-  their normal expiry.
+- [x] Successful logout removes the device-local saved host-control bearer so a
+  later account on a shared device cannot inherit room administration. Successful
+  account deletion additionally closes every still-live room owned by the erased
+  account before the account data is removed.
 - [x] Version 1.0 is non-monetized: no purchase surface, stored credit balance,
   StoreKit product, or Google Play Billing product is part of the active app.
 - [x] New participant/share/QR/native room URLs contain only the signed room
@@ -135,7 +141,8 @@ the full credential-free matrix deliberately before signed beta/device gates.
   shared web/native assets.
 - [x] The Google Play external account-deletion resource is the production URL
   ending in `/delete-account.html`; it identifies Lingua Relay, works without
-  reinstalling the app, and routes into browser account controls.
+  reinstalling the app, documents owned-room shutdown, and routes into browser
+  account controls.
 - [x] Legal pages use one fail-closed room-return validator and preserve only
   `voice`/`chat` mode, never arbitrary origins or retired personal labels.
 - [x] Owner-supplied App Review / Play review inputs are enumerated in
@@ -167,6 +174,10 @@ the full credential-free matrix deliberately before signed beta/device gates.
   account's prior non-empty name/email instead of erasing them.
 - [x] Active account responses/storage retire the zero-only legacy credits field;
   successful profile reads/writes and usage writes all remove it.
+- [x] Account-owned live-room routing state is bounded to internal room ID/expiry
+  pairs, is never a room link or host-control bearer, is pruned no later than the
+  room's 24-hour lifetime, and exists only to close owned rooms during account
+  deletion. The create/delete race is covered by executable regression tests.
 - [x] Abuse reporting is category-only and excludes names, room links, message
   content, captions, audio, video, screenshots and free text.
 - [x] Category report records are enforced at a 30-day ceiling even on direct
@@ -176,8 +187,15 @@ the full credential-free matrix deliberately before signed beta/device gates.
   malformed routing metadata is stripped immediately.
 - [x] The operator moderation CLI reads its admin token only from the environment,
   exposes only the minimized queue, and can close a still-live room by report ID.
+- [x] Private-room participants have an installation-scoped random pseudonymous
+  safety ID and bounded local block list. Either participant's block is enforced
+  before a future room admission involving the same safety ID, the peer never
+  receives the local block list, and the service keeps no persistent block-history
+  database. Reporting also blocks the current peer locally; accepted installed-app
+  reports still close the current room on the backend.
 - [x] Store declarations are maintained in `STORE-DECLARATIONS.md` and match the
-  non-monetized account schema and report-retention lifetimes.
+  non-monetized account schema, owned-room shutdown, participant-safety contract,
+  and retention lifetimes.
 - [ ] Assign a monitored moderation operator/on-call owner and verify the live
   private queue before public store submission.
 - [ ] Complete the final App Store age-rating/export-compliance questionnaires
@@ -258,6 +276,9 @@ the full credential-free matrix deliberately before signed beta/device gates.
   2,100,000,000 ceiling.
 - [x] npm install scripts are version-pinned in `allowScripts`; workflow config
   uses `strict-allow-scripts=true` so a new unreviewed install script fails closed.
+- [x] Prelaunch branch pushes run the same credential-free product/Android/iOS
+  matrix on the literal event SHA; PR runs remain diagnostic synthetic merge-ref
+  evidence and must not be promoted as exact-head acceptance.
 - [ ] Run the complete credential-free test/build matrix against the exact final
   development commit.
 - [ ] Run the signed Android and iOS beta workflows against that same commit.
@@ -274,26 +295,18 @@ the full credential-free matrix deliberately before signed beta/device gates.
   preferred; do not invent one in source before it exists.
 - [ ] Provision live Google OAuth credentials/callback for that origin.
 - [ ] Provision live Apple Services ID, Key ID, private key and Team ID.
-- [ ] Provision Facebook only if it will actually be offered at launch.
-- [ ] Configure the production Android release certificate fingerprint in the
-  Worker association output.
-- [ ] Configure the production Apple Team ID in the Worker association output.
-- [ ] Add the required GitHub environment secrets for signed beta automation.
-- [ ] Enter the final production `/delete-account.html` URL in Play Console's
-  designated account-deletion field and verify it returns the public resource.
-- [ ] Run both signed beta workflows successfully and retain install receipts.
-- [ ] Create/verify the Play Console and App Store Connect records, agreements,
-  tax/banking state where applicable, pricing/availability and reviewer notes.
-
-## Known structural debt after P0
-
-`cloudflare/src/worker.ts` still contains the legacy four-person implementation
-that predates the version 1.0 decision. Production/dev Wrangler entry points use
-`src/session-issuance-entry.ts` → `src/account-guard-entry.ts` →
-`src/launch-entry.ts` → `src/mobile-entry.ts`, which exports the strict
-two-person `Room` wrapper. Installed clients independently fail closed on a
-different participant or native protocol contract. Do not deploy or export the
-base `worker.ts` `Room` directly. A later refactor should move the two-person and
-session-v2 invariants into the base implementation and delete the wrapper layers,
-but that refactor should be performed only with the complete room/auth suite
-available to run.
+- [ ] Provision Facebook only if it is intentionally enabled for the release;
+  its absence is supported and must not block Google/Apple launch.
+- [ ] Set every required Cloudflare/Modal secret and validate deployment config.
+- [ ] Run exact-SHA staging deploy/smoke, then production deploy/smoke with
+  telemetry correlation and the documented protected rollback lane.
+- [ ] Verify the live private moderation queue, assign a monitored operator, and
+  run the moderation closure drill against a disposable room.
+- [ ] Recapture the accepted UI states and promote screenshots only from a
+  successful exact-head browser capture manifest for the final release SHA.
+- [ ] Create the dedicated public product-support contact and publish it on the
+  production `/support` surface.
+- [ ] Complete App Store Connect and Google Play Console privacy, rating, access,
+  export-compliance, and release questionnaires from the final accepted behavior.
+- [ ] Run signed Play Internal/TestFlight uploads only after all source/runtime
+  gates above are frozen and green.

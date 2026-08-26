@@ -5,6 +5,142 @@
   const hostRoomKey = "live-translator.host-room.v1";
   const uiLanguageKey = "lingua-relay.ui-language";
 
+  // Browser/PWA calls use the shared room document directly, so they need the
+  // same bounded network-handoff policy that the native build applies while
+  // preparing its generated room asset. Keep this browser-only: native has
+  // stronger lifecycle state (`leaving`/`terminalRoom`) available in room.js.
+  const BROWSER_ICE_RESTART_WINDOW_MS = 60 * 1000;
+  const BROWSER_ICE_RESTART_MAX_PER_WINDOW = 3;
+  const BROWSER_BOOTSTRAP_FETCH_TIMEOUT_MS = 12000;
+
+  function installBrowserCapabilityBootstrapDeadline() {
+    if (native || !/^\/room\/[^/]+$/.test(location.pathname)
+        || typeof window.fetch !== "function") return;
+    const nativeFetch = window.fetch.bind(window);
+    let bootstrapCapabilitiesPending = true;
+
+    window.fetch = async (input, init = {}) => {
+      let url;
+      try {
+        const target = typeof Request !== "undefined" && input instanceof Request ? input.url : input;
+        url = new URL(target, location.href);
+      } catch {
+        return nativeFetch(input, init);
+      }
+
+      if (!bootstrapCapabilitiesPending
+          || url.origin !== location.origin
+          || url.pathname !== "/api/capabilities") {
+        return nativeFetch(input, init);
+      }
+
+      bootstrapCapabilitiesPending = false;
+      const callerSignal = init.signal
+        || (typeof Request !== "undefined" && input instanceof Request ? input.signal : null);
+      const controller = new AbortController();
+      const abortFromCaller = () => controller.abort();
+      if (callerSignal?.aborted) abortFromCaller();
+      else callerSignal?.addEventListener("abort", abortFromCaller, {once: true});
+      const timer = setTimeout(() => controller.abort(), BROWSER_BOOTSTRAP_FETCH_TIMEOUT_MS);
+      try {
+        return await nativeFetch(input, {...init, signal: controller.signal});
+      } finally {
+        clearTimeout(timer);
+        callerSignal?.removeEventListener("abort", abortFromCaller);
+      }
+    };
+  }
+
+  installBrowserCapabilityBootstrapDeadline();
+
+  function installBrowserRoomNetworkRecovery() {
+    if (native || !/^\/room\/[^/]+$/.test(location.pathname)
+        || typeof window.fetch !== "function") return;
+    const NativeWebSocket = window.WebSocket;
+    const NativePeerConnection = window.RTCPeerConnection;
+    const boundedFetch = window.fetch.bind(window);
+    if (typeof NativeWebSocket !== "function" || typeof NativePeerConnection !== "function") return;
+
+    let roomSocket = null;
+    let turnRetryNotBefore = 0;
+    let wrappedTurnScheduler = null;
+    const restartAttempts = new WeakMap();
+
+    function TrackingWebSocket(url, protocols) {
+      const socket = protocols === undefined
+        ? new NativeWebSocket(url)
+        : new NativeWebSocket(url, protocols);
+      roomSocket = socket;
+      socket.addEventListener("close", () => {
+        if (roomSocket === socket) roomSocket = null;
+      });
+      return socket;
+    }
+    TrackingWebSocket.prototype = NativeWebSocket.prototype;
+    Object.setPrototypeOf(TrackingWebSocket, NativeWebSocket);
+    window.WebSocket = TrackingWebSocket;
+
+    function RecoveringRTCPeerConnection(...args) {
+      const pc = new NativePeerConnection(...args);
+      restartAttempts.set(pc, []);
+      pc.addEventListener("iceconnectionstatechange", () => {
+        if (pc.iceConnectionState !== "failed"
+            || !roomSocket || roomSocket.readyState !== NativeWebSocket.OPEN) return;
+        const now = Date.now();
+        const attempts = (restartAttempts.get(pc) || [])
+          .filter(attemptedAt => now - attemptedAt < BROWSER_ICE_RESTART_WINDOW_MS);
+        if (attempts.length >= BROWSER_ICE_RESTART_MAX_PER_WINDOW) {
+          restartAttempts.set(pc, attempts);
+          return;
+        }
+        attempts.push(now);
+        restartAttempts.set(pc, attempts);
+        try { pc.restartIce(); } catch { /* peer teardown wins */ }
+      });
+      return pc;
+    }
+    RecoveringRTCPeerConnection.prototype = NativePeerConnection.prototype;
+    Object.setPrototypeOf(RecoveringRTCPeerConnection, NativePeerConnection);
+    window.RTCPeerConnection = RecoveringRTCPeerConnection;
+
+    function ensureTurnSchedulerGuard() {
+      const current = window.scheduleTurnRefresh;
+      if (typeof current !== "function") return false;
+      if (wrappedTurnScheduler === current) return true;
+      const original = current;
+      wrappedTurnScheduler = function guardedTurnRefresh(delay) {
+        const retryFloor = Math.max(0, turnRetryNotBefore - Date.now());
+        return original(Math.max(Number(delay) || 0, retryFloor));
+      };
+      window.scheduleTurnRefresh = wrappedTurnScheduler;
+      return true;
+    }
+
+    window.fetch = async (input, init = {}) => {
+      const response = await boundedFetch(input, init);
+      let url;
+      try {
+        const target = typeof Request !== "undefined" && input instanceof Request ? input.url : input;
+        url = new URL(target, location.href);
+      } catch {
+        return response;
+      }
+      if (url.pathname !== "/api/turn") return response;
+      if (response.status === 429) {
+        const retryAfterSeconds = Number(response.headers.get("Retry-After") || 0);
+        const retryAfterMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+          ? retryAfterSeconds * 1000 : 30000;
+        turnRetryNotBefore = Date.now() + Math.max(30000, retryAfterMs);
+        ensureTurnSchedulerGuard();
+      } else {
+        turnRetryNotBefore = 0;
+      }
+      return response;
+    };
+  }
+
+  installBrowserRoomNetworkRecovery();
+
   // ── Interface language ───────────────────────────────────
   // The catalog language a person picks is the language the whole interface
   // speaks. English is the built-in base: a missing dictionary or a missing
@@ -492,13 +628,9 @@
   }
 
   async function loadHostRoom() {
-    try {
-      return native
-        ? await window.LinguaNative.getItem(hostRoomKey)
-        : localStorage.getItem(hostRoomKey);
-    } catch {
-      return null;
-    }
+    return native
+      ? await window.LinguaNative.getItem(hostRoomKey)
+      : localStorage.getItem(hostRoomKey);
   }
 
   async function saveHostRoom(value) {

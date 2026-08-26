@@ -1,7 +1,9 @@
-Lingua Relay helps two people speak naturally while each person reads live translated captions in their chosen language.
+Lingua Relay helps two people communicate while each person reads live translated captions in their chosen language.
 
-Create a private room, share its link through WhatsApp or any messaging app, and start a video conversation. Each participant chooses their own language and can independently turn translated voice on or off. When translated voice is off, both people hear the natural conversation.
+A signed-in host creates a private two-person room and shares its invite link directly. The invited participant can join from that private link without creating an account. There is no public directory, random matching, or open room discovery.
 
-The camera and microphone start only after you tap Start. Rooms expire automatically, the host can close a room at any time, and the app does not provide transcript history or require an account.
+Choose video, voice, or text chat. Each participant chooses their own language and can independently turn translated voice on or off. When translated voice is off, both people hear the natural conversation.
+
+Camera and microphone access is requested only when the feature needs it. Rooms expire automatically, the host can close a room at any time, and finished conversation text is not kept as transcript history. A participant can report and block the current room from the in-room controls.
 
 Language, dialect, and voice choices shown in the app reflect the capabilities currently available for that feature. Text translation, speech recognition, and translated voice do not have identical coverage.

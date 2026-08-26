@@ -1,0 +1,87 @@
+name: Cloudflare production rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_id:
+        description: Previously deployed Cloudflare Worker version ID
+        required: true
+        type: string
+      confirm:
+        description: Type ROLLBACK_PRODUCTION to roll back immediately
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lingua-relay-cloudflare-production
+  cancel-in-progress: false
+
+jobs:
+  rollback-production:
+    runs-on: ubuntu-latest
+    environment: cloudflare-production
+    defaults:
+      run:
+        working-directory: wa-translator/cloudflare
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: wa-translator/cloudflare/package-lock.json
+
+      - run: npm ci
+
+      - name: Verify deliberate rollback request
+        shell: bash
+        env:
+          VERSION_ID: ${{ inputs.version_id }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [[ "$CONFIRM" != "ROLLBACK_PRODUCTION" ]]; then
+            echo "confirm must be exactly ROLLBACK_PRODUCTION" >&2
+            exit 1
+          fi
+          if [[ ! "$VERSION_ID" =~ ^[A-Za-z0-9_-]{8,128}$ ]]; then
+            echo "version_id has an unexpected shape" >&2
+            exit 1
+          fi
+
+      - name: Verify Cloudflare production credentials
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "CLOUDFLARE_API_TOKEN is not configured" >&2; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "CLOUDFLARE_ACCOUNT_ID is not configured" >&2; exit 1; }
+
+      - name: Roll back production Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          VERSION_ID: ${{ inputs.version_id }}
+        run: >-
+          npx wrangler rollback "$VERSION_ID"
+          -c wrangler.jsonc
+          --message "operator rollback via GitHub Actions"
+
+      - name: Verify live production contract after rollback
+        run: >-
+          npm run smoke:deployment --
+          https://spoken-translation-room.spoken-translation-cloudflare.workers.dev
+
+      - name: Print rollback receipt
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          echo "rollback_version=${{ inputs.version_id }}"
+          npx wrangler deployments list -c wrangler.jsonc

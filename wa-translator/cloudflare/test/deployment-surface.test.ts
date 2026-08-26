@@ -109,17 +109,48 @@ describe("permanent deployment surface", () => {
     expect(dashboardCss.status).toBe(200);
     expectBaselineHeaders(dashboardCss);
     expect(await dashboardCss.text()).toContain(".page{");
+
     const dashboardJs = await exports.default.fetch(`${ORIGIN}/dashboard.js`);
     expect(dashboardJs.status).toBe(200);
     expectBaselineHeaders(dashboardJs);
-    expect(await dashboardJs.text()).toContain("async function createRoom(mode)");
+    expect(await dashboardJs.text()).toContain("window.LinguaDashboardRoomController.create");
 
-    // Both pages load the QR encoder as a plain asset, so a 404 here is a share
-    // row whose code silently never draws.
+    const dashboardRoomController = await exports.default.fetch(`${ORIGIN}/dashboard-room-controller.js`);
+    expect(dashboardRoomController.status).toBe(200);
+    expectBaselineHeaders(dashboardRoomController);
+    const dashboardRoomControllerSource = await dashboardRoomController.text();
+    expect(dashboardRoomControllerSource).toContain("async function createRoom(mode)");
+    expect(dashboardRoomControllerSource).toContain("create: createRoom");
+
+    const appRuntime = await exports.default.fetch(`${ORIGIN}/app-runtime.js`);
+    expect(appRuntime.status).toBe(200);
+    expectBaselineHeaders(appRuntime);
+    const appRuntimeSource = await appRuntime.text();
+    expect(appRuntimeSource).toContain("const BROWSER_ICE_RESTART_WINDOW_MS = 60 * 1000");
+    expect(appRuntimeSource).toContain("const BROWSER_ICE_RESTART_MAX_PER_WINDOW = 3");
+    expect(appRuntimeSource).toContain("function installBrowserRoomNetworkRecovery()");
+    expect(appRuntimeSource).toContain("pc.restartIce()");
+    expect(appRuntimeSource).toContain('response.headers.get("Retry-After")');
+
+    // /qr.js is now the deferred room/dashboard bootstrap. It bounds browser
+    // control requests before normal user join/reconnect work and then loads the
+    // unchanged encoder from its own credential-free asset.
     const qr = await exports.default.fetch(`${ORIGIN}/qr.js`);
     expect(qr.status).toBe(200);
     expectBaselineHeaders(qr);
-    expect(await qr.text()).toContain("LinguaQR");
+    const qrSource = await qr.text();
+    expect(qrSource).toContain("const ROOM_CONTROL_FETCH_TIMEOUT_MS = 12000");
+    expect(qrSource).toContain('"/api/capabilities"');
+    expect(qrSource).toContain('"/api/turn"');
+    expect(qrSource).toContain('"/api/room"');
+    expect(qrSource).toContain('"/api/reports"');
+    expect(qrSource).toContain("const controller = new AbortController()");
+    expect(qrSource).toContain('qrCore.src = "/qr-encoder.js"');
+
+    const qrEncoder = await exports.default.fetch(`${ORIGIN}/qr-encoder.js`);
+    expect(qrEncoder.status).toBe(200);
+    expectBaselineHeaders(qrEncoder);
+    expect(await qrEncoder.text()).toContain("window.LinguaQR = {svg: svg, _matrix: matrix}");
 
     const serviceWorker = await exports.default.fetch(`${ORIGIN}/sw.js`);
     expect(serviceWorker.status).toBe(200);
@@ -127,8 +158,43 @@ describe("permanent deployment surface", () => {
     expect(serviceWorker.headers.get("Service-Worker-Allowed")).toBe("/");
     const serviceWorkerJs = await serviceWorker.text();
     expect(serviceWorkerJs).toContain("cache: 'no-store'");
-    expect(serviceWorkerJs).not.toContain("caches.open");
-    expect(serviceWorkerJs).not.toContain("cache.put");
+    expect(serviceWorkerJs).toContain("const CACHE_NAME = 'lingua-relay-shell-v6'");
+    expect(serviceWorkerJs).toContain("const SHELL_PATHS = new Set([");
+    expect(serviceWorkerJs).toContain("const NETWORK_FIRST_SHELL_PATHS = new Set(['/app-runtime.js', '/qr.js'])");
+    expect(serviceWorkerJs).toContain("async function networkFirstShell(url)");
+    expect(serviceWorkerJs).toContain("event.respondWith(networkFirstShell(url))");
+    const shellBlock = serviceWorkerJs.match(/const SHELL_PATHS = new Set\(\[([\s\S]*?)\]\);/)?.[1] ?? "";
+    for (const path of [
+      "'/'", "'/index.html'", "'/dashboard.css'", "'/product-events.js'",
+      "'/qr.js'", "'/qr-encoder.js'", "'/manifest.webmanifest'",
+    ]) {
+      expect(shellBlock).toContain(path);
+    }
+    for (const capabilityPath of ["/room.html", "/room/", "/ws/", "/api/", "/auth/", "/static/i18n/"]) {
+      expect(shellBlock).not.toContain(capabilityPath);
+    }
+    for (const networkOnlyMarker of [
+      "path === '/room.html'",
+      "path.startsWith('/room/')",
+      "path.startsWith('/ws/')",
+      "path.startsWith('/api/')",
+      "path.startsWith('/auth/')",
+      "path.startsWith('/static/i18n/')",
+      "url?.origin === self.location.origin",
+      "url.search === ''",
+      "!networkOnly(url.pathname)",
+      "SHELL_PATHS.has(url.pathname)",
+      "credentials: 'omit'",
+      "await cache.addAll(shellRequests())",
+      "DASHBOARD_PATHS.has(url.pathname)",
+      "dashboardNavigation(request, url)",
+      "if (!url || !cacheableShellRequest(request, url))",
+    ]) expect(serviceWorkerJs).toContain(networkOnlyMarker);
+    expect(serviceWorkerJs).toContain("canonicalShellRequest(url.pathname)");
+    expect(serviceWorkerJs).toContain("const cached = await caches.match(canonical)");
+    expect(serviceWorkerJs).not.toContain("cache.put(request");
+    expect(serviceWorkerJs).not.toContain("event.waitUntil(fresh)");
+    expect(serviceWorkerJs).toContain("name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME");
   });
 
   it("never caches dynamic auth, API, or room errors", async () => {

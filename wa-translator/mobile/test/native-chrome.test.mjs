@@ -30,6 +30,14 @@ test("native launch chrome matches dashboard, room, and legal surfaces", async (
   assert.match(bridge, /if \(state\.isActive\) void applyNativeChrome\(\)/,
                "returning from system UI reapplies the current page chrome");
 
+  assert.match(bridge,
+    /function returnHomeAfterNativeLeave\(event: MouseEvent\): void \{[\s\S]*?room\\\.html[\s\S]*?closest\("#leaveBtn"\)[\s\S]*?setTimeout\([\s\S]*?window\.location\.replace\("index\.html"\)/,
+    "explicit native Leave and voice End Call return to the app home after room cleanup");
+  assert.match(bridge, /document\.addEventListener\("click", returnHomeAfterNativeLeave\)/,
+    "native room exit is installed as a post-room-handler click listener");
+  assert.match(bridge, /callEnd` delegates through leaveBtn\.click\(\), while report\/block invokes[\s\S]*?leaveRoom\(\) directly/,
+    "the native redirect intentionally excludes programmatic report/block cleanup");
+
   // Native secure storage is cleared only after the server confirms logout or
   // account deletion. A 503 from the revocation write therefore leaves the
   // bearer available for retry instead of reporting a false successful logout.

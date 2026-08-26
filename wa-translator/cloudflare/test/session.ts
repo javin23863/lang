@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { mintSessionV2 } from "../src/session-v2";
+import { inspectSessionToken, mintSessionV2 } from "../src/session-v2";
 
 // Every suite that creates a room needs a signed-in caller now. The fixture
 // creates the matching account first so tests model the production invariant:
@@ -36,6 +36,23 @@ async function ensureHostAccount(userId: string): Promise<void> {
   await response.body?.cancel().catch(() => {});
 }
 
+async function registerSession(token: string, userId: string): Promise<void> {
+  const identity = await inspectSessionToken(token, SECRET);
+  if (!identity || identity.version !== 2 || identity.userId !== userId) {
+    throw new Error("could not inspect test session");
+  }
+  const response = await env.USERS.get(env.USERS.idFromName(userId)).fetch(
+    new Request("https://users.internal/session-issuances", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({digest: identity.digest, expires_at: identity.expiresAt}),
+    })
+  );
+  const status = response.status;
+  await response.body?.cancel().catch(() => {});
+  if (status !== 204) throw new Error(`could not register test session (${status})`);
+}
+
 export async function hostSession(
   userId = "TestHostUser0123456789", ttlSeconds = SESSION_TTL_SECONDS
 ): Promise<string> {
@@ -52,11 +69,18 @@ export async function hostSession(
 }
 
 export async function hostSessionV2(
-  userId = "TestHostUser0123456789", ttlSeconds = SESSION_TTL_SECONDS
+  userId = "TestHostUser0123456789",
+  ttlSeconds = SESSION_TTL_SECONDS,
+  absoluteExpiresAt?: number
 ): Promise<string> {
   await ensureHostAccount(userId);
-  const expiresAt = Math.floor(Date.now() / 1000) + ttlSeconds;
-  return (await mintSessionV2(userId, SECRET, expiresAt)).token;
+  const expiresAt = absoluteExpiresAt ?? Math.floor(Date.now() / 1000) + ttlSeconds;
+  if (!Number.isSafeInteger(expiresAt) || expiresAt <= Math.floor(Date.now() / 1000)) {
+    throw new TypeError("test session expiry must be a future integer timestamp");
+  }
+  const token = (await mintSessionV2(userId, SECRET, expiresAt)).token;
+  await registerSession(token, userId);
+  return token;
 }
 
 export async function hostSessionCookie(userId?: string): Promise<string> {

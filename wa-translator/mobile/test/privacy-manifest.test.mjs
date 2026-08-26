@@ -36,6 +36,7 @@ test("iOS first-party privacy manifest matches retained product data", async () 
   assert.deepEqual([...entries.keys()].sort(), [
     "NSPrivacyCollectedDataTypeEmailAddress",
     "NSPrivacyCollectedDataTypeName",
+    "NSPrivacyCollectedDataTypeOtherDataTypes",
     "NSPrivacyCollectedDataTypeOtherUsageData",
     "NSPrivacyCollectedDataTypeOtherUserContent",
     "NSPrivacyCollectedDataTypeUserID",
@@ -46,6 +47,7 @@ test("iOS first-party privacy manifest matches retained product data", async () 
   assertType(entries, "NSPrivacyCollectedDataTypeUserID", true);
   assertType(entries, "NSPrivacyCollectedDataTypeOtherUsageData", true);
   assertType(entries, "NSPrivacyCollectedDataTypeOtherUserContent", false);
+  assertType(entries, "NSPrivacyCollectedDataTypeOtherDataTypes", false);
 
   assert.doesNotMatch(xml, /NSPrivacyCollectedDataTypeAudioData|NSPrivacyCollectedDataTypeEmailsOrTextMessages/,
                       "ephemeral call/chat content is not retained after real-time request servicing");

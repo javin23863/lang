@@ -5,13 +5,15 @@
   "type": "module",
   "engines": {"node": ">=22"},
   "scripts": {
-    "build:bridge": "esbuild src/mobile-bridge.ts --bundle --format=iife --platform=browser --target=es2022 --outfile=www/mobile-bridge.js",
+    "build:bridge": "esbuild src/mobile-entry.ts --bundle --minify --format=iife --platform=browser --target=es2022 --outfile=www/mobile-bridge.js",
     "build:web": "node scripts/prepare-web.mjs && node scripts/generate-third-party-notices.mjs && npm run build:bridge",
+    "check:web-budgets": "node scripts/check-web-budgets.mjs",
     "assets": "python scripts/generate-assets.py",
-    "screenshots": "python scripts/prepare-store-screenshots.py",
+    "screenshots": "python scripts/run-store-screenshot-tool.py prepare",
+    "screenshots:refresh": "python scripts/run-store-screenshot-tool.py refresh",
     "sync:platform": "node scripts/sync-platform-origin.mjs",
     "sync": "npm run build:web && cap sync && npm run sync:platform && node scripts/verify-synced-notices.mjs",
-    "check": "npm run typecheck && npm run build:web && node --test test/*.test.mjs",
+    "check": "npm run typecheck && npm run build:web && npm run check:web-budgets && node --test test/*.test.mjs",
     "browser": "node ../tools/browser/run.mjs",
     "typecheck": "tsc --noEmit",
     "android:bundle": "npm run sync && cd android && gradlew.bat bundleRelease"

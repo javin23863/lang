@@ -1,19 +1,20 @@
-// Creating a room needs a signed-in caller. Rather than drive a real Google
-// round trip, this mints the same session cookie cloudflare/test/session.ts
-// mints for vitest — the worker signs sessions with ROOM_SIGNING_KEY, so the
-// local dev secret is all it takes. Export LINGUA_SESSION to paste a token
-// obtained some other way (a real sign-in against a deployed worker).
+// Browser acceptance must exercise the same live-account authority as the
+// shipping dashboard. A locally forged signing-key token is not sufficient:
+// room creation also verifies that the session belongs to an existing account.
+//
+// Set LINGUA_SESSION to an s2 browser session obtained by signing a dedicated
+// test host into the same Worker origin being exercised. The token is read only
+// from the environment and is never printed by these tools.
 export async function sessionToken() {
-  if (process.env.LINGUA_SESSION) return process.env.LINGUA_SESSION;
-  const secret = process.env.ROOM_SIGNING_KEY;
-  if (!secret) return null;
-  const userId = "TestHostUser0123456789";
-  const expiresAt = Math.floor(Date.now() / 1000) + 3600;
-  const key = await crypto.subtle.importKey(
-    "raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const signature = new Uint8Array(await crypto.subtle.sign(
-    "HMAC", key, new TextEncoder().encode(`session.v1.${userId}.${expiresAt}`)));
-  const digest = btoa(String.fromCharCode(...signature))
-    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  return `s1.${userId}.${expiresAt}.${digest}`;
+  const session = String(process.env.LINGUA_SESSION || "").trim();
+  if (!session) {
+    throw new Error(
+      "Set LINGUA_SESSION to a signed-in test host session from the target Worker origin; "
+      + "ROOM_SIGNING_KEY alone no longer establishes a live account."
+    );
+  }
+  if (!/^s2\.[A-Za-z0-9_-]+\.\d+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(session)) {
+    throw new Error("LINGUA_SESSION must be a current s2 browser session; legacy or malformed tokens are rejected.");
+  }
+  return session;
 }

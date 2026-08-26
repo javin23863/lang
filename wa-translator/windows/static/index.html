@@ -6,31 +6,91 @@
 <meta name="theme-color" content="#075E54">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/design-tokens.css">
 <link rel="stylesheet" href="/dashboard.css">
 <script src="/app-runtime.js"></script>
+<script src="/dashboard-api.js"></script>
+<script src="/dashboard-account.js"></script>
+<script src="/dashboard-room-model.js"></script>
+<script src="/dashboard-room-controller.js"></script>
+<script src="/dashboard-share.js"></script>
+<script src="/dashboard-settings.js"></script>
+<script src="/dashboard-lifecycle.js"></script>
+<script src="/product-events.js" defer></script>
+<script src="/dashboard-onboarding.js" defer></script>
+<script src="/dashboard-product-events.js" defer></script>
 <script src="/qr.js" defer></script>
 <title>Lingua Relay · Private rooms</title>
 </head>
 <body data-auth="loading">
 <main class="page" aria-label="Lingua Relay">
   <header class="brand">
-    <img class="brandMark" src="/icon.svg" width="52" height="52" alt="" aria-hidden="true">
-    <h1 class="title">Lingua Relay</h1>
+    <div class="brandIdentity">
+      <img class="brandMark" src="/icon.svg" width="54" height="54" alt="" aria-hidden="true">
+      <h1 class="title">Lingua Relay</h1>
+    </div>
   </header>
+
+  <section id="onboardingPanel" class="card onboardingCard" aria-labelledby="onboardingTitle" hidden>
+    <div class="onboardingCopy">
+      <p id="onboardingTitle" class="roomLabel">Lingua Relay</p>
+      <p class="prompt" data-i18n="auth.signInPrompt">Sign in to start a call. Joining an invite link never needs an account.</p>
+    </div>
+    <div class="modeGrid onboardingModes" aria-hidden="true">
+      <div class="tile tilePrimary">
+        <span class="tileIcon"><svg viewBox="0 0 24 24"><path d="M4 5h11a2 2 0 0 1 2 2v2.6l4-2.4v9.6l-4-2.4V17a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/></svg></span>
+        <span class="tileText" data-i18n="tile.video">Video call</span>
+      </div>
+      <div class="tile">
+        <span class="tileIcon"><svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21H8v2h8v-2h-3v-3.08A7 7 0 0 0 19 11h-2Z"/></svg></span>
+        <span class="tileText" data-i18n="tile.voice">Voice call</span>
+      </div>
+      <div class="tile">
+        <span class="tileIcon"><svg viewBox="0 0 24 24"><path d="M4 3h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H9l-5 4v-4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm2 5v2h12V8H6Zm0 4v2h8v-2H6Z"/></svg></span>
+        <span class="tileText" data-i18n="tile.chat">Text chat</span>
+      </div>
+    </div>
+    <p class="prompt onboardingFlow">
+      <span data-i18n="home.participantLink">Participant link</span>
+      <span aria-hidden="true"> · </span>
+      <span data-i18n="home.share">Share</span>
+      <span aria-hidden="true"> · </span>
+      <span data-i18n="gate.join">Join room</span>
+    </p>
+  </section>
+
   <section id="authPanel" class="card authCard" aria-label="Sign in">
     <p class="prompt" data-i18n="auth.signInPrompt">Sign in to start a call. Joining an invite link never needs an account.</p>
     <div id="authButtons"></div>
     <p id="authStatus" role="status" aria-live="polite"></p>
   </section>
-  <section id="accountChip" class="card authed" aria-label="Account">
-    <span id="accountName"></span>
-    <button id="signOutBtn" type="button" data-i18n="auth.signOut">Sign out</button>
+
+  <section class="homeSurface authed" aria-label="Start a call">
+    <section class="modes">
+      <div class="modeGrid">
+        <button id="createBtn" class="tile tilePrimary" type="button">
+          <span class="tileIcon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h11a2 2 0 0 1 2 2v2.6l4-2.4v9.6l-4-2.4V17a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/></svg></span>
+          <span class="tileText" data-i18n="tile.video">Video call</span>
+        </button>
+        <button id="createVoiceBtn" class="tile" type="button">
+          <span class="tileIcon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21H8v2h8v-2h-3v-3.08A7 7 0 0 0 19 11h-2Z"/></svg></span>
+          <span class="tileText" data-i18n="tile.voice">Voice call</span>
+        </button>
+        <button id="createChatBtn" class="tile" type="button">
+          <span class="tileIcon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 3h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H9l-5 4v-4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm2 5v2h12V8H6Zm0 4v2h8v-2H6Z"/></svg></span>
+          <span class="tileText" data-i18n="tile.chat">Text chat</span>
+        </button>
+      </div>
+    </section>
+    <section class="statusCard">
+      <p id="roomState" class="state" data-state="idle" aria-live="polite">No active room on this device.</p>
+    </section>
   </section>
-  <section class="card statusCard authed">
-    <p id="roomState" class="state" data-state="idle" aria-live="polite">No active room on this device.</p>
-  </section>
+
   <section id="roomPanel" class="card room authed" hidden aria-label="Current private room">
-    <p class="roomLabel" data-i18n="home.roomControl">Room control</p>
+    <div class="roomHeading">
+      <p class="roomLabel" data-i18n="home.roomControl">Room control</p>
+    </div>
     <label class="field" for="shareLink"><span data-i18n="home.participantLink">Participant link</span>
       <input id="shareLink" type="url" readonly spellcheck="false" autocomplete="off">
     </label>
@@ -47,28 +107,19 @@
     </div>
     <figure id="qrBox" hidden></figure>
   </section>
-  <p id="roomNotice" class="notice" role="status" aria-live="polite"></p>
-  <section class="modes authed" aria-label="Start a call">
-    <div class="modeGrid">
-      <button id="createVoiceBtn" class="tile" type="button">
-        <span class="tileIcon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21H8v2h8v-2h-3v-3.08A7 7 0 0 0 19 11h-2Z"/></svg></span>
-        <span class="tileText" data-i18n="tile.voice">Voice call</span>
-      </button>
-      <button id="createChatBtn" class="tile" type="button">
-        <span class="tileIcon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 3h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H9l-5 4v-4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm2 5v2h12V8H6Zm0 4v2h8v-2H6Z"/></svg></span>
-        <span class="tileText" data-i18n="tile.chat">Text chat</span>
-      </button>
-      <button id="createBtn" class="tile tilePrimary" type="button">
-        <span class="tileIcon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h11a2 2 0 0 1 2 2v2.6l4-2.4v9.6l-4-2.4V17a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/></svg></span>
-        <span class="tileText" data-i18n="tile.video">Video call</span>
-      </button>
-    </div>
+  <p id="roomNotice" class="notice authed" role="status" aria-live="polite"></p>
+
+  <section id="accountChip" class="card authed" aria-label="Account">
+    <span id="accountName"></span>
+    <button id="signOutBtn" type="button" data-i18n="auth.signOut">Sign out</button>
   </section>
+
   <section id="creditsPanel" class="card credits authed" aria-labelledby="creditsHeading">
     <p id="creditsHeading" class="roomLabel" data-i18n="credits.usageHeading">Recent usage</p>
     <ul id="usageList"></ul>
     <button id="deleteAccountBtn" class="danger" type="button" data-i18n="auth.deleteAccount">Delete account</button>
   </section>
+
   <label class="card appLocale" for="appLocaleSel"><span data-i18n="gate.language">Language</span>
     <select id="appLocaleSel"></select>
   </label>

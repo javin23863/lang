@@ -11,6 +11,7 @@ __pycache__/
 .pytest_cache/
 /venv-translate/
 /.venv/
+wa-translator/mobile/.venv-screenshots/
 
 # JavaScript / Cloudflare local build state
 node_modules/

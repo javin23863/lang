@@ -1,6 +1,7 @@
 // The host's screen: pick a language, create a room, copy the link, watch the
 // live participant count, close the room. All against the real backend.
 import { open } from "./cdp.mjs";
+import { acceptRoomTerms } from "./room-consent.mjs";
 import { sessionToken } from "./session.mjs";
 
 const ORIGIN = process.env.LINGUA_ORIGIN || "http://127.0.0.1:8788";
@@ -21,41 +22,13 @@ try {
   await page.send("Browser.grantPermissions", {
     origin: ORIGIN, permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"],
   });
+  // Browser acceptance uses a real current host session. The live-account guard
+  // intentionally rejects a token minted from the signing key without a
+  // matching UserDirectory profile, so this harness no longer stubs /api/me.
   const session = await sessionToken();
-  if (session) {
-    await page.send("Network.setCookie",
-                    { name: "lr_s", value: session, url: ORIGIN, path: "/" });
-  } else {
-    console.log("[dashboard] no ROOM_SIGNING_KEY and no LINGUA_SESSION — "
-                + "POST /api/rooms will 401 and the tiles stay hidden");
-  }
-  if (session && !process.env.LINGUA_SESSION) {
-    // A minted session is all POST /api/rooms asks for, but GET /api/me also
-    // needs a UserDirectory profile, and only a real OAuth callback writes one.
-    // So a locally minted session reads as signed-out and the tiles never
-    // appear. Stub that ONE response in the page — the room this check creates,
-    // polls and closes is still made by the real worker against the real
-    // cookie. Set LINGUA_SESSION to a session from a real sign-in and no stub
-    // is injected at all.
-    console.log("[dashboard] dev session minted locally — GET /api/me is stubbed in-page; "
-                + "everything else is the real worker");
-    await page.send("Page.addScriptToEvaluateOnNewDocument", {
-      source: `(() => {
-        const original = window.fetch;
-        window.fetch = (input, init) => {
-          const url = String(input && input.url ? input.url : input);
-          if (!url.includes("/api/me")) return original(input, init);
-          return Promise.resolve(new Response(JSON.stringify({
-            signed_in: true, providers: ["google"],
-            user: {name: "Local Dev Host", email: "dev@example.test", provider: "google"},
-            credits: {balance: 0},
-            totals: {call_minutes: 0, chat_messages: 0, tts_phrases: 0},
-            recent: []
-          }), {status: 200, headers: {"Content-Type": "application/json"}}));
-        };
-      })()`,
-    });
-  }
+  await page.send("Network.setCookie", {
+    name: "lr_s", value: session, url: ORIGIN, path: "/",
+  });
   await page.goto(`${ORIGIN}/`);
   const auth = await page.eval("document.body.dataset.auth");
   check("the dashboard reports a signed-in host", auth === "in", auth);
@@ -155,6 +128,10 @@ try {
     const path = new URL(made.link).pathname;
     await guest.page.viewport(390, 844);
     await guest.page.goto(`${ORIGIN}${path}`);
+    const guestConsent = await acceptRoomTerms(guest.page);
+    check("guest join starts behind affirmative Terms",
+          guestConsent.before.checked === false && guestConsent.before.disabled === true,
+          JSON.stringify(guestConsent.before));
     await guest.page.tap("#joinBtn");
     await guest.page.eval("new Promise(r => setTimeout(r, 2500))");
     await page.eval("document.dispatchEvent(new Event('visibilitychange'))");

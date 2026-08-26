@@ -1,0 +1,61 @@
+:root{
+  color-scheme:light dark;
+  --font-ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  --surface-canvas:#F4FBF9;
+  --surface-card:#FFFFFF;
+  --surface-muted:#EDF6F4;
+  --border-subtle:#D6E5E1;
+  --text-primary:#102A27;
+  --text-secondary:#617B76;
+  --brand-primary:#075E54;
+  --brand-soft:#DDF2EE;
+  --brand-secondary:#53BDEB;
+  --status-danger:#C83934;
+  --status-success:#128C7E;
+  --focus-ring:#1687B2;
+  --elevation-card:0 10px 30px rgba(7,94,84,.08);
+  --space-1:4px;
+  --space-2:8px;
+  --space-3:12px;
+  --space-4:16px;
+  --space-5:20px;
+  --space-6:24px;
+  --radius-control:13px;
+  --radius-card:20px;
+  --touch-target:48px;
+  --motion-fast:150ms;
+
+  /* Compatibility aliases let existing screens migrate feature-by-feature. */
+  --font:var(--font-ui);
+  --bg:var(--surface-canvas);
+  --card:var(--surface-card);
+  --fill:var(--surface-muted);
+  --separator:var(--border-subtle);
+  --label:var(--text-primary);
+  --label-2:var(--text-secondary);
+  --accent:var(--brand-primary);
+  --accent-soft:var(--brand-soft);
+  --accent-2:var(--brand-secondary);
+  --destructive:var(--status-danger);
+  --confirm:var(--status-success);
+  --focus:var(--focus-ring);
+  --shadow:var(--elevation-card);
+}
+
+@media (prefers-color-scheme:dark){
+  :root{
+    --surface-canvas:#07110F;
+    --surface-card:#0D1C19;
+    --surface-muted:#162925;
+    --border-subtle:#244039;
+    --text-primary:#F2FAF8;
+    --text-secondary:#9DB5B0;
+    --brand-primary:#64D4C3;
+    --brand-soft:#153A34;
+    --brand-secondary:#73CFF2;
+    --status-danger:#FF817B;
+    --status-success:#64D4C3;
+    --focus-ring:#73CFF2;
+    --elevation-card:0 12px 34px rgba(0,0,0,.22);
+  }
+}

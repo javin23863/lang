@@ -3,8 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "npm run typecheck && npm test && npm run dry-run",
+    "check": "node scripts/verify-observability-config.mjs && node scripts/verify-environment-config.mjs && node scripts/verify-deployment-workflows.mjs && npm run typecheck && npm test && npm run dry-run && npm run dry-run:staging",
     "dry-run": "wrangler deploy --dry-run",
+    "dry-run:staging": "wrangler deploy --dry-run -c wrangler.staging.jsonc",
+    "smoke:deployment": "node scripts/smoke-deployment.mjs",
     "reports:list": "node scripts/moderate-reports.mjs list",
     "reports:close": "node scripts/moderate-reports.mjs close",
     "test": "vitest run",
