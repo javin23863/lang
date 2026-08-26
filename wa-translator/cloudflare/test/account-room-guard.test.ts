@@ -5,12 +5,22 @@ import { hostSession, hostSessionCookie } from "./session";
 const ORIGIN = "https://room.test";
 const NATIVE_ORIGIN = "https://localhost";
 
+type CreatedRoom = {path: string; host_control: string; expires_at: number};
+
 async function deleteBrowserAccount(cookie: string): Promise<void> {
   const response = await exports.default.fetch(`${ORIGIN}/api/account/delete`, {
     method: "POST",
     headers: {Origin: ORIGIN, Cookie: cookie},
   });
   expect(response.status).toBe(204);
+}
+
+async function hostRoomState(control: string): Promise<string> {
+  const response = await exports.default.fetch(`${ORIGIN}/api/room-control`, {
+    headers: {Origin: ORIGIN, Authorization: `Bearer ${control}`},
+  });
+  expect(response.status).toBe(200);
+  return (await response.json<{state: string}>()).state;
 }
 
 function clearsBrowserSession(response: Response): boolean {
@@ -57,6 +67,43 @@ describe("room creation requires a live account", () => {
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(response.headers.get("Access-Control-Allow-Origin")).toBe(NATIVE_ORIGIN);
     expect(response.headers.get("Vary")).toContain("Origin");
+  });
+
+  it("closes account-owned rooms before account deletion succeeds", async () => {
+    const cookie = await hostSessionCookie("DeleteOwnedRoomUser001");
+    const createdResponse = await exports.default.fetch(`${ORIGIN}/api/rooms`, {
+      method: "POST",
+      headers: {Origin: ORIGIN, Cookie: cookie},
+    });
+    expect(createdResponse.status).toBe(201);
+    const created = await createdResponse.json<CreatedRoom>();
+    expect(await hostRoomState(created.host_control)).toBe("ready");
+
+    await deleteBrowserAccount(cookie);
+    expect(await hostRoomState(created.host_control)).toBe("closed");
+  });
+
+  it("does not let a room escape a concurrent account deletion", async () => {
+    const cookie = await hostSessionCookie("DeleteRoomRaceUser0001");
+    const creation = exports.default.fetch(`${ORIGIN}/api/rooms`, {
+      method: "POST",
+      headers: {Origin: ORIGIN, Cookie: cookie},
+    });
+    const deletion = exports.default.fetch(`${ORIGIN}/api/account/delete`, {
+      method: "POST",
+      headers: {Origin: ORIGIN, Cookie: cookie},
+    });
+
+    const [createdResponse, deletedResponse] = await Promise.all([creation, deletion]);
+    expect(deletedResponse.status).toBe(204);
+    expect([201, 401, 409]).toContain(createdResponse.status);
+
+    if (createdResponse.status === 201) {
+      const created = await createdResponse.json<CreatedRoom>();
+      expect(await hostRoomState(created.host_control)).toBe("closed");
+    } else {
+      expect(createdResponse.headers.get("Cache-Control")).toBe("no-store");
+    }
   });
 
   it("does not expose the retired HTML-form room creator", async () => {
