@@ -17,6 +17,61 @@
     && typeof window.WebSocket === "function"
     && typeof window.RTCPeerConnection === "function"
   );
+  let browserMediaGeneration = 0;
+  let browserMediaLifecycleEnded = false;
+
+  function invalidatePendingBrowserMedia() {
+    browserMediaGeneration++;
+  }
+
+  function stopCapturedBrowserStream(stream) {
+    if (!stream || typeof stream.getTracks !== "function") return;
+    for (const track of stream.getTracks()) {
+      try { track.stop(); } catch (_) {}
+    }
+  }
+
+  function browserMediaRequestActive() {
+    if (browserMediaLifecycleEnded || !/^\/room\/[^/]+$/.test(location.pathname)) return false;
+    if (typeof leaving !== "undefined" && leaving) return false;
+    if (typeof explicitLeave !== "undefined" && explicitLeave) return false;
+    if (typeof terminalRoom !== "undefined" && terminalRoom) return false;
+    return true;
+  }
+
+  if (!native && roomRoute && typeof navigator !== "undefined") {
+    const mediaDevices = navigator.mediaDevices;
+    if (mediaDevices && typeof mediaDevices.getUserMedia === "function") {
+      const originalGetUserMedia = mediaDevices.getUserMedia.bind(mediaDevices);
+      mediaDevices.getUserMedia = async constraints => {
+        if (!browserMediaRequestActive()) {
+          throw new DOMException("Media request superseded by room teardown", "AbortError");
+        }
+        const generation = browserMediaGeneration;
+        const stream = await originalGetUserMedia(constraints);
+        if (generation !== browserMediaGeneration || !browserMediaRequestActive()) {
+          // A browser permission prompt can resolve after pagehide, Leave, a
+          // host close, or report-and-leave has already torn the room down.
+          // Never hand that late stream back to room.html: doing so would let
+          // its continuation recreate mediaStream/AudioContext after teardown.
+          stopCapturedBrowserStream(stream);
+          throw new DOMException("Media request superseded by room teardown", "AbortError");
+        }
+        return stream;
+      };
+    }
+    if (typeof disconnectRoom === "function") {
+      const roomDisconnectRoom = disconnectRoom;
+      disconnectRoom = function mediaAwareDisconnectRoom(...args) {
+        invalidatePendingBrowserMedia();
+        if ((typeof explicitLeave !== "undefined" && explicitLeave)
+            || (typeof terminalRoom !== "undefined" && terminalRoom)) {
+          browserMediaLifecycleEnded = true;
+        }
+        return roomDisconnectRoom(...args);
+      };
+    }
+  }
 
   function renderUnsupportedRoomGate() {
     if (browserRoomSupported || native || !roomRoute
@@ -97,6 +152,8 @@
     }
 
     function endRoomLifecycle() {
+      browserMediaLifecycleEnded = true;
+      invalidatePendingBrowserMedia();
       roomLifecycleEnded = true;
       clearCapabilityRetryTimer();
       abortControlRequests();
@@ -202,7 +259,8 @@
     reportButton?.addEventListener("click", () => {
       // reportAndBlockRoom() disables the button synchronously only after its
       // confirmation succeeds, before its first await. Read that result after
-      // the click dispatch so cancelling the confirmation does not end a room.
+      // the click dispatch so cancelling the confirmation does not end a room
+      // or invalidate a permission request the user still intends to finish.
       queueMicrotask(() => {
         if (reportButton.disabled) endRoomLifecycle();
       });
