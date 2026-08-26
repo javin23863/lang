@@ -1,0 +1,139 @@
+name: Prelaunch exact-source staging APK
+
+on:
+  push:
+    branches:
+      - "prelaunch/**"
+    paths:
+      - ".github/workflows/cloudflare-staging.yml"
+      - "wa-translator/cloudflare/**"
+      - "wa-translator/mobile/**"
+      - "wa-translator/windows/static/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lingua-relay-prelaunch-staging-apk
+  cancel-in-progress: true
+
+jobs:
+  staging-apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: wa-translator/mobile
+    env:
+      STAGING_ORIGIN: https://spoken-translation-room-staging.spoken-translation-cloudflare.workers.dev
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify exact source commit
+        shell: bash
+        run: |
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$GITHUB_SHA"
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: wa-translator/mobile/package-lock.json
+
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - run: npm ci
+      - run: npm run check
+
+      - name: Sync native shell to isolated staging backend
+        shell: bash
+        env:
+          LINGUA_PUBLIC_ORIGIN: ${{ env.STAGING_ORIGIN }}
+        run: npm run sync
+
+      - name: Verify packaged staging target
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const expected = process.env.STAGING_ORIGIN;
+          for (const path of [
+            'www/native-build-target.json',
+            'android/app/src/main/assets/public/native-build-target.json',
+          ]) {
+            const value = JSON.parse(fs.readFileSync(path, 'utf8'));
+            if (value.public_origin !== expected) {
+              throw new Error(`${path} targets ${value.public_origin}, expected ${expected}`);
+            }
+          }
+          NODE
+          grep -F "android:host=\"spoken-translation-room-staging.spoken-translation-cloudflare.workers.dev\"" \
+            android/app/src/main/AndroidManifest.xml >/dev/null
+
+      - name: Build installable staging APK
+        shell: bash
+        run: chmod +x android/gradlew && cd android && ./gradlew :app:assembleDebug
+
+      - name: Verify staging APK signature
+        shell: bash
+        run: |
+          apk="android/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$apk"
+          apksigner="$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)"
+          test -n "$apksigner"
+          "$apksigner" verify --verbose "$apk"
+
+      - name: Wait for exact-source staging backend
+        shell: bash
+        run: |
+          for attempt in $(seq 1 30); do
+            body="$(curl --fail --silent --show-error --max-time 12 \
+              "$STAGING_ORIGIN/api/v1/mobile/bootstrap" || true)"
+            if EXPECTED_SHA="$GITHUB_SHA" EXPECTED_ORIGIN="$STAGING_ORIGIN" BODY="$body" node - <<'NODE'
+          const body = process.env.BODY || '';
+          let value;
+          try { value = JSON.parse(body); } catch { process.exit(1); }
+          if (value.release_sha !== process.env.EXPECTED_SHA) process.exit(1);
+          if (value.public_origin !== process.env.EXPECTED_ORIGIN) process.exit(1);
+          if (value.protocol !== 2 || value.max_room_participants !== 2) process.exit(1);
+          NODE
+            then
+              echo "staging backend matches $GITHUB_SHA"
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo "staging backend did not converge to exact source $GITHUB_SHA" >&2
+              exit 1
+            fi
+            sleep 10
+          done
+
+      - name: Write exact-source APK receipt
+        shell: bash
+        run: |
+          apk="android/app/build/outputs/apk/debug/app-debug.apk"
+          digest="$(sha256sum "$apk" | awk '{print $1}')"
+          {
+            echo "release_sha=$GITHUB_SHA"
+            echo "public_origin=$STAGING_ORIGIN"
+            echo "apk_sha256=$digest"
+          } > staging-apk-receipt.txt
+          cat staging-apk-receipt.txt
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lingua-relay-exact-source-staging-apk
+          path: |
+            wa-translator/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+            wa-translator/mobile/staging-apk-receipt.txt
+            wa-translator/mobile/www/native-build-target.json
+          if-no-files-found: error
