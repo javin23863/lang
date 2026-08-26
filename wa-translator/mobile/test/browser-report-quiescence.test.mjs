@@ -261,7 +261,10 @@ test("source keeps confirmed-report quiescence local and preserves the later nor
   assert.match(source, /Promise\.resolve\(context\.close\(\)\)\.catch/);
   assert.match(source, /setChatEnabled\(false\)/);
   assert.match(source, /if \(reportButton\.disabled\) \{[\s\S]*?quiesceRoomForReport\(\);[\s\S]*?endRoomLifecycle\(true\)/);
-  assert.doesNotMatch(source,
-    /function quiesceRoomForReport\(\)[\s\S]*?disconnectRoom\(/,
+  const start = source.indexOf("function quiesceRoomForReport()");
+  const end = source.indexOf("function canRetryCapabilities()", start);
+  assert.ok(start >= 0 && end > start);
+  const quiescenceSource = source.slice(start, end);
+  assert.doesNotMatch(quiescenceSource, /disconnectRoom\(/,
     "report quiescence must not run normal disconnect before the backend authenticates the participant");
 });
