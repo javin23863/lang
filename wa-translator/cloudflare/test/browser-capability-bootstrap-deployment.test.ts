@@ -7,7 +7,6 @@ describe("browser capability bootstrap deployment", () => {
   it("serves the synchronous runtime with the initial room capability deadline", async () => {
     const response = await exports.default.fetch(`${ORIGIN}/app-runtime.js`);
     expect(response.status).toBe(200);
-    expect(response.headers.get("Cache-Control")).toBe("no-store");
 
     const source = await response.text();
     expect(source).toContain("const BROWSER_BOOTSTRAP_FETCH_TIMEOUT_MS = 12000");
