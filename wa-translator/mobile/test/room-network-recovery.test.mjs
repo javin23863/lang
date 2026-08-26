@@ -74,8 +74,11 @@ test("browser and PWA rooms have bounded ICE recovery and TURN retry floors", as
   assert.match(source, /const BROWSER_ICE_RESTART_WINDOW_MS = 60 \* 1000/);
   assert.match(source, /const BROWSER_ICE_RESTART_MAX_PER_WINDOW = 3/);
   assert.match(source, /function installBrowserRoomNetworkRecovery\(\) \{/);
-  assert.ok(source.includes('if (native || !/^\\/room\\/[^/]+$/.test(location.pathname)) return;'),
-    "recovery is limited to browser/PWA room routes and does not double-install in native");
+  assert.ok(
+    source.includes('if (native || !/^\\/room\\/[^/]+$/.test(location.pathname)')
+      && source.includes('|| typeof window.fetch !== "function") return;'),
+    "recovery is limited to browser/PWA room routes and does not double-install in native",
+  );
   assert.match(source, /window\.WebSocket = TrackingWebSocket/,
     "browser room signalling is tracked without changing the room protocol");
   assert.match(source, /window\.RTCPeerConnection = RecoveringRTCPeerConnection/);
