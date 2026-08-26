@@ -8,6 +8,7 @@ Primary sources:
 
 - Set an app age rating: https://developer.apple.com/help/app-store-connect/manage-app-information/set-an-app-age-rating
 - Age rating values and definitions: https://developer.apple.com/help/app-store-connect/reference/app-information/age-ratings-values-and-definitions
+- App Review Guidelines: https://developer.apple.com/app-store/review/guidelines/
 
 Current product facts for the questionnaire:
 
@@ -15,7 +16,8 @@ Current product facts for the questionnaire:
 - **Social Media: No.** There is no feed, reposting, liking, following, public profile, discovery, search, amplification, or public room browsing.
 - **Unrestricted Web Access: No.** The installed product is not a general web browser and provides no arbitrary in-app web navigation surface. OAuth uses the system browser for a bounded authentication flow.
 - **Advertising: No.** Version 1.0 has no advertising SDK or ad surface.
-- **User-Generated Content capability:** Apple's current definition describes broad distribution of user-created content. Version 1.0 has only private one-to-one room communication and no broad distribution; direct communication is declared under Messaging and Chat. Re-check Apple's exact wording at submission rather than carrying this interpretation forward indefinitely.
+- **User-generated communication safety:** a participant can independently block the current peer. The app stores a random installation-scoped pseudonymous safety ID and a bounded device-local blocked-ID list; a later room join is refused before admission if either participant presents a block relationship involving the same safety ID. Reporting also adds the peer to the local block list, and a durably accepted report in the installed app closes the current reported room. The safety mechanism creates no guest account, searchable identity, public profile, discovery graph, or server-side block-history database.
+- **User-Generated Content capability:** Apple's current age-rating definition describes broad distribution of user-created content. Version 1.0 has only private one-to-one room communication and no broad distribution; direct communication is declared under Messaging and Chat. Re-check Apple's exact wording at submission rather than carrying this interpretation forward indefinitely.
 - **Made for Kids: No** for the current product contract. The public privacy policy says Lingua Relay is not directed to children under 13.
 
 Apple calculates the displayed age rating from the completed questionnaire and any region-specific rules. Do not hard-code a numeric Apple age rating in source before App Store Connect assigns it.
@@ -32,7 +34,7 @@ Primary sources:
 Current product facts for the questionnaire:
 
 - **Online Interaction or Content Exchange: Yes.** Users directly exchange text, voice, and video through the app's own private-room service.
-- **User-generated content policy applies.** User speech/video/chat is accessible to the other invited participant. Version 1.0 provides affirmative Terms acceptance plus an in-room category-only Report & block action; the installed-app report closes the room after durable acceptance and blocks that room locally.
+- **User-generated content policy applies.** Version 1.0 provides affirmative Terms acceptance, a category-only report path, and an independent participant-blocking function. The random installation safety ID plus bounded local block list let either side refuse the same safety ID on a future private-room encounter before that peer is admitted. The block list is never exposed to the other participant. Reporting also local-blocks the current peer; a durably accepted installed-app report closes the current room on the backend. There is no guest account, public profile, user directory, discovery/matching graph, or persistent server-side block-history database.
 - **Advertising: No.** Version 1.0 contains no ads.
 - **Target audience:** the product is not designed for children under 13. The exact Play target-age bands remain an owner/operator console decision based on the intended launch audience and distribution. Do not infer an 18+ audience from source: the product has no adult-only age gate.
 
