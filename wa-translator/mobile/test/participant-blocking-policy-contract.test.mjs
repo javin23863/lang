@@ -34,7 +34,7 @@ test("store and reviewer sources describe participant blocking instead of the re
   assert.doesNotMatch(declarations, /no persistent guest identity/);
   assert.doesNotMatch(declarations, /complete service relationship between the two participants/);
   assert.doesNotMatch(reviewInputs, /no persistent cross-room identity/);
-  assert.match(reviewInputs, /future-room join presenting the same pseudonymous safety ID is refused before admission/);
+  assert.match(reviewInputs, /later private-room\s+join presenting the same pseudonymous safety ID is refused before admission/);
 });
 
 test("Google Data Safety source treats off-device installation safety identifiers conservatively", () => {
