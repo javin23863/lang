@@ -14,8 +14,8 @@ test("QR bootstrap keeps the control unavailable until the unchanged encoder loa
     "a slow first encoder fetch cannot expose a crashing QR action");
   assert.match(source, /qrCore\.src = "\/qr-encoder\.js"/);
   assert.match(source, /qrCore\.addEventListener\("load", \(\) => \{/);
-  assert.match(source, /if \(qrButton\) qrButton\.disabled = false/,
-    "the QR action is restored only after encoder readiness");
+  assert.match(source, /if \(qrButton && !browserMediaLifecycleEnded\) qrButton\.disabled = false/,
+    "encoder readiness restores QR only while invitation controls are still live");
   assert.match(source, /\}, \{once: true\}\)/);
   assert.match(encoderSource, /window\.LinguaQR = \{svg: svg, _matrix: matrix\}/,
     "the split retains the original synchronous LinguaQR surface");
