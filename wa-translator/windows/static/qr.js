@@ -166,6 +166,7 @@
     const activeControlControllers = new Set();
     const reportControlControllers = new WeakSet();
     const peerGenerations = new WeakMap();
+    const browserMediaTasks = new Map();
     let roomSuspended = false;
     let roomLifecycleEnded = false;
     let activeRoomSocket = null;
@@ -214,6 +215,53 @@
       if (!browserRoomGenerationActive(browserRoomGeneration)) return false;
       if (typeof terminalRoom !== "undefined" && terminalRoom) return false;
       return true;
+    }
+
+    function lifecycleMediaTask(kind, roomGetter) {
+      const generation = browserRoomGeneration;
+      const current = browserMediaTasks.get(kind);
+      if (current?.generation === generation) return current.task;
+      const roomTask = roomGetter();
+      let task;
+      task = Promise.resolve(roomTask).then(
+        stream => {
+          if (generation !== browserRoomGeneration || !browserRoomWorkActive()) {
+            throw lifecycleAbortError();
+          }
+          const tracks = kind === "audio" ? stream.getAudioTracks?.() : stream.getVideoTracks?.();
+          for (const track of tracks || []) {
+            const roomOnEnded = track.onended;
+            track.onended = event => {
+              if (generation !== browserRoomGeneration || !browserRoomWorkActive()) return;
+              if (browserMediaTasks.get(kind)?.task === task) browserMediaTasks.delete(kind);
+              return roomOnEnded?.call(track, event);
+            };
+          }
+          return stream;
+        },
+        error => {
+          if (browserMediaTasks.get(kind)?.task === task) browserMediaTasks.delete(kind);
+          if (generation !== browserRoomGeneration || !browserRoomWorkActive()) {
+            throw lifecycleAbortError();
+          }
+          throw error;
+        },
+      );
+      browserMediaTasks.set(kind, {generation, task});
+      return task;
+    }
+
+    if (typeof getAudioMedia === "function") {
+      const roomGetAudioMedia = getAudioMedia;
+      getAudioMedia = function lifecycleAwareGetAudioMedia() {
+        return lifecycleMediaTask("audio", roomGetAudioMedia);
+      };
+    }
+    if (typeof getVideoMedia === "function") {
+      const roomGetVideoMedia = getVideoMedia;
+      getVideoMedia = function lifecycleAwareGetVideoMedia() {
+        return lifecycleMediaTask("video", roomGetVideoMedia);
+      };
     }
 
     function peerConnectionActive(pc, generation = peerGenerations.get(pc)) {
@@ -454,6 +502,32 @@
               || generation !== browserRoomGeneration || !browserRoomWorkActive()) return;
           setMicEnabled(false);
           setStatus("status.micUnavailable", null, true);
+        }
+      };
+    }
+
+    const camButton = document.getElementById("camBtn");
+    if (camButton && typeof getVideoMedia === "function") {
+      camButton.onclick = async () => {
+        const generation = browserRoomGeneration;
+        if (camOn) {
+          camOn = false;
+          if (mediaStream) mediaStream.getVideoTracks().forEach(track => { track.enabled = false; });
+          camButton.className = "icon off";
+          return;
+        }
+        try {
+          await getVideoMedia();
+          if (generation !== browserRoomGeneration || !browserRoomWorkActive()) return;
+          camOn = true;
+          mediaStream.getVideoTracks().forEach(track => { track.enabled = true; });
+          for (const peer of peers.values()) addTracks(peer.pc);
+          camButton.className = "icon";
+        } catch (_) {
+          if (generation !== browserRoomGeneration || !browserRoomWorkActive()) return;
+          camOn = false;
+          camButton.className = "icon off";
+          setStatus("status.cameraUnavailable", null, true);
         }
       };
     }
