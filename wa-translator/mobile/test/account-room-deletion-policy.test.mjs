@@ -20,7 +20,7 @@ const [privacy, terms, deletion, declarations, privacySources, reviewInputs, che
 test("account deletion closes owned rooms before account erasure is reported successful", () => {
   for (const source of [privacy, terms, deletion, declarations, reviewInputs]) {
     assert.match(source,
-      /close(?:s|d)?\s+every still-live room (?:owned by|registered to) (?:that|the) account/i);
+      /close(?:s|d)?\s+every still-live room (?:owned by|registered to) (?:that|the)\s+account/i);
   }
   assert.match(privacy, /deletion does not report success and the account remains available/i);
   assert.match(declarations, /deletion fails\s+closed and the account remains/i);
