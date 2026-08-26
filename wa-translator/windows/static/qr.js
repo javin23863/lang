@@ -40,6 +40,17 @@
     }
   }
 
+  function retireInvitationControls() {
+    for (const id of ["shareBtn", "waBtn", "lineBtn", "qrBtn"]) {
+      const button = document.getElementById(id);
+      if (button) button.disabled = true;
+    }
+    const qrButton = document.getElementById("qrBtn");
+    const qrBox = document.getElementById("qrBox");
+    qrButton?.setAttribute?.("aria-expanded", "false");
+    if (qrBox) qrBox.hidden = true;
+  }
+
   function browserMediaRequestActive() {
     if (browserMediaLifecycleEnded || !/^\/room\/[^/]+$/.test(location.pathname)) return false;
     if (typeof leaving !== "undefined" && leaving) return false;
@@ -84,6 +95,7 @@
         if ((typeof explicitLeave !== "undefined" && explicitLeave)
             || (typeof terminalRoom !== "undefined" && terminalRoom)) {
           browserMediaLifecycleEnded = true;
+          retireInvitationControls();
         }
         return roomDisconnectRoom(...args);
       };
@@ -226,6 +238,10 @@
         const generation = browserRoomGeneration;
         if (!browserRoomGenerationActive(generation)) return false;
         const result = await roomPreflightRoom(...args);
+        if (typeof terminalRoom !== "undefined" && terminalRoom) {
+          browserMediaLifecycleEnded = true;
+          retireInvitationControls();
+        }
         if (!browserRoomGenerationActive(generation)) return false;
         return result;
       };
@@ -284,7 +300,12 @@
         if (!browserRoomWorkActive()) return;
         const generation = browserRoomGeneration;
         try {
-          return await roomHandle(message);
+          const result = await roomHandle(message);
+          if (typeof terminalRoom !== "undefined" && terminalRoom) {
+            browserMediaLifecycleEnded = true;
+            retireInvitationControls();
+          }
+          return result;
         } catch (error) {
           if (error?.linguaPeerLifecycle === true || generation !== browserRoomGeneration) return;
           throw error;
@@ -479,6 +500,7 @@
       browserMediaLifecycleEnded = true;
       invalidatePendingBrowserMedia();
       roomLifecycleEnded = true;
+      retireInvitationControls();
       clearCapabilityRetryTimer();
       abortControlRequests(preserveReportRequest);
     }
@@ -649,6 +671,56 @@
     document.addEventListener?.("visibilitychange", () => {
       if (document.visibilityState === "visible") retryCapabilities();
     });
+
+    const shareButton = document.getElementById("shareBtn");
+    const whatsappButton = document.getElementById("waBtn");
+    const lineButton = document.getElementById("lineBtn");
+    const roomQrButton = document.getElementById("qrBtn");
+    for (const button of [whatsappButton, lineButton, roomQrButton]) {
+      button?.addEventListener("click", event => {
+        if (browserRoomWorkActive()) return;
+        event.preventDefault?.();
+        event.stopImmediatePropagation?.();
+      }, {capture: true});
+    }
+
+    if (shareButton && typeof runtime !== "undefined" && typeof runtime.share === "function") {
+      shareButton.onclick = async () => {
+        const generation = browserRoomGeneration;
+        if (!browserRoomWorkActive()) return;
+        const invite = {
+          title: t("share.title"),
+          text: t(SHARE_TEXT[roomMode]),
+          url: inviteLink(),
+        };
+        const shared = await runtime.share(invite);
+        if (generation !== browserRoomGeneration || !browserRoomWorkActive()) return;
+        if (shared) {
+          setStatus("status.invitationShared");
+          return;
+        }
+        const message = invite.text + "\n" + invite.url;
+        const opened = window.open(
+          "https://wa.me/?text=" + encodeURIComponent(message),
+          "_blank",
+        );
+        if (opened) opened.opener = null;
+        if (!opened) {
+          try {
+            if (navigator.clipboard) {
+              await navigator.clipboard.writeText(invite.url);
+              if (generation !== browserRoomGeneration || !browserRoomWorkActive()) return;
+              setStatus("status.linkCopied");
+              return;
+            }
+          } catch (_) {
+            if (generation !== browserRoomGeneration || !browserRoomWorkActive()) return;
+          }
+          if (generation !== browserRoomGeneration || !browserRoomWorkActive()) return;
+          setStatus("status.shareFailed", null, true);
+        }
+      };
+    }
 
     const leaveButton = document.getElementById("leaveBtn");
     leaveButton?.addEventListener("click", endRoomLifecycle, {capture: true});
@@ -824,7 +896,7 @@
   qrCore.src = "/qr-encoder.js";
   qrCore.async = false;
   qrCore.addEventListener("load", () => {
-    if (qrButton) qrButton.disabled = false;
+    if (qrButton && !browserMediaLifecycleEnded) qrButton.disabled = false;
   }, {once: true});
   document.head.appendChild(qrCore);
 })();
