@@ -1,5 +1,5 @@
 import { build } from "esbuild";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -20,9 +20,10 @@ if (invokedDirectly) {
   const mobile = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const origin = resolvePublicOrigin(process.env.LINGUA_PUBLIC_ORIGIN);
   const www = path.join(mobile, "www");
+  const bridgePath = path.join(www, "mobile-bridge.js");
   await build({
     entryPoints: [path.join(mobile, "src", "mobile-entry.ts")],
-    outfile: path.join(www, "mobile-bridge.js"),
+    outfile: bridgePath,
     bundle: true,
     minify: true,
     format: "iife",
@@ -32,6 +33,12 @@ if (invokedDirectly) {
       js: `globalThis.__LINGUA_PUBLIC_ORIGIN__=${JSON.stringify(origin)};`,
     },
   });
+  if (origin !== PUBLIC_ORIGIN) {
+    const source = await readFile(bridgePath, "utf8");
+    const occurrences = source.split(PUBLIC_ORIGIN).length - 1;
+    if (occurrences < 1) throw new Error("production origin seam missing from native bridge");
+    await writeFile(bridgePath, source.replaceAll(PUBLIC_ORIGIN, origin), "utf8");
+  }
   await writeFile(
     path.join(www, "native-build-target.json"),
     `${JSON.stringify({ public_origin: origin })}\n`,
