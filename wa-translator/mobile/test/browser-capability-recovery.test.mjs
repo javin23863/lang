@@ -28,7 +28,12 @@ class MockWebSocket extends MockTarget {
   static OPEN = 1;
   static CLOSING = 2;
   static CLOSED = 3;
-  constructor() { super(); this.readyState = 0; }
+  static created = 0;
+  constructor() {
+    super();
+    this.readyState = 0;
+    MockWebSocket.created++;
+  }
 }
 
 function element() {
@@ -45,6 +50,7 @@ function element() {
 }
 
 function harness({partial = false, failLoads = 0} = {}) {
+  MockWebSocket.created = 0;
   const windowTarget = new MockTarget();
   const timers = [];
   windowTarget.setTimeout = (callback, delay) => {
@@ -163,6 +169,7 @@ test("online recovery reloads capabilities without joining or reopening signalli
   assert.equal(state.statusKey, "gate.title");
   assert.equal(state.roleUpdateCount, 1);
   assert.equal(h.elements.get("roleLocaleSel").disabled, false);
+  assert.equal(MockWebSocket.created, 0, "capability recovery cannot join or signal for the user");
 });
 
 test("the timeout fallback retries only after the room has actually entered capability failure", async () => {
