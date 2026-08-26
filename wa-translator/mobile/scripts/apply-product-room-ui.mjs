@@ -1,0 +1,21 @@
+import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const MOBILE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const roomPath = path.join(MOBILE, "www", "room.html");
+let html = await readFile(roomPath, "utf8");
+
+const styleTag = '<link rel="stylesheet" href="/room-product-ui.css">';
+const scriptTag = '<script src="/room-product-ui.js"></script>';
+
+if (!html.includes(styleTag)) {
+  if (!html.includes("</head>")) throw new Error("generated room is missing </head>");
+  html = html.replace("</head>", `${styleTag}\n</head>`);
+}
+if (!html.includes(scriptTag)) {
+  if (!html.includes("</body>")) throw new Error("generated room is missing </body>");
+  html = html.replace("</body>", `${scriptTag}\n</body>`);
+}
+
+await writeFile(roomPath, html);
