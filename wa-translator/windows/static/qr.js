@@ -48,9 +48,15 @@
   }
 
   // Keep /qr.js as the public loader used by existing dashboard/room markup.
-  // The encoder itself is unchanged and remains credential-free shell code.
+  // Disable the user-facing QR control until the unchanged encoder is ready so
+  // a slow first fetch cannot turn an early click into a LinguaQR reference error.
+  const qrButton = document.getElementById("qrBtn");
+  if (qrButton) qrButton.disabled = true;
   const qrCore = document.createElement("script");
   qrCore.src = "/qr-encoder.js";
   qrCore.async = false;
+  qrCore.addEventListener("load", () => {
+    if (qrButton) qrButton.disabled = false;
+  }, {once: true});
   document.head.appendChild(qrCore);
 })();
