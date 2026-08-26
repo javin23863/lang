@@ -216,7 +216,7 @@ test("explicit Leave permanently blocks queued room messages but preserves the i
   const state = h.state();
   assert.equal(state.handledMessages, 0);
   assert.equal(state.peerCreates, 0);
-  assert.deepEqual(state.videoNotes, ["note.youLeft"],
+  assert.deepEqual(Array.from(state.videoNotes), ["note.youLeft"],
     "stale peer warning is suppressed but the room's terminal Leave note still renders");
 });
 
@@ -232,16 +232,17 @@ test("peer warning notes require a current unhealthy peer and cannot overwrite h
   const h = harness();
 
   h.context.showVideoNote("note.videoSlow");
-  assert.deepEqual(h.state().videoNotes, [], "old timer cannot warn after its peer has disappeared");
+  assert.deepEqual(Array.from(h.state().videoNotes), [],
+    "old timer cannot warn after its peer has disappeared");
 
   await h.context.handle({type: "peer_join", id: "p1", iceState: "checking"});
   h.context.showVideoNote("note.videoSlow");
-  assert.deepEqual(h.state().videoNotes, ["note.videoSlow"],
+  assert.deepEqual(Array.from(h.state().videoNotes), ["note.videoSlow"],
     "a current unhealthy peer keeps the existing warning behavior");
 
   vm.runInContext("peers.get('p1').pc.iceConnectionState = 'connected'", h.context);
   h.context.showVideoNote("note.videoFailed");
-  assert.deepEqual(h.state().videoNotes, ["note.videoSlow"],
+  assert.deepEqual(Array.from(h.state().videoNotes), ["note.videoSlow"],
     "an old failed callback cannot overwrite a healthy current peer state");
 });
 
