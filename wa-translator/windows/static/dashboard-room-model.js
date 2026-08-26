@@ -43,12 +43,10 @@
     }
 
     async function load() {
-      let persisted;
-      try {
-        persisted = await runtime.loadHostRoom();
-      } catch (_) {
-        return null;
-      }
+      // A storage read failure is materially different from an empty slot. Let
+      // the controller keep custody unresolved until the adapter becomes usable
+      // instead of allowing a second room to be created over an unread bearer.
+      const persisted = await runtime.loadHostRoom();
       if (!persisted) return null;
       try {
         const value = JSON.parse(persisted);

@@ -20,7 +20,11 @@ function roomRecord(overrides = {}) {
   };
 }
 
-function loadModel(savedValue = null, {saveSucceeds = true, deleteSucceeds = true} = {}) {
+function loadModel(savedValue = null, {
+  saveSucceeds = true,
+  deleteSucceeds = true,
+  loadFails = false,
+} = {}) {
   let stored = savedValue;
   let writes = 0;
   let forgets = 0;
@@ -28,7 +32,10 @@ function loadModel(savedValue = null, {saveSucceeds = true, deleteSucceeds = tru
   vm.runInNewContext(source, context, {filename: "dashboard-room-model.js"});
   const runtime = {
     inviteUrl: room => new URL(room.path, "https://lingua.test").toString(),
-    loadHostRoom: async () => stored,
+    loadHostRoom: async () => {
+      if (loadFails) throw new Error("storage unavailable");
+      return stored;
+    },
     saveHostRoom: async value => {
       writes++;
       if (!saveSucceeds) return false;
@@ -87,6 +94,13 @@ test("valid persisted capabilities survive load without destructive cleanup", as
   assert.equal(loaded.host_control, record.host_control);
   assert.equal(loaded.expires_at, record.expires_at);
   assert.equal(h.state().forgets, 0);
+});
+
+test("storage read failures propagate instead of masquerading as an empty slot", async () => {
+  const h = loadModel(JSON.stringify(roomRecord()), {loadFails: true});
+  await assert.rejects(() => h.model.load(), /storage unavailable/);
+  assert.equal(h.state().forgets, 0,
+    "an unread slot cannot be destructively cleaned up or declared empty");
 });
 
 test("valid invite URLs remain on the public origin and add only the normalized mode", async () => {

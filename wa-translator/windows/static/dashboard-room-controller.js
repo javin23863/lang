@@ -24,6 +24,7 @@
 
     let room = null;
     let busy = false;
+    let custodyUnavailable = false;
     let statusTimer = null;
     let statusRefreshRoom = null;
     let invalidationGeneration = 0;
@@ -33,12 +34,21 @@
     }
 
     function isBusy() {
-      return busy;
+      return busy || custodyUnavailable;
+    }
+
+    function syncBusy() {
+      onBusy(isBusy());
     }
 
     function setBusy(value) {
-      busy = value;
-      onBusy(value);
+      busy = Boolean(value);
+      syncBusy();
+    }
+
+    function setCustodyUnavailable(value) {
+      custodyUnavailable = Boolean(value);
+      syncBusy();
     }
 
     function stopPolling() {
@@ -60,8 +70,15 @@
       const acquiredBusy = !busy;
       if (acquiredBusy) setBusy(true);
       try {
-        await model.forget();
+        if (!await model.forget()) {
+          if (invalidationGeneration === targetGeneration && room === targetRoom) {
+            setCustodyUnavailable(true);
+            onClear("error", "home.needsUpdate", {preserveRoom: true});
+          }
+          return false;
+        }
         if (invalidationGeneration !== targetGeneration || room !== targetRoom) return false;
+        setCustodyUnavailable(false);
         room = null;
         stopPolling();
         onClear(state, key);
@@ -87,6 +104,9 @@
 
     async function refresh() {
       const targetRoom = room;
+      // A custody-retirement failure leaves the known room in memory but locks
+      // user actions. Recovery still needs to poll that room so it can retry the
+      // checked tombstone write when storage becomes usable again.
       if (!targetRoom || busy || statusRefreshRoom === targetRoom) return;
       statusRefreshRoom = targetRoom;
       try {
@@ -125,7 +145,7 @@
     async function close(withConfirmation = true) {
       const targetRoom = room;
       const targetGeneration = invalidationGeneration;
-      if (!targetRoom || busy) return false;
+      if (!targetRoom || busy || (custodyUnavailable && withConfirmation)) return false;
       if (withConfirmation && !confirmAction("home.confirmClose")) return false;
       setBusy(true);
       try {
@@ -135,13 +155,19 @@
         });
         if (invalidationGeneration !== targetGeneration || room !== targetRoom) return false;
         if (TERMINAL_CONTROL_STATUSES.has(response.status)) {
-          if (!await clear("expired", "home.controlLost")) return false;
+          if (!await clear("expired", "home.controlLost")) {
+            events()?.emit("room.close.result", {result: "failure"});
+            return false;
+          }
           events()?.emit("room.close.result", {result: "success"});
           onNotice("");
           return true;
         }
         if (!response.ok) throw new Error("close failed");
-        if (!await clear("closed", "home.roomClosedLink")) return false;
+        if (!await clear("closed", "home.roomClosedLink")) {
+          events()?.emit("room.close.result", {result: "failure"});
+          return false;
+        }
         events()?.emit("room.close.result", {result: "success"});
         onNotice("");
         return true;
@@ -156,7 +182,7 @@
     }
 
     async function createRoom(mode) {
-      if (busy) return false;
+      if (isBusy()) return false;
       const targetGeneration = invalidationGeneration;
       const requestedMode = model.normalizeMode(mode);
       if (room) {
@@ -189,10 +215,12 @@
           throw new Error("storage unavailable");
         }
         if (invalidationGeneration !== targetGeneration) {
-          await model.forget();
+          const retired = await model.forget();
+          if (!retired) setCustodyUnavailable(true);
           await retireCreatedRoom(created);
           return false;
         }
+        setCustodyUnavailable(false);
         room = created;
         onRender(room, "ready", 0);
         startPolling();
@@ -210,7 +238,7 @@
     }
 
     function open() {
-      if (!room || busy) return false;
+      if (!room || isBusy()) return false;
       if (!runtime.openRoom(room.path, model.mode(room))) {
         onNotice("home.openBlocked");
         return false;
@@ -219,6 +247,8 @@
     }
 
     async function restore() {
+      // `custodyUnavailable` deliberately does not block restore: foreground or
+      // online recovery must be able to retry the storage read that created it.
       if (busy) return null;
       const targetGeneration = invalidationGeneration;
       let refreshAfterRestore = false;
@@ -226,6 +256,7 @@
       try {
         const restored = await model.load();
         if (invalidationGeneration !== targetGeneration) return null;
+        setCustodyUnavailable(false);
         room = restored;
         if (room && room.expires_at * 1000 > Date.now()) {
           onRender(room, "ready", 0);
@@ -234,11 +265,13 @@
           return room;
         }
         if (room) {
-          await model.forget();
-          if (invalidationGeneration !== targetGeneration) return null;
-          room = null;
-          onClear("expired", "home.roomExpired");
+          if (!await clear("expired", "home.roomExpired")) return null;
         }
+        return null;
+      } catch (_) {
+        if (invalidationGeneration !== targetGeneration) return null;
+        setCustodyUnavailable(true);
+        onClear("error", "home.needsUpdate", {preserveRoom: true});
         return null;
       } finally {
         setBusy(false);
@@ -250,7 +283,9 @@
       invalidationGeneration++;
       stopPolling();
       room = null;
-      return await model.forget();
+      const retired = await model.forget();
+      setCustodyUnavailable(!retired);
+      return retired;
     }
 
     return Object.freeze({

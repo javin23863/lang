@@ -12,8 +12,14 @@ test("room retirement is a checked overwrite followed by best-effort deletion", 
     "silent delete failure is safe only after a confirmed overwrite has destroyed the bearer");
 });
 
-test("discard drops in-memory control before returning persistent retirement status", () => {
+test("ordinary room clearing keeps known custody until persistent retirement is confirmed", () => {
   assert.match(controller,
-    /async function discard\(\) \{\s*invalidationGeneration\+\+;\s*stopPolling\(\);\s*room = null;\s*return await model\.forget\(\);\s*\}/,
-    "account custody needs a confirmed retirement result without keeping stale host control live in memory");
+    /async function clear\(state, key\) \{[\s\S]*?if \(!await model\.forget\(\)\) \{[\s\S]*?setCustodyUnavailable\(true\);[\s\S]*?preserveRoom: true[\s\S]*?return false;[\s\S]*?room = null;/,
+    "server closure alone cannot make the UI forget a bearer that may still be usable at rest");
+});
+
+test("discard drops in-memory control but exposes persistent retirement failure to account custody", () => {
+  assert.match(controller,
+    /async function discard\(\) \{\s*invalidationGeneration\+\+;\s*stopPolling\(\);\s*room = null;\s*const retired = await model\.forget\(\);\s*setCustodyUnavailable\(!retired\);\s*return retired;\s*\}/,
+    "account transitions may drop the old in-memory bearer only while preserving a checked persistent-custody failure state");
 });

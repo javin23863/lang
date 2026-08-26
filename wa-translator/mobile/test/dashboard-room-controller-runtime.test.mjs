@@ -49,7 +49,7 @@ function harness(fetchImpl) {
     valid: value => Boolean(value?.path && value?.host_control && value?.expires_at),
     save: async () => { saved++; return true; },
     load: async () => null,
-    forget: async () => { forgotten++; },
+    forget: async () => { forgotten++; return true; },
     mode: value => value?.mode || "video",
   };
   const runtime = {
@@ -147,6 +147,39 @@ test("terminal close response retires stale custody and does not trap replacemen
   }
 });
 
+test("failed persistent retirement keeps known room custody locked until storage recovers", async () => {
+  let storageAvailable = false;
+  const h = harness(async input => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/rooms") return response(200, {...CREATED_ROOM});
+    if (path === "/api/room-control/close") return response(200);
+    if (path === "/api/room-control") {
+      return response(200, {participant_limit: 2, participant_count: 0, state: "closed"});
+    }
+    throw new Error(`unexpected request ${path}`);
+  });
+  h.model.forget = async () => storageAvailable;
+
+  assert.equal(await h.controller.create("video"), true);
+  const retained = h.controller.current();
+  assert.equal(await h.controller.close(false), false,
+    "server close is not enough when the persisted bearer could not be retired");
+  assert.equal(h.controller.current(), retained,
+    "known in-memory custody remains until its stored bearer is overwritten");
+  assert.equal(h.controller.isBusy(), true,
+    "room and account actions stay locked while persistent custody is unresolved");
+  assert.deepEqual(plain(h.clears.at(-1)), {
+    state: "error", key: "home.needsUpdate", options: {preserveRoom: true},
+  });
+
+  storageAvailable = true;
+  await h.controller.refresh();
+  assert.equal(h.controller.current(), null,
+    "a later status refresh retries and completes the checked retirement");
+  assert.equal(h.controller.isBusy(), false);
+  assert.deepEqual(plain(h.clears.at(-1)), {state: "closed", key: "home.roomClosed"});
+});
+
 test("a delayed status response for a replaced room cannot clear the new host control", async () => {
   const staleStatus = deferred();
   const replacement = {
@@ -227,4 +260,27 @@ test("startup restore blocks new room creation until persisted control is resolv
   assert.equal(await restoreResult, null);
   assert.equal(h.controller.isBusy(), false);
   assert.deepEqual(h.busy.slice(-2), [true, false]);
+});
+
+test("storage-read failure remains locked until restore can prove custody state", async () => {
+  const h = harness(async () => { throw new Error("no network request expected"); });
+  let storageAvailable = false;
+  h.model.load = async () => {
+    if (!storageAvailable) throw new Error("secure storage unavailable");
+    return null;
+  };
+
+  assert.equal(await h.controller.restore(), null);
+  assert.equal(h.controller.isBusy(), true,
+    "read failure cannot be treated as an empty host-control slot");
+  assert.equal(await h.controller.create("video"), false,
+    "new room creation stays blocked while saved custody is unknown");
+  assert.deepEqual(plain(h.clears.at(-1)), {
+    state: "error", key: "home.needsUpdate", options: {preserveRoom: true},
+  });
+
+  storageAvailable = true;
+  assert.equal(await h.controller.restore(), null);
+  assert.equal(h.controller.isBusy(), false,
+    "a successful retry proving the slot empty releases the custody lock");
 });
