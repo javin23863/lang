@@ -11,6 +11,7 @@
   // stronger lifecycle state (`leaving`/`terminalRoom`) available in room.js.
   const BROWSER_ICE_RESTART_WINDOW_MS = 60 * 1000;
   const BROWSER_ICE_RESTART_MAX_PER_WINDOW = 3;
+  const BROWSER_BOOTSTRAP_FETCH_TIMEOUT_MS = 12000;
 
   function installBrowserRoomNetworkRecovery() {
     if (native || !/^\/room\/[^/]+$/.test(location.pathname)) return;
@@ -22,6 +23,7 @@
     let roomSocket = null;
     let turnRetryNotBefore = 0;
     let wrappedTurnScheduler = null;
+    let bootstrapCapabilitiesPending = true;
     const restartAttempts = new WeakMap();
 
     function TrackingWebSocket(url, protocols) {
@@ -74,15 +76,37 @@
       return true;
     }
 
-    window.fetch = async (input, init) => {
-      const response = await nativeFetch(input, init);
+    window.fetch = async (input, init = {}) => {
       let url;
       try {
         const target = typeof Request !== "undefined" && input instanceof Request ? input.url : input;
         url = new URL(target, location.href);
       } catch {
-        return response;
+        return nativeFetch(input, init);
       }
+
+      let response;
+      if (bootstrapCapabilitiesPending
+          && url.origin === location.origin
+          && url.pathname === "/api/capabilities") {
+        bootstrapCapabilitiesPending = false;
+        const callerSignal = init.signal
+          || (typeof Request !== "undefined" && input instanceof Request ? input.signal : null);
+        const controller = new AbortController();
+        const abortFromCaller = () => controller.abort();
+        if (callerSignal?.aborted) abortFromCaller();
+        else callerSignal?.addEventListener("abort", abortFromCaller, {once: true});
+        const timer = setTimeout(() => controller.abort(), BROWSER_BOOTSTRAP_FETCH_TIMEOUT_MS);
+        try {
+          response = await nativeFetch(input, {...init, signal: controller.signal});
+        } finally {
+          clearTimeout(timer);
+          callerSignal?.removeEventListener("abort", abortFromCaller);
+        }
+      } else {
+        response = await nativeFetch(input, init);
+      }
+
       if (url.pathname !== "/api/turn") return response;
       if (response.status === 429) {
         const retryAfterSeconds = Number(response.headers.get("Retry-After") || 0);
