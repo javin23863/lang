@@ -676,13 +676,13 @@
       shareButton.onclick = async () => {
         const generation = browserRoomGeneration;
         if (!browserRoomWorkActive()) return;
-        const active = () => generation === browserRoomGeneration && browserRoomWorkActive();
         const invite = {title: t("share.title"), text: t(SHARE_TEXT[roomMode]), url: inviteLink()};
-        if (await runtime.share(invite)) {
-          if (active()) setStatus("status.invitationShared");
+        const shared = await runtime.share(invite);
+        if (staleShare()) return;
+        if (shared) {
+          setStatus("status.invitationShared");
           return;
         }
-        if (!active()) return;
         const opened = window.open(
           "https://wa.me/?text=" + encodeURIComponent(invite.text + "\n" + invite.url), "_blank");
         if (opened) {
@@ -692,11 +692,18 @@
         try {
           if (navigator.clipboard) {
             await navigator.clipboard.writeText(invite.url);
-            if (active()) setStatus("status.linkCopied");
+            if (staleShare()) return;
+            setStatus("status.linkCopied");
             return;
           }
-        } catch (_) {}
-        if (active()) setStatus("status.shareFailed", null, true);
+        } catch (_) {
+          if (staleShare()) return;
+        }
+        setStatus("status.shareFailed", null, true);
+
+        function staleShare() {
+          return generation !== browserRoomGeneration || !browserRoomWorkActive();
+        }
       };
     }
 
