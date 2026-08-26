@@ -26,17 +26,18 @@ the full credential-free matrix deliberately before signed beta/device gates.
 - [x] A room-creation session is accepted only while its `UserDirectory` account
   still exists. Account deletion immediately blocks old browser/native sessions
   from creating another room.
-- [ ] Account deletion must synchronously terminate every still-live room owned
-  by that account before returning success. Version 1.0 currently prevents new
-  room creation after deletion but an already-issued room can survive until its
-  normal close/expiry; this source gap must close before store submission.
+- [x] Account deletion synchronously terminates every still-live room owned by
+  that account before returning success. Room ownership is registered before a
+  new bearer is returned; a short deletion fence closes the create/delete race,
+  and any unconfirmed room shutdown keeps deletion retryable rather than erasing
+  the account while an invitation remains active.
 - [x] The retired `POST /rooms` HTML-form creator is disabled; `/api/rooms` and
   its native versioned adapter are the only host room-creation contract.
 - [x] Account deletion is available in the app and removes account-held data.
-- [x] Successful logout/account deletion also removes the device-local saved
-  host-control bearer so a later account on a shared device cannot inherit room
-  administration. Already-issued participant rooms remain independent until
-  their normal expiry.
+- [x] Successful logout removes the device-local saved host-control bearer so a
+  later account on a shared device cannot inherit room administration. Successful
+  account deletion additionally closes every still-live room owned by the erased
+  account before the account data is removed.
 - [x] Version 1.0 is non-monetized: no purchase surface, stored credit balance,
   StoreKit product, or Google Play Billing product is part of the active app.
 - [x] New participant/share/QR/native room URLs contain only the signed room
@@ -139,7 +140,8 @@ the full credential-free matrix deliberately before signed beta/device gates.
   shared web/native assets.
 - [x] The Google Play external account-deletion resource is the production URL
   ending in `/delete-account.html`; it identifies Lingua Relay, works without
-  reinstalling the app, and routes into browser account controls.
+  reinstalling the app, documents owned-room shutdown, and routes into browser
+  account controls.
 - [x] Legal pages use one fail-closed room-return validator and preserve only
   `voice`/`chat` mode, never arbitrary origins or retired personal labels.
 - [x] Owner-supplied App Review / Play review inputs are enumerated in
@@ -171,6 +173,10 @@ the full credential-free matrix deliberately before signed beta/device gates.
   account's prior non-empty name/email instead of erasing them.
 - [x] Active account responses/storage retire the zero-only legacy credits field;
   successful profile reads/writes and usage writes all remove it.
+- [x] Account-owned live-room routing state is bounded to internal room ID/expiry
+  pairs, is never a room link or host-control bearer, is pruned no later than the
+  room's 24-hour lifetime, and exists only to close owned rooms during account
+  deletion. The create/delete race is covered by executable regression tests.
 - [x] Abuse reporting is category-only and excludes names, room links, message
   content, captions, audio, video, screenshots and free text.
 - [x] Category report records are enforced at a 30-day ceiling even on direct
@@ -187,7 +193,8 @@ the full credential-free matrix deliberately before signed beta/device gates.
   database. Reporting also blocks the current peer locally; accepted installed-app
   reports still close the current room on the backend.
 - [x] Store declarations are maintained in `STORE-DECLARATIONS.md` and match the
-  non-monetized account schema, participant-safety contract, and retention lifetimes.
+  non-monetized account schema, owned-room shutdown, participant-safety contract,
+  and retention lifetimes.
 - [ ] Assign a monitored moderation operator/on-call owner and verify the live
   private queue before public store submission.
 - [ ] Complete the final App Store age-rating/export-compliance questionnaires

@@ -23,9 +23,12 @@ production origin. If the Worker origin is intentionally retained for launch, ma
 that an explicit release decision and verify it as the production origin.
 
 The deletion resource explains the authenticated browser deletion flow. A user who
-can sign in with the account's provider can delete immediately from the same web app.
-Do not route access-loss requests through the public GitHub issue tracker; a dedicated
-private support contact remains a pre-submission requirement below.
+can sign in with the account's provider can delete from the same web app. Successful
+deletion first closes every still-live room owned by the account; if all owned rooms
+cannot be confirmed closed, deletion fails and remains retryable instead of erasing
+the account while an invitation stays active. Do not route access-loss requests
+through the public GitHub issue tracker; a dedicated private support contact remains
+a pre-submission requirement below.
 
 ## Apple App Review
 
@@ -42,6 +45,11 @@ Before submitting version 1.0, the account owner must provide:
       graph, random matching, stranger pairing, or open room browsing**. A user
       can communicate with another participant only by possessing that private
       room invitation.
+- [ ] Review notes explain account deletion: room ownership is registered before
+      a newly created room bearer is returned. Delete account closes every still-
+      live room owned by the account before erasing account data, so its invite
+      stops working. A concurrent create cannot escape deletion; if room closure
+      cannot be confirmed, deletion fails closed and remains retryable.
 - [ ] Review notes explain the safety flow: first-time entry requires an
       unchecked affirmative Terms checkbox for the current Terms version. A live
       participant has an independent **Block participant** action. Each install
@@ -80,6 +88,10 @@ Before submitting to review, the account owner must provide:
 - [ ] Confirmation that invited participants do not need an account and can join
       only using the private room link created by the reviewer; there is no
       public discovery, search, random matching, or stranger-chat surface.
+- [ ] Instructions for verifying account deletion: create a room, delete the host
+      account, then confirm that the previously issued invitation is closed. If
+      owned-room shutdown cannot be confirmed, the deletion operation must fail
+      rather than claim success.
 - [ ] Instructions for exercising the independent **Block participant** action:
       block the current peer on one install, then show that a later private-room
       join presenting the same pseudonymous safety ID is refused before admission.

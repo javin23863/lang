@@ -38,11 +38,14 @@ before a later submission.
 - Room capacity: exactly two participants total — one local participant and one
   remote participant. Version 1.0 has no group-room or multiparty-call mode.
 - Data collected: email address, an account user ID, display name/sign-in
-  provider, and usage counts (call minutes, chat messages, translated-voice
-  phrases). These are linked to the account and used for App Functionality only
-  — never for tracking, advertising, or third-party sharing. Usage rows carry an
-  opaque room reference, never a room link, participant-safety ID, and no message,
-  caption, audio, or video content.
+  provider, usage counts (call minutes, chat messages, translated-voice phrases),
+  and a bounded internal room ID/expiry record for each still-live room created
+  by the account. These are linked to the account and used for App Functionality
+  only — never for tracking or advertising. The active-room record is not a room
+  link or host-control bearer, contains no participant identity or conversation
+  content, and exists only so account deletion can terminate owned rooms. Usage
+  rows carry a separate opaque room reference, never a room link or participant-
+  safety ID, and no message, caption, audio, or video content.
 - Participant-safety identifiers: each app/browser installation keeps a random
   128-bit pseudonymous safety ID and a bounded device-local list of up to 128
   blocked safety IDs. They are not account IDs, credentials, contacts, advertising
@@ -55,33 +58,42 @@ before a later submission.
   app/site data or reinstalling rotates the installation safety ID and removes
   the local block list.
 - Apple App Privacy classification: retained account name, email, user ID, and
-  usage data are linked and used for App Functionality. The retained fixed-choice
-  abuse-report category is unlinked `Other User Content`. The SHA-256-derived
-  network-source identity used only to route a bounded abuse-quota counter is
-  conservatively declared as unlinked `Other Data Types`. Live microphone audio,
-  typed chat, and participant-safety identifiers that are discarded by the
+  usage data are linked and used for App Functionality. The bounded internal
+  room ID/expiry retained for a still-live account-created room is conservatively
+  included as linked `Product Interaction` used for App Functionality; the account
+  user ID remains separately declared as linked `User ID`. The retained fixed-
+  choice abuse-report category is unlinked `Other User Content`. The SHA-256-
+  derived network-source identity used only to route a bounded abuse-quota counter
+  is conservatively declared as unlinked `Other Data Types`. Live microphone
+  audio, typed chat, and participant-safety identifiers that are discarded by the
   service after the real-time room request/lifetime are not labeled as Apple
-  collection merely because they cross the network; re-check the exact live
-  App Store Connect wording and implementation before submission.
+  collection merely because they cross the network; re-check the exact live App
+  Store Connect wording and implementation before submission.
 - Google Play Data Safety classification: account name, email, and user ID are
-  collected for Account management/App functionality; usage counts are collected
-  as App interactions for App functionality; the fixed-choice abuse-report
-  category is collected as Other user-generated content for safety functionality.
-  `Voice or sound recordings` sent for speech recognition/translation and `Other in-app messages`
-  sent through room chat are included in the form response and marked as processed ephemerally
-  for App functionality. The random installation participant-safety ID and bounded blocked-ID
-  list are included under `Device or other IDs`: collected, required for the room safety
-  function, processed ephemerally off-device, and used for `Fraud prevention, security, and
-  compliance` plus App functionality where the console permits both. The local blocked-ID list
-  is never relayed to another participant. The SHA-256-derived source-IP quota identity is also
-  conservatively `Device or other IDs`: collected, not shared, required for abuse prevention,
-  not ephemeral, and used for `Fraud prevention, security, and compliance`. Natural WebRTC
-  camera/video and natural call audio remain end-to-end encrypted between participants,
-  including through TURN relay, and are not readable by the developer or relay intermediary.
-  Treat Cloudflare/Modal transfers as service-provider processing only if the actual production
-  contractual role still satisfies Google's service-provider exception when the console form is
-  completed, and re-check whether the peer-visible safety ID changes the then-current sharing
-  answer before submission.
+  collected for Account management/App functionality; usage counts and the
+  bounded internal room ID/expiry for a still-live account-created room are
+  collected as `App interactions` for App functionality. The owned-room routing
+  record is linked, required, not shared, and not ephemeral; it is removed at
+  successful account deletion or room expiry, never later than 24 hours. The
+  fixed-choice abuse-report category is collected as Other user-generated content
+  for safety functionality. `Voice or sound recordings` sent for speech
+  recognition/translation and `Other in-app messages` sent through room chat are
+  included in the form response and marked as processed ephemerally for App
+  functionality. The random installation participant-safety ID and bounded
+  blocked-ID list are included under `Device or other IDs`: collected, required
+  for the room safety function, processed ephemerally off-device, and used for
+  `Fraud prevention, security, and compliance` plus App functionality where the
+  console permits both. The local blocked-ID list is never relayed to another
+  participant. The SHA-256-derived source-IP quota identity is also conservatively
+  `Device or other IDs`: collected, not shared, required for abuse prevention,
+  not ephemeral, and used for `Fraud prevention, security, and compliance`.
+  Natural WebRTC camera/video and natural call audio remain end-to-end encrypted
+  between participants, including through TURN relay, and are not readable by the
+  developer or relay intermediary. Treat Cloudflare/Modal transfers as service-
+  provider processing only if the actual production contractual role still
+  satisfies Google's service-provider exception when the console form is
+  completed, and re-check whether the peer-visible safety ID changes the then-
+  current sharing answer before submission.
 - Authentication/security metadata: when a user logs out, the service stores
   only a one-way SHA-256 digest of that specific session token plus its original
   expiry so replay of a copied credential is rejected. The raw token is not
@@ -94,15 +106,21 @@ before a later submission.
   of its bounded window, never later than 24 hours. The quota identity is not
   joined to the signed-in account and is not used for advertising or tracking.
 - Account deletion: available in the app (Delete account, on the main screen)
-  and on the web at the same signed-in screen. Deletion removes the account
-  profile, aggregate usage totals, usage rows, and logout-revocation markers
-  immediately. Device-local participant blocks are deliberately separate from
-  the account and remain until app/site data is cleared.
+  and on the web at the same signed-in screen. Before deletion reports success,
+  the service synchronously closes every still-live room registered to that
+  account. Room creation registers ownership before the client receives its room
+  bearer, and a short deletion fence prevents a concurrent create from escaping
+  account teardown. If any owned room cannot be confirmed closed, deletion fails
+  closed and the account remains so the operation can be retried. After shutdown,
+  deletion removes the account profile, aggregate usage totals, usage rows,
+  owned-room routing records, and logout-revocation markers immediately. Device-
+  local participant blocks are deliberately separate from the account and remain
+  until app/site data is cleared.
 - Google Play external deletion URL: use the production URL ending in
   `/delete-account.html`. That page is publicly reachable without the mobile
-  app, identifies Lingua Relay, explains deletion/retention, and directs the
-  user to the browser account controls. Do not enter a generic support URL or
-  temporary development hostname in the Play Console field.
+  app, identifies Lingua Relay, explains deletion/retention and owned-room
+  shutdown, and directs the user to the browser account controls. Do not enter a
+  generic support URL or temporary development hostname in the Play Console field.
 - Monetization: version 1.0 has no purchase surface, stored credit balance,
   payment method, price, StoreKit product, or Google Play Billing product. The
   app may display recent usage as account activity, but it does not sell or
@@ -119,18 +137,23 @@ before a later submission.
   performs speech recognition, translation, and optional voice synthesis.
 - Retention: the account profile (email, derived user ID, display name, provider)
   and aggregate usage totals last until the account is deleted; usage rows keep
-  90 days or 200 rows, whichever is smaller. The product does not intentionally
-  persist media, captions, chat content, translated voice, participant-safety IDs,
-  or block relationships in server-side conversation/account history. A private
-  abuse report keeps category, platform, time, and an opaque public room reference
-  for up to 30 days. Its internal non-invite room routing ID and room-expiry value
-  exist only while moderator closure can still work and are deleted when that room
-  expires, no later than 24 hours after creation. Abuse-quota counters keep only a
-  window start/count in an object selected by a SHA-256-derived source-IP identity
-  and are deleted at the quota-window end, never later than 24 hours. Infrastructure
-  security and error logs may be retained by the providers.
+  90 days or 200 rows, whichever is smaller. The account-owned room registry
+  contains only a bounded internal room ID/expiry pair per still-live room and is
+  removed at successful account deletion or room expiry, never later than 24
+  hours after room creation. The product does not intentionally persist media,
+  captions, chat content, translated voice, participant-safety IDs, or block
+  relationships in server-side conversation/account history. A private abuse
+  report keeps category, platform, time, and an opaque public room reference for
+  up to 30 days. Its internal non-invite room routing ID and room-expiry value
+  exist only while moderator closure can still work and are deleted when that
+  room expires, no later than 24 hours after creation. Abuse-quota counters keep
+  only a window start/count in an object selected by a SHA-256-derived source-IP
+  identity and are deleted at the quota-window end, never later than 24 hours.
+  Infrastructure security and error logs may be retained by the providers.
 - Room control: the host can close a room; otherwise its bearer link expires
-  after 24 hours.
+  after 24 hours. Successful account deletion closes every still-live room owned
+  by that account before erasing the account, so those invitations stop working
+  sooner.
 - Safety/reporting: a live participant can independently block the current peer
   on that device. The peer's pseudonymous safety ID is added to the bounded local
   block list and the client leaves; on a future room, the server rejects admission
