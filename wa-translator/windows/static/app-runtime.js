@@ -492,13 +492,9 @@
   }
 
   async function loadHostRoom() {
-    try {
-      return native
-        ? await window.LinguaNative.getItem(hostRoomKey)
-        : localStorage.getItem(hostRoomKey);
-    } catch {
-      return null;
-    }
+    return native
+      ? await window.LinguaNative.getItem(hostRoomKey)
+      : localStorage.getItem(hostRoomKey);
   }
 
   async function saveHostRoom(value) {

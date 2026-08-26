@@ -18,8 +18,8 @@ test("ordinary room clearing keeps known custody until persistent retirement is 
     "server closure alone cannot make the UI forget a bearer that may still be usable at rest");
 });
 
-test("discard drops in-memory control but exposes persistent retirement failure to account custody", () => {
+test("discard holds the controller lock while persistent retirement is in flight", () => {
   assert.match(controller,
-    /async function discard\(\) \{\s*invalidationGeneration\+\+;\s*stopPolling\(\);\s*room = null;\s*const retired = await model\.forget\(\);\s*setCustodyUnavailable\(!retired\);\s*return retired;\s*\}/,
-    "account transitions may drop the old in-memory bearer only while preserving a checked persistent-custody failure state");
+    /async function discard\(\) \{\s*const acquiredBusy = !busy;\s*if \(acquiredBusy\) setBusy\(true\);\s*invalidationGeneration\+\+;\s*stopPolling\(\);\s*room = null;[\s\S]*?const retired = await model\.forget\(\);[\s\S]*?setCustodyUnavailable\(!retired\);[\s\S]*?return retired;[\s\S]*?finally \{\s*if \(acquiredBusy\) setBusy\(false\);\s*\}/,
+    "foreground restore cannot race a tombstone write during sign-out or account teardown");
 });

@@ -145,9 +145,13 @@ const sharePresenter = window.LinguaDashboardShare.create({
 const settingsPresenter = window.LinguaDashboardSettings.create({runtime, byId: $});
 const lifecycle = window.LinguaDashboardLifecycle.create({
   runtime,
-  onVisible: () => {
+  onVisible: async () => {
+    // Storage availability can recover independently of account/network state.
+    // A signed-in foregrounded app retries persisted room custody before it
+    // polls, so an earlier unread secure-storage slot cannot stay locked forever.
+    if (account?.signed_in) await roomController.restore();
     roomController.refresh();
-    refreshAccountIfUnavailable();
+    await refreshAccountIfUnavailable();
   },
 });
 

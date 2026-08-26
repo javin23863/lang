@@ -280,12 +280,21 @@
     }
 
     async function discard() {
+      const acquiredBusy = !busy;
+      if (acquiredBusy) setBusy(true);
       invalidationGeneration++;
       stopPolling();
       room = null;
-      const retired = await model.forget();
-      setCustodyUnavailable(!retired);
-      return retired;
+      try {
+        const retired = await model.forget();
+        setCustodyUnavailable(!retired);
+        return retired;
+      } catch (_) {
+        setCustodyUnavailable(true);
+        return false;
+      } finally {
+        if (acquiredBusy) setBusy(false);
+      }
     }
 
     return Object.freeze({
