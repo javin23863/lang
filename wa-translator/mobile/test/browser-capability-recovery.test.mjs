@@ -180,9 +180,7 @@ function harness({partial = false, failLoads = 0, deferredLoads = false} = {}) {
 }
 
 async function settle() {
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let i = 0; i < 8; i++) await Promise.resolve();
 }
 
 test("online recovery reloads capabilities without joining or reopening signalling", async () => {
