@@ -26,6 +26,10 @@ the full credential-free matrix deliberately before signed beta/device gates.
 - [x] A room-creation session is accepted only while its `UserDirectory` account
   still exists. Account deletion immediately blocks old browser/native sessions
   from creating another room.
+- [ ] Account deletion must synchronously terminate every still-live room owned
+  by that account before returning success. Version 1.0 currently prevents new
+  room creation after deletion but an already-issued room can survive until its
+  normal close/expiry; this source gap must close before store submission.
 - [x] The retired `POST /rooms` HTML-form creator is disabled; `/api/rooms` and
   its native versioned adapter are the only host room-creation contract.
 - [x] Account deletion is available in the app and removes account-held data.
