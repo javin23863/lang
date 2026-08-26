@@ -1,4 +1,5 @@
 import { build } from "esbuild";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -22,9 +23,10 @@ const invokedDirectly = process.argv[1]
 if (invokedDirectly) {
   const mobile = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const origin = resolvePublicOrigin(process.env.LINGUA_PUBLIC_ORIGIN);
+  const www = path.join(mobile, "www");
   await build({
     entryPoints: [path.join(mobile, "src", "mobile-entry.ts")],
-    outfile: path.join(mobile, "www", "mobile-bridge.js"),
+    outfile: path.join(www, "mobile-bridge.js"),
     bundle: true,
     minify: true,
     format: "iife",
@@ -34,5 +36,10 @@ if (invokedDirectly) {
       __LINGUA_PUBLIC_ORIGIN__: JSON.stringify(origin),
     },
   });
+  await writeFile(
+    path.join(www, "native-build-target.json"),
+    `${JSON.stringify({ public_origin: origin })}\n`,
+    "utf8",
+  );
   console.log(`native bridge target: ${origin}`);
 }
