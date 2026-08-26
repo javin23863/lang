@@ -224,7 +224,7 @@
     "ms": "Tidak dapat log keluar. Cuba lagi.",
     "my": "အကောင့်မှ ထွက်၍ မရပါ။ ထပ်မံကြိုးစားပါ။",
     "ne": "साइन आउट गर्न सकिएन। फेरि प्रयास गर्नुहोस्।",
-    "nl": "Afmelden is net gelukt. Probeer het opnieuw.",
+    "nl": "Afmelden is niet gelukt. Probeer het opnieuw.",
     "no": "Kunne ikke logge ut. Prøv igjen.",
     "ns": "Ga se gwa kgonega go tšwa. Leka gape.",
     "oc": "Impossible de se desconnectar. Tornatz ensajar.",
@@ -258,7 +258,7 @@
     "wo": "Mëneesul génn. Jéemaatal.",
     "xh": "Akukwazekanga ukuphuma. Zama kwakhona.",
     "yi": "מען האָט נישט געקענט זיך אָפּמעלדן. פּרוּווט ווידער.",
-    "yo": "Kò ṣeé jáde kúrò nínú àkọאָונט. נסה שוב.",
+    "yo": "Kò ṣeé jáde kúrò nínú àkọọ́lẹ̀. Gbìyànjú lẹ́ẹ̀kan síi.",
     "zh": "无法退出登录。请重试。",
     "zu": "Akukwazekanga ukuphuma. Zama futhi."
   });
