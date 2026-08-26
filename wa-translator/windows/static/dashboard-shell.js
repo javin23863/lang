@@ -97,7 +97,7 @@
       <span class="settingBadge">100+</span>
     </div>
     <div class="settingRow">
-      <div><strong>Conversation languages</strong><p>You choose your spoken language when joining each private room.</p></div>
+      <div><strong>Conversation languages</strong><p>Choose your spoken language before you create a room. The other person chooses theirs when joining.</p></div>
       <span class="settingChevron" aria-hidden="true">›</span>
     </div>
   `;
@@ -146,8 +146,7 @@
   }
 
   screens.append(homeScreen, activityScreen, languagesScreen, profileScreen);
-  const insertAfter = brand.nextSibling;
-  page.insertBefore(screens, insertAfter);
+  page.insertBefore(screens, brand.nextSibling);
 
   const tabs = document.createElement("nav");
   tabs.id = "appTabs";
@@ -192,15 +191,118 @@
   }
 
   tabs.addEventListener("keydown", event => {
-    if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+    if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
     const names = tabSpec.map(([name]) => name);
-    const delta = event.key === 'ArrowRight' ? 1 : -1;
+    const delta = event.key === "ArrowRight" ? 1 : -1;
     selectTab(names[(names.indexOf(currentTab) + delta + names.length) % names.length], true);
     event.preventDefault();
   });
 
   page.after(tabs);
   selectTab(currentTab);
+
+  const setup = document.createElement("div");
+  setup.id = "conversationSetup";
+  setup.className = "conversationSetup";
+  setup.hidden = true;
+  setup.innerHTML = `
+    <div class="setupScrim" data-setup-close></div>
+    <section class="setupSheet" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
+      <div class="setupHandle" aria-hidden="true"></div>
+      <header class="setupHeader">
+        <button type="button" class="setupClose" data-setup-close aria-label="Close">×</button>
+        <div class="setupModeIcon" id="setupModeIcon" aria-hidden="true"></div>
+        <p class="screenEyebrow">New conversation</p>
+        <h2 id="setupTitle">Video call</h2>
+        <p id="setupDescription">Set up your side before the private room is created.</p>
+      </header>
+      <div class="setupFields">
+        <label class="setupField"><span>I speak</span><select id="setupMyLanguage"></select></label>
+        <div class="languageSwap" aria-hidden="true">⇄</div>
+        <label class="setupField"><span>They speak</span><select id="setupTheirLanguage"></select></label>
+      </div>
+      <div class="setupPrivacy"><span aria-hidden="true">●</span><p>Private two-person room. The other person can choose a different language when they join.</p></div>
+      <button id="setupStart" class="setupStart" type="button">Create private room</button>
+    </section>
+  `;
+  document.body.append(setup);
+
+  const setupTitle = byId("setupTitle");
+  const setupDescription = byId("setupDescription");
+  const setupModeIcon = byId("setupModeIcon");
+  const setupMyLanguage = byId("setupMyLanguage");
+  const setupTheirLanguage = byId("setupTheirLanguage");
+  const setupStart = byId("setupStart");
+  let setupSourceButton = null;
+  let setupMode = "video";
+  let bypassSetup = false;
+
+  const setupModes = {
+    video: {title: "Video call", description: "See each other while live captions and translation keep the conversation moving.", glyph: "▣"},
+    voice: {title: "Voice call", description: "A private translated phone-style call with optional captions.", glyph: "◉"},
+    chat: {title: "Text chat", description: "A private translated message thread for two people.", glyph: "✦"},
+  };
+
+  function populateSetupLanguages() {
+    const source = byId("appLocaleSel");
+    if (!source) return;
+    const options = [...source.options];
+    for (const target of [setupMyLanguage, setupTheirLanguage]) {
+      const previous = target.value;
+      target.replaceChildren(...options.map(option => option.cloneNode(true)));
+      if (previous && [...target.options].some(option => option.value === previous)) target.value = previous;
+    }
+    const savedMine = localStorage.getItem("lingua-relay.setup.my-language");
+    const savedTheirs = localStorage.getItem("lingua-relay.setup.their-language");
+    setupMyLanguage.value = savedMine && [...setupMyLanguage.options].some(option => option.value === savedMine)
+      ? savedMine : source.value;
+    if (savedTheirs && [...setupTheirLanguage.options].some(option => option.value === savedTheirs)) {
+      setupTheirLanguage.value = savedTheirs;
+    } else {
+      const alternative = [...setupTheirLanguage.options].find(option => option.value !== setupMyLanguage.value);
+      if (alternative) setupTheirLanguage.value = alternative.value;
+    }
+  }
+
+  function openSetup(mode, sourceButton) {
+    setupMode = setupModes[mode] ? mode : "video";
+    setupSourceButton = sourceButton;
+    const config = setupModes[setupMode];
+    setupTitle.textContent = config.title;
+    setupDescription.textContent = config.description;
+    setupModeIcon.textContent = config.glyph;
+    setup.dataset.mode = setupMode;
+    populateSetupLanguages();
+    setup.hidden = false;
+    document.body.classList.add("setupOpen");
+    requestAnimationFrame(() => setup.classList.add("visible"));
+    setTimeout(() => setupMyLanguage.focus(), 170);
+  }
+
+  function closeSetup() {
+    setup.classList.remove("visible");
+    document.body.classList.remove("setupOpen");
+    setTimeout(() => { setup.hidden = true; }, 150);
+    setupSourceButton?.focus?.();
+  }
+
+  for (const closer of setup.querySelectorAll("[data-setup-close]")) closer.addEventListener("click", closeSetup);
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && !setup.hidden) closeSetup();
+  });
+
+  setupStart.addEventListener("click", () => {
+    if (!setupSourceButton) return;
+    localStorage.setItem("lingua-relay.setup.my-language", setupMyLanguage.value);
+    localStorage.setItem("lingua-relay.setup.their-language", setupTheirLanguage.value);
+    localStorage.setItem("lingua-relay.setup.mode", setupMode);
+    const source = setupSourceButton;
+    closeSetup();
+    homeHero.classList.add("compact");
+    bypassSetup = true;
+    source.click();
+    bypassSetup = false;
+  });
 
   profileSettings.querySelector('[data-profile-target="languages"]')?.addEventListener("click", () => selectTab("languages"));
   profileSettings.querySelector('[data-profile-target="support"]')?.addEventListener("click", () => {
@@ -210,12 +312,23 @@
     location.href = window.LinguaRuntime?.contentUrl?.("privacy") || "/privacy.html";
   });
 
-  const createButtons = [byId("createBtn"), byId("createVoiceBtn"), byId("createChatBtn")].filter(Boolean);
-  for (const button of createButtons) {
-    button.addEventListener("click", () => {
-      homeHero.classList.add("compact");
+  const createButtons = [
+    [byId("createBtn"), "video"],
+    [byId("createVoiceBtn"), "voice"],
+    [byId("createChatBtn"), "chat"],
+  ].filter(([button]) => Boolean(button));
+  for (const [button, mode] of createButtons) {
+    button.addEventListener("click", event => {
+      if (bypassSetup) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      openSetup(mode, button);
     }, {capture: true});
   }
 
-  window.LinguaDashboardShell = Object.freeze({selectTab, current: () => currentTab});
+  window.LinguaDashboardShell = Object.freeze({
+    selectTab,
+    current: () => currentTab,
+    openConversationSetup: mode => openSetup(mode, createButtons.find(([, value]) => value === mode)?.[0]),
+  });
 })();
