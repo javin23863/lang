@@ -60,6 +60,7 @@ function harness() {
   const reportButton = new MockTarget();
   const qrButton = new MockTarget();
   const qrScript = new MockTarget();
+  const turnScheduleCalls = [];
   reportButton.disabled = false;
   qrButton.disabled = false;
 
@@ -94,6 +95,9 @@ function harness() {
   windowTarget.fetch = nativeFetch;
   windowTarget.WebSocket = MockWebSocket;
   windowTarget.LinguaNative = undefined;
+  windowTarget.scheduleTurnRefresh = delay => {
+    turnScheduleCalls.push(delay);
+  };
 
   const context = vm.createContext({
     window: windowTarget,
@@ -114,11 +118,19 @@ function harness() {
   });
   vm.runInContext(source, context, {filename: "qr.js"});
 
-  return {windowTarget, leaveButton, reportButton, qrButton, qrScript, fetchCalls};
+  return {
+    windowTarget,
+    leaveButton,
+    reportButton,
+    qrButton,
+    qrScript,
+    fetchCalls,
+    turnScheduleCalls,
+  };
 }
 
-test("page suspension aborts browser room control work and cannot reopen signalling while suspended", async () => {
-  const {windowTarget, fetchCalls} = harness();
+test("page suspension aborts browser room control work and cannot reopen signalling or TURN retries", async () => {
+  const {windowTarget, fetchCalls, turnScheduleCalls} = harness();
   const pending = windowTarget.fetch("https://room.test/api/room");
   assert.equal(fetchCalls.length, 1);
   assert.equal(fetchCalls[0].init.signal.aborted, false);
@@ -135,12 +147,17 @@ test("page suspension aborts browser room control work and cannot reopen signall
     error => error?.name === "AbortError",
   );
   assert.equal(fetchCalls.length, 1, "suspended control fetch is rejected before network I/O");
+  windowTarget.scheduleTurnRefresh(30000);
+  assert.deepEqual(turnScheduleCalls, [], "an aborted stale TURN fetch cannot re-arm its retry timer");
 });
 
-test("BFCache restore coalesces stale and fresh connects onto one signalling socket", () => {
-  const {windowTarget} = harness();
+test("BFCache restore coalesces stale and fresh connects and re-enables live TURN scheduling", () => {
+  const {windowTarget, turnScheduleCalls} = harness();
   windowTarget.dispatch("pagehide", {persisted: true});
   windowTarget.dispatch("pageshow", {persisted: true});
+
+  windowTarget.scheduleTurnRefresh(45000);
+  assert.deepEqual(turnScheduleCalls, [45000], "restored live room keeps the original TURN scheduler");
 
   const first = new windowTarget.WebSocket("wss://room.test/ws/example");
   const second = new windowTarget.WebSocket("wss://room.test/ws/example");
@@ -164,6 +181,8 @@ test("explicit Leave and confirmed report-and-block permanently reject stale rec
     error => error?.name === "AbortError",
   );
   assert.equal(leaveHarness.fetchCalls.length, 0);
+  leaveHarness.windowTarget.scheduleTurnRefresh(30000);
+  assert.deepEqual(leaveHarness.turnScheduleCalls, [], "Leave cannot resurrect a TURN retry loop");
 
   const reportHarness = harness();
   reportHarness.reportButton.addEventListener("click", () => {
@@ -174,13 +193,17 @@ test("explicit Leave and confirmed report-and-block permanently reject stale rec
   const afterReport = new reportHarness.windowTarget.WebSocket("wss://room.test/ws/example");
   assert.equal(afterReport.readyState, MockWebSocket.CLOSED);
   assert.equal(MockWebSocket.created.length, 0, "confirmed report-and-block prevents stale signalling recreation");
+  reportHarness.windowTarget.scheduleTurnRefresh(30000);
+  assert.deepEqual(reportHarness.turnScheduleCalls, [], "report-and-block cannot resurrect TURN retries");
 });
 
 test("cancelled report confirmation does not terminate an otherwise live browser room", async () => {
-  const {windowTarget, reportButton} = harness();
+  const {windowTarget, reportButton, turnScheduleCalls} = harness();
   reportButton.dispatch("click", {type: "click"});
   await Promise.resolve();
   const socket = new windowTarget.WebSocket("wss://room.test/ws/example");
   assert.equal(socket, MockWebSocket.created[0]);
   assert.equal(MockWebSocket.created.length, 1);
+  windowTarget.scheduleTurnRefresh(30000);
+  assert.deepEqual(turnScheduleCalls, [30000]);
 });
