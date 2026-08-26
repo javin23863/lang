@@ -50,7 +50,7 @@ function activeFence(value: unknown, now: number): boolean {
 }
 
 export class UserDirectory extends AccountDirectory {
-  private async moveAlarmEarlier(target: number): Promise<void> {
+  private async advanceOwnedRoomAlarm(target: number): Promise<void> {
     const existing = await this.ctx.storage.getAlarm();
     if (existing === null || target < existing) {
       await this.ctx.storage.setAlarm(Math.max(Date.now() + 1_000, target));
@@ -100,7 +100,7 @@ export class UserDirectory extends AccountDirectory {
     if (outcome === "deleting") return new Response("Account deletion in progress", {status: 409});
     if (outcome === "full") return new Response("Too many active rooms", {status: 429});
     if (outcome === "corrupt") return new Response("Owned-room registry unavailable", {status: 503});
-    await this.moveAlarmEarlier((room as OwnedRoom).expiresAt * 1000);
+    await this.advanceOwnedRoomAlarm((room as OwnedRoom).expiresAt * 1000);
     return new Response(null, {status: 204});
   }
 
@@ -152,11 +152,11 @@ export class UserDirectory extends AccountDirectory {
     if (request.method !== "DELETE" || url.pathname !== "/") return null;
 
     const claim = await this.claimDeletion();
-    if (claim.status === "missing") return super.fetch(request);
-    if (claim.status === "busy") {
-      return new Response("Account deletion already in progress", {status: 409});
-    }
-    if (claim.status === "corrupt") {
+    if (claim.status !== "claimed") {
+      if (claim.status === "missing") return super.fetch(request);
+      if (claim.status === "busy") {
+        return new Response("Account deletion already in progress", {status: 409});
+      }
       return new Response("Account room registry unavailable", {status: 503});
     }
 
@@ -190,7 +190,7 @@ export class UserDirectory extends AccountDirectory {
     if (rooms) {
       if (rooms.length) {
         await this.ctx.storage.put(OWNED_ROOMS_KEY, rooms);
-        await this.moveAlarmEarlier(Math.min(...rooms.map(room => room.expiresAt * 1000)));
+        await this.advanceOwnedRoomAlarm(Math.min(...rooms.map(room => room.expiresAt * 1000)));
       } else if (value !== undefined) {
         await this.ctx.storage.delete(OWNED_ROOMS_KEY);
       }
