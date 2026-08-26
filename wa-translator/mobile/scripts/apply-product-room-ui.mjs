@@ -9,9 +9,11 @@ let html = await readFile(roomPath, "utf8");
 const styleTags = [
   '<link rel="stylesheet" href="/room-product-ui.css">',
   '<link rel="stylesheet" href="/room-product-states.css">',
+  '<link rel="stylesheet" href="/room-product-prejoin.css">',
 ];
 const scriptTags = [
   '<script src="/room-product-ui.js"></script>',
+  '<script src="/room-product-prejoin.js"></script>',
   '<script src="/room-product-defaults.js"></script>',
 ];
 
