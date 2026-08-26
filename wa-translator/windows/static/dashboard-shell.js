@@ -7,6 +7,7 @@
 
   const byId = id => document.getElementById(id);
   const t = window.LinguaRuntime?.t || (key => key);
+  const RECENT_KEY = "lingua-relay.recent-conversations.v1";
 
   const screens = document.createElement("div");
   screens.id = "appScreens";
@@ -74,6 +75,62 @@
   if (homeSurface) homeScreen.append(homeSurface);
   if (roomPanel) homeScreen.append(roomPanel);
   if (roomNotice) homeScreen.append(roomNotice);
+
+  let roomExperienceTitle = null;
+  let roomExperienceCopy = null;
+  let roomExperienceMode = null;
+  if (roomPanel) {
+    const experience = document.createElement("header");
+    experience.className = "roomExperience";
+    experience.innerHTML = `
+      <div class="roomReadyIcon" aria-hidden="true">✓</div>
+      <div class="roomExperienceCopy"><p class="screenEyebrow">Private room</p><h3>Your room is ready</h3><p>Share the invitation, then open the room when you are ready.</p></div>
+      <span class="roomExperienceMode">Video</span>
+    `;
+    roomPanel.prepend(experience);
+    roomExperienceTitle = experience.querySelector("h3");
+    roomExperienceCopy = experience.querySelector(".roomExperienceCopy>p:last-child");
+    roomExperienceMode = experience.querySelector(".roomExperienceMode");
+  }
+
+  const recentCard = document.createElement("section");
+  recentCard.className = "screenCard recentCard";
+  recentCard.innerHTML = `<div class="sectionLabelRow"><strong>Recent conversations</strong><span>On this device</span></div><div id="recentConversationList" class="recentConversationList"></div>`;
+  activityScreen.append(recentCard);
+
+  const recentList = recentCard.querySelector("#recentConversationList");
+  function readRecent() {
+    try {
+      const value = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
+      return Array.isArray(value) ? value.slice(0, 8) : [];
+    } catch (_) {
+      return [];
+    }
+  }
+  function renderRecent() {
+    const rows = readRecent();
+    recentList.replaceChildren();
+    if (!rows.length) {
+      const empty = document.createElement("div");
+      empty.className = "recentEmpty";
+      empty.innerHTML = `<strong>No recent conversations</strong><span>Your private calls and chats will appear here without message or transcript content.</span>`;
+      recentList.append(empty);
+      return;
+    }
+    for (const item of rows) {
+      const row = document.createElement("div");
+      row.className = "recentRow";
+      const modeName = item.mode === "voice" ? "Voice call" : item.mode === "chat" ? "Text chat" : "Video call";
+      const when = new Intl.DateTimeFormat(undefined, {month: "short", day: "numeric", hour: "numeric", minute: "2-digit"}).format(new Date(item.at));
+      row.innerHTML = `
+        <div class="recentModeIcon" data-mode="${item.mode}" aria-hidden="true">${item.mode === "voice" ? "◉" : item.mode === "chat" ? "✦" : "▣"}</div>
+        <div class="recentCopy"><strong>${modeName}</strong><span>${item.mine || "—"} → ${item.theirs || "—"}</span></div>
+        <time datetime="${new Date(item.at).toISOString()}">${when}</time>
+      `;
+      recentList.append(row);
+    }
+  }
+  renderRecent();
 
   const credits = byId("creditsPanel");
   if (credits) {
@@ -236,6 +293,7 @@
   let setupSourceButton = null;
   let setupMode = "video";
   let bypassSetup = false;
+  let pendingActivity = null;
 
   const setupModes = {
     video: {title: "Video call", description: "See each other while live captions and translation keep the conversation moving.", glyph: "▣"},
@@ -286,6 +344,38 @@
     setupSourceButton?.focus?.();
   }
 
+  function selectedLabel(select) {
+    return select.selectedOptions?.[0]?.textContent?.trim() || select.value || "—";
+  }
+
+  function commitPendingActivity() {
+    if (!pendingActivity) return;
+    const rows = readRecent();
+    rows.unshift({...pendingActivity, at: Date.now()});
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify(rows.slice(0, 8))); } catch (_) {}
+    pendingActivity = null;
+    renderRecent();
+  }
+
+  function updateRoomExperience() {
+    if (!roomPanel || !roomExperienceTitle || roomPanel.hidden) return;
+    const state = byId("roomState")?.dataset.state || "ready";
+    const mode = localStorage.getItem("lingua-relay.setup.mode") || "video";
+    roomExperienceMode.textContent = mode === "voice" ? "Voice" : mode === "chat" ? "Chat" : "Video";
+    if (state === "open" && /2 participants|2 people/.test(byId("roomState")?.textContent || "")) {
+      roomExperienceTitle.textContent = "Both people are here";
+      roomExperienceCopy.textContent = "Open the room to continue the conversation.";
+    } else if (state === "open") {
+      roomExperienceTitle.textContent = "Waiting for the other person";
+      roomExperienceCopy.textContent = "Keep this screen open or share the invitation again.";
+    } else {
+      roomExperienceTitle.textContent = "Your room is ready";
+      roomExperienceCopy.textContent = "Share the invitation, then open the room when you are ready.";
+    }
+    homeHero.classList.add("compact");
+    commitPendingActivity();
+  }
+
   for (const closer of setup.querySelectorAll("[data-setup-close]")) closer.addEventListener("click", closeSetup);
   document.addEventListener("keydown", event => {
     if (event.key === "Escape" && !setup.hidden) closeSetup();
@@ -296,6 +386,11 @@
     localStorage.setItem("lingua-relay.setup.my-language", setupMyLanguage.value);
     localStorage.setItem("lingua-relay.setup.their-language", setupTheirLanguage.value);
     localStorage.setItem("lingua-relay.setup.mode", setupMode);
+    pendingActivity = {
+      mode: setupMode,
+      mine: selectedLabel(setupMyLanguage),
+      theirs: selectedLabel(setupTheirLanguage),
+    };
     const source = setupSourceButton;
     closeSetup();
     homeHero.classList.add("compact");
@@ -303,6 +398,14 @@
     source.click();
     bypassSetup = false;
   });
+
+  if (roomPanel) {
+    const observer = new MutationObserver(updateRoomExperience);
+    observer.observe(roomPanel, {attributes: true, attributeFilter: ["hidden"]});
+    const stateNode = byId("roomState");
+    if (stateNode) observer.observe(stateNode, {attributes: true, childList: true, subtree: true, attributeFilter: ["data-state"]});
+    updateRoomExperience();
+  }
 
   profileSettings.querySelector('[data-profile-target="languages"]')?.addEventListener("click", () => selectTab("languages"));
   profileSettings.querySelector('[data-profile-target="support"]')?.addEventListener("click", () => {
