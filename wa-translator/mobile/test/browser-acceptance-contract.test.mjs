@@ -97,5 +97,5 @@ test("store screenshots retain exact-head provenance through promotion and resiz
     "the final store-sized PNGs must be hashed into the receipt");
 
   assert.equal(packageJson.scripts["screenshots:refresh"],
-    "python scripts/promote-browser-screenshots.py && python scripts/prepare-store-screenshots.py");
+    "python scripts/run-store-screenshot-tool.py refresh");
 });
