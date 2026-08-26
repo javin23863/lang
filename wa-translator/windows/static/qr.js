@@ -20,9 +20,14 @@
   );
   let browserMediaGeneration = 0;
   let browserMediaLifecycleEnded = false;
+  let browserRoomGeneration = 0;
 
   function invalidatePendingBrowserMedia() {
     browserMediaGeneration++;
+  }
+
+  function invalidateBrowserRoomGeneration() {
+    browserRoomGeneration++;
   }
 
   function stopCapturedBrowserStream(stream) {
@@ -64,6 +69,7 @@
     if (typeof disconnectRoom === "function") {
       const roomDisconnectRoom = disconnectRoom;
       disconnectRoom = function mediaAwareDisconnectRoom(...args) {
+        invalidateBrowserRoomGeneration();
         invalidatePendingBrowserMedia();
         if ((typeof explicitLeave !== "undefined" && explicitLeave)
             || (typeof terminalRoom !== "undefined" && terminalRoom)) {
@@ -190,6 +196,7 @@
     }
 
     function endRoomLifecycle() {
+      invalidateBrowserRoomGeneration();
       browserMediaLifecycleEnded = true;
       invalidatePendingBrowserMedia();
       roomLifecycleEnded = true;
@@ -375,9 +382,19 @@
         const socket = protocols === undefined
           ? new RoomWebSocket(url)
           : new RoomWebSocket(url, protocols);
+        const socketGeneration = browserRoomGeneration;
         activeRoomSocket = socket;
-        socket.addEventListener("close", () => {
+        socket.addEventListener("message", event => {
+          if (socketGeneration !== browserRoomGeneration
+              || activeRoomSocket !== socket || !browserRoomWorkActive()) {
+            event.stopImmediatePropagation?.();
+          }
+        });
+        socket.addEventListener("close", event => {
+          const stale = socketGeneration !== browserRoomGeneration
+            || activeRoomSocket !== socket || !browserRoomWorkActive();
           if (activeRoomSocket === socket) activeRoomSocket = null;
+          if (stale) event.stopImmediatePropagation?.();
         });
         return socket;
       }
